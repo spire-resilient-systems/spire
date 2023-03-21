@@ -100,6 +100,7 @@ static char MCAST_IP[80];
 static char SP_IP[80];
 static char Unix_domain_path[80];
 static int Cummulative_Print_Mode;
+static int Verbose_Print_Mode;
 static double wait_buffer;
 static double expire_buffer;
 static int Address[MAX_NEIGHBORS];
@@ -130,9 +131,8 @@ int main(int argc, char *argv[])
     char buf[MAX_PKT_SIZE];
     int ret, bytes;
     long long unsigned int tail = 1, head = 1, ref = 1, recv_seq;
-    long long int oneway_time;
     double then_ms, now_ms, elapsed_ms;
-    struct timeval then, now, wait_time, expire_time, pkt_expire, pkt_deliver;
+    struct timeval now, wait_time, expire_time, pkt_expire, pkt_deliver;
     struct timeval timeout;
     struct timeval *timeout_ptr;
     pkt_stats *ps = (pkt_stats*) buf;
@@ -330,6 +330,12 @@ int main(int argc, char *argv[])
             pkt_deliver = addTime(pkt_deliver, wait_time);
             pkt_expire = addTime(pkt_expire, expire_time);
 
+            /* Get pkt latency */
+            then_ms  = ntohl(ps->origin_sec) * 1000.0; 
+            then_ms += ntohl(ps->origin_usec) / 1000.0;
+            elapsed_ms = now_ms - then_ms;
+
+            /* Do reporting */
             if (Reporting_Interval > 0) {
                 if (recvd_first_flag == 0) {
                     Interval_start_ms = now_ms;
@@ -343,9 +349,6 @@ int main(int argc, char *argv[])
                 Arrival_stats.msgs++;
                 Arrival_stats.bytes += bytes - sizeof(pkt_stats);
 
-                then_ms  = ntohl(ps->origin_sec) * 1000.0; 
-                then_ms += ntohl(ps->origin_usec) / 1000.0;
-                elapsed_ms = now_ms - then_ms;
                 Arrival_stats.oneway_ms += elapsed_ms;
                 if (elapsed_ms < 0) {
                     /* Using last spot of array to catch anything with a
@@ -357,15 +360,9 @@ int main(int argc, char *argv[])
                     Arrival_stats.histogram[(int) (elapsed_ms / HIST_BUCKET_SIZE)]++;
                 }
             }
-            else if (Reporting_Interval == 0 && recv_count % 1000 == 0) {
-                then.tv_sec  = ntohl(ps->origin_sec); 
-                then.tv_usec = ntohl(ps->origin_usec);
-                oneway_time = (now.tv_sec - then.tv_sec);
-                oneway_time *= 1000000;
-                oneway_time += (now.tv_usec - then.tv_usec);
-
+            else if (!Verbose_Print_Mode && Reporting_Interval == 0 && recv_count % 1000 == 0) {
                 Alarm(PRINT, "%ld\t%d\t%4f\tpath: ", bytes-sizeof(pkt_stats),
-                    recv_count, oneway_time/1000.0);
+                    recv_count, elapsed_ms);
                 for (k = 0; k < 8; k++) {
                     if (ps->path[k] != 0)
                         Alarm(PRINT, "%d ", (int)ps->path[k]);
@@ -373,6 +370,9 @@ int main(int argc, char *argv[])
                         break;
                 }
                 Alarm(PRINT, "\r\n");
+            }
+            else if (Verbose_Print_Mode) {
+                Alarm(PRINT, "%ld\t%lf\t%lf\t%lf\n", recv_seq, then_ms, now_ms, elapsed_ms);
             }
             
             /* First check if this packet is already expired */
@@ -529,9 +529,9 @@ static void Final_Report(int signum)
         histogramPrint(&Arrival_stats);
         Alarm(PRINT, "-- Delivery Histogram --\n");
         histogramPrint(&Delivery_stats);
-        Alarm(PRINT, "\n");
-        Alarm(EXIT, "");
     }
+    Alarm(PRINT, "\n");
+    Alarm(EXIT, "");
 }
 
 static void intervalStatsPrint(const char *prefix, interval_stats *stats,
@@ -653,6 +653,7 @@ static void Usage(int argc, char *argv[])
   strcpy(Unix_domain_path, "");
   Group_Address          = -1;
   Cummulative_Print_Mode = 0;
+  Verbose_Print_Mode = 0;
   wait_buffer            = DEFAULT_WAIT_BUFFER;
   expire_buffer          = -1;
   tmp                    = 0;
@@ -663,16 +664,16 @@ static void Usage(int argc, char *argv[])
   while( --argc > 0 ) {
     argv++;
 
-    if( !strncmp( *argv, "-p", 2 ) ){
+    if( !strncmp( *argv, "-p", 3 ) ){
       sscanf(argv[1], "%d", (int*)&spinesPort );
       argc--; argv++;
     } else if( !strncmp( *argv, "-ud", 4 ) ){
       sscanf(argv[1], "%s", Unix_domain_path);
       argc--; argv++;
-    } else if( !strncmp( *argv, "-r", 2 ) ){
+    } else if( !strncmp( *argv, "-r", 3 ) ){
       sscanf(argv[1], "%d", (int*)&recvPort );
       argc--; argv++;
-    } else if((!strncmp( *argv, "-a", 2)) && (argc > 1) && (numNeighbors < MAX_NEIGHBORS)) {
+    } else if((!strncmp( *argv, "-a", 3)) && (argc > 1) && (numNeighbors < MAX_NEIGHBORS)) {
       sscanf(argv[1], "%24s", ip_str );
       ret = sscanf( ip_str, "%d.%d.%d.%d:%d", &i1, &i2, &i3, &i4, &tmpPort);
       if (ret == 5) {
@@ -694,32 +695,34 @@ static void Usage(int argc, char *argv[])
       }
       Port[numNeighbors] = tmpPort;
       numNeighbors++; argc--; argv++;
-    } else if( !strncmp( *argv, "-k", 2 ) ){
+    } else if( !strncmp( *argv, "-k", 3 ) ){
       sscanf(argv[1], "%hu", (int16u*)&KPaths );
       argc--; argv++;
-    } else if( !strncmp( *argv, "-j", 2 ) ){
+    } else if( !strncmp( *argv, "-j", 3 ) ){
       sscanf(argv[1], "%80s", MCAST_IP );
       sscanf(MCAST_IP ,"%d.%d.%d.%d",&i1, &i2, &i3, &i4);
       Group_Address = ( (i1 << 24 ) | (i2 << 16) | (i3 << 8) | i4 );
       argc--; argv++;
-    } else if( !strncmp( *argv, "-o", 2 ) ){
+    } else if( !strncmp( *argv, "-o", 3 ) ){
       sscanf(argv[1], "%80s", SP_IP );
       argc--; argv++;
-    } else if( !strncmp( *argv, "-c", 2 ) ){
+    } else if( !strncmp( *argv, "-c", 3 ) ){
       Cummulative_Print_Mode = 1;
-    } else if( !strncmp( *argv, "-t", 2 ) ){
+    } else if( !strncmp( *argv, "-v", 3 ) ){
+      Verbose_Print_Mode = 1;
+    } else if( !strncmp( *argv, "-t", 3 ) ){
       Arrival_Base_Time_Flag = 1;
-    } else if( !strncmp( *argv, "-i", 2 ) ){
+    } else if( !strncmp( *argv, "-i", 3 ) ){
       sscanf(argv[1], "%d", (int*)&Reporting_Interval );
       argc--; argv++;
       if (Reporting_Interval < 0)
         Alarm(EXIT, "Invalid printing interval specified: %d. Must be >= 0!\r\n", Reporting_Interval);
-    } else if( !strncmp( *argv, "-w", 2 ) ){
+    } else if( !strncmp( *argv, "-w", 3 ) ){
       sscanf(argv[1], "%lf", &wait_buffer );
       argc--; argv++;
       if (wait_buffer < 0)
         Alarm(EXIT, "Invalid wait time specified: %d. Must be between >= 0!\r\n", wait_buffer);
-    } else if( !strncmp( *argv, "-x", 2 ) ){
+    } else if( !strncmp( *argv, "-x", 3 ) ){
       sscanf(argv[1], "%lf", &expire_buffer );
       argc--; argv++;
       if (expire_buffer < 0)
@@ -730,7 +733,7 @@ static void Usage(int argc, char *argv[])
       }
       Protocol |= tmp;
       argc--; argv++;
-    } else if ( !strncmp( *argv, "-D", 2 ) ) {
+    } else if ( !strncmp( *argv, "-D", 3 ) ) {
         if(sscanf(argv[1], "%d", (int*)&tmp ) < 1 || (tmp < 0) || (tmp > 3)) { /* dtflood (1,2), source-based (3)*/
             Alarm(EXIT, "Bad Dissemination %d specified through -D option!\r\n", tmp);
         }
@@ -751,6 +754,7 @@ static void Usage(int argc, char *argv[])
         Alarm(PRINT, "\t[-i <interval>   ] : print stats every <interval> msgs, default %d\n", DEFAULT_REPORTING_INTERVAL);
         Alarm(PRINT, "\t[-t              ] : calculate wait time based on arrival time (rather than send time)\n");
         Alarm(PRINT, "\t[-c              ] : print in cummulative mode (don't reset stats every interval)\n");
+        Alarm(PRINT, "\t[-v              ] : report every received packet\n");
         Alarm(EXIT, "\n");
     }
   }

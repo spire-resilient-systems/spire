@@ -134,6 +134,15 @@ extern "C" {
 
 #define     MAX_COUNT               64
 
+/* This is the maximum message size we allow a client to send. IMPORTANT: This
+ * MUST be less than MAX_SPINES_MSG (defined in session.h) *
+ * MAX_PKTS_PER_MESSAGE (defined in net_types.h). That means this needs to be
+ * changed if more headers get added in the future, but for now this number is
+ * safe. Today libspines doesn't have all the info needed to enforce this, so
+ * it needs to be done manually. Additional size checking is done at the daemon
+ * level though, so this client-level check isn't technically crucial. */
+#define     MAX_SPINES_CLIENT_MSG   50000
+
 /* IP Address Class Check */
 #ifndef Is_mcast_addr
 #  define Is_mcast_addr(x) (((x) & 0xF0000000) == 0xE0000000)

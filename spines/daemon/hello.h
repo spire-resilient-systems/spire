@@ -37,7 +37,7 @@
 #include "network.h"
 #include "link.h"
 
-#define DEAD_LINK_CNT     7                        /* Number of hellos unacked until declaring a dead link */
+#define DEAD_LINK_CNT     10                        /* Number of hellos unacked until declaring a dead link */
 #define CONNECT_LINK_CNT  (1 + DEAD_LINK_CNT / 2)  /* Number of hellos needed b4 connection established */
 
 struct Node_d;

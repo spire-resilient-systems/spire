@@ -134,6 +134,7 @@ static int RR_Get_Node_Index(const Routing_Regime *rr,
   return ret;
 }
 
+#if 0
 /*********************************************************************
  * Lookup a node's Node_ID based on its routing index
  *********************************************************************/
@@ -153,6 +154,7 @@ static Node_ID RR_Get_Node_ID(const Routing_Regime *rr,
 
   return ret;
 }
+#endif
 
 /*********************************************************************
  * Lookup a route based on (src, dst) Node_IDs

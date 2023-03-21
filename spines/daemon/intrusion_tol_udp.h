@@ -72,7 +72,7 @@
 #include "configuration.h"
 
 /* MAX defines */
-#define RATE_LIMIT_KBPS     100000      /* Bandwidth allocated on each link for leaky bucket for 
+#define RATE_LIMIT_KBPS     250000      /* Bandwidth allocated on each link for leaky bucket for 
                                             sending original (first-time) messages */
 #define BUCKET_CAP          (200000 + MAX_PACKET_SIZE) /* default 2000 */
 #define BUCKET_FILL_USEC    300

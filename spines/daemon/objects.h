@@ -57,10 +57,11 @@
 /* Transmitted objects */
 #define PACK_HEAD_OBJ           10
 #define PACK_BODY_OBJ           11
-#define SYS_SCATTER             12
-#define STDHASH_OBJ             13
-#define MESSAGE_OBJ             14
-#define FRAG_OBJ                15
+#define PACK_OBJ                12
+#define SYS_SCATTER             13
+#define STDHASH_OBJ             14
+#define MESSAGE_OBJ             15
+#define FRAG_OBJ                16
 
 /* Non-Transmitted objects */
 #define TREE_NODE               21
@@ -95,10 +96,11 @@
 #define SESSION_OBJ             51
 
 
-#define REL_MCAST_TREE_OBJ	52 
+#define REL_MCAST_TREE_OBJ      52
+
 
 /* Special objects */
-#define UNKNOWN_OBJ             53      /* This represents an object of undertermined or 
+#define UNKNOWN_OBJ             54      /* This represents an object of undertermined or 
                                          * variable type.  Can only be used when appropriate.
                                          * i.e. when internal structure of object is not accessed.
                                          * This is mainly used with queues

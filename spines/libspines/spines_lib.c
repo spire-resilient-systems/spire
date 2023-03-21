@@ -983,6 +983,12 @@ int spines_sendto_internal(int s, const void *msg, size_t len,
     int tot_bytes;
     struct sockaddr_in *inet_ptr;
 
+    if (len > MAX_SPINES_CLIENT_MSG) {
+        Alarm(PRINT, "spines_sendto(): msg size limit exceeded (recvd %d,"
+                     " max %d)...dropping\n", len, MAX_SPINES_CLIENT_MSG);
+        return(-1);
+    }
+
     address = ntohl(((struct sockaddr_in*)to)->sin_addr.s_addr);
     port = ntohs(((struct sockaddr_in*)to)->sin_port);
     ret = 0;
@@ -1852,6 +1858,12 @@ int  spines_send(int s, const void *msg, size_t len, int flags)
     int ret;
     int client, type, connect_addr, connect_port;
     unsigned char l_ip_ttl, l_mcast_ttl, routing;
+
+    if (len > MAX_SPINES_CLIENT_MSG) {
+        Alarm(PRINT, "spines_send(): msg size limit exceeded (recvd %d,"
+                     " max %d)...dropping\n", len, MAX_SPINES_CLIENT_MSG);
+        return(-1);
+    }
 
     stdmutex_grab(&data_mutex); {
 

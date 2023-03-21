@@ -360,7 +360,7 @@ int main(int argc, char* argv[])
     Alarm( PRINT, "| WWW:     www.spines.org      www.dsn.jhu.edu                              |\n");
     Alarm( PRINT, "| Contact: spines@spines.org                                                |\n");
     Alarm( PRINT, "|                                                                           |\n");
-    Alarm( PRINT, "| Version 5.3, Built March 9, 2018                                          |\n"); 
+    Alarm( PRINT, "| Version 5.4, Built November 26, 2018                                      |\n"); 
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use       |\n");
     Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                 |\n");
@@ -491,6 +491,7 @@ static void Init_Memory_Objects(int x)
   /* to get original Spines memory parameters, use x=10 */
   Mem_init_object_abort(PACK_HEAD_OBJ, "packet_header", sizeof(packet_header), (int)(10*x), 1);
   Mem_init_object_abort(PACK_BODY_OBJ, "packet_body", sizeof(packet_body), (int)(20*x), 20);
+  Mem_init_object_abort(PACK_OBJ, "packet_obj", MAX_PACKET_SIZE, (int)(20*x), 20);
   Mem_init_object_abort(SYS_SCATTER, "sys_scatter", sizeof(sys_scatter), (int)(10*x), 1);
   Mem_init_object_abort(MESSAGE_OBJ, "message", MAX_PACKET_SIZE * MAX_PKTS_PER_MESSAGE, (int)(20*x), 20);
   Mem_init_object_abort(FRAG_OBJ, "fragment", sizeof(fragment_header), (int)(20*x), 20);

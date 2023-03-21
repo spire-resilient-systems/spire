@@ -2585,8 +2585,8 @@ int Reliable_Flood_Send_Data( Node *next_hop, int ngbr_index, int mode )
         dec_ref_cnt(scat);
 
         if (ret != BUFF_EMPTY && ret != BUFF_OK) {
-            Alarm(PRINT, "Reliable_Flood_Send_Data(): got an invalid  \
-                            return from Forward_Data = %d\r\n", ret);
+            Alarm(PRINT, "Reliable_Flood_Send_Data(): got an invalid "
+                         "return from Forward_Data = %d\r\n", ret);
             /* printf("SENDING DATA #%d FOR %d-%d TO "IPF"\n",
                        fb->next_seq[ngbr_index], temp_fq->src_id, 
                        temp_fq->dest_id, IP(Neighbor_Addrs[My_ID][ngbr_index])); */

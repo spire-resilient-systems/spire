@@ -124,7 +124,7 @@
 #define     PONG 2
 
 #define     MAX_NODES            50
-#define     MAX_PKTS_PER_MESSAGE 10
+#define     MAX_PKTS_PER_MESSAGE 45
 #define     MAX_MESSAGE_SIZE     (MAX_PACKET_SIZE * MAX_PKTS_PER_MESSAGE)
 
 typedef int32u         Spines_ID;  /* a logical Spines ID -- can be a node id, a group id or a network interface id */

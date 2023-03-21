@@ -126,7 +126,7 @@ typedef enum {
 #define HISTORY_SIZE     10
 
 #define MAX_BUCKET       500
-#define RT_RETRANSM_TOK  5   /* 1/5 = 20% max retransmissions */
+#define RT_RETRANSM_TOK  2   /* 1/2 = 50% max retransmissions */
 
 #define BWTH_BUCKET      536064 /* 64K + 1.472K for one packet*/
 

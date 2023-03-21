@@ -502,6 +502,8 @@ int MultiPath_Compute(int16u dest_id, int16u k, unsigned char **ret_mask, int us
 int MultiPath_Stamp_Bitmask(int16u dest_id, int16u k, unsigned char *mask)
 {
     int i, ret;
+    int64u *tmp_msk, *tmp_dg_msk;
+    DG_Dst *dg_dst;
 
     if ((dest_id == 0 && k > 0) || dest_id > MAX_NODES) {
         Alarm(PRINT, "Multipath_Stamp_Bitmask: invalid destination ID "
@@ -509,32 +511,72 @@ int MultiPath_Stamp_Bitmask(int16u dest_id, int16u k, unsigned char *mask)
         return 0;
     }
  
-    if (k == 0) {
-        memcpy(mask, MP_Flooding_Bitmask, MultiPath_Bitmask_Size);
-        return 1;
-    }
-
-    if (k == DG_K_FLAG) {
-        if (DG_Destinations[dest_id].current_mask == NULL) {
-            /* Default to 2 paths if static graphs are not given */
-            Alarm(PRINT, "Dissem graphs specified, but mask is NULL...defaulting to k = 2\n");
-            k = 2;
-        } else {
-            memcpy(mask, DG_Destinations[dest_id].current_mask, MultiPath_Bitmask_Size);
-            return 1;
-        }
-    }
-
-    if (k > MULTIPATH_MAX_K) {
+    if (k > MULTIPATH_MAX_K && k != DG_K_FLAG) {
         Alarm(PRINT, "Multipath_Stamp_Bitmask: Requested K (%d) is"
                 " larger than max supported K (%d), defaulting to"
                 " max supported K value\r\n", k, MULTIPATH_MAX_K);
         k = MULTIPATH_MAX_K;
     }
    
+    /* Overlay Flooding */
+    if (k == 0) {
+        memcpy(mask, MP_Flooding_Bitmask, MultiPath_Bitmask_Size);
+        return 1;
+    }
+
+    /* Dissemination Graphs (Targeted redundancy) */
+    if (k == DG_K_FLAG) {
+        dg_dst = &DG_Destinations[dest_id];
+
+        if (dg_dst->current_graph_type == DG_SRC_GRAPH || 
+            dg_dst->current_graph_type == DG_DST_GRAPH)
+        {
+            memcpy(mask, dg_dst->bitmasks[dg_dst->current_graph_type], MultiPath_Bitmask_Size);
+            return 1;
+        } else if (dg_dst->current_graph_type == DG_K2_GRAPH ||
+                   dg_dst->current_graph_type == DG_SRC_DST_GRAPH)
+        {
+            if (MP_Cache[dest_id][2] == NULL) {
+                Alarm(PRINT, "COMPUTING [%u,%u] for k = %u\r\n", My_ID, dest_id, 2);
+
+                /* Amy: Note that "require_reverse" option to MultiPath_Compute was
+                 * previously always set to 1. This may matter for the
+                 * intrusion-tolerant protocols. Should revisit how to unify. */
+                ret = MultiPath_Compute(dest_id, 2, &MP_Cache[dest_id][2], 0, 0);
+                if (ret == 0) {
+                    Alarm(PRINT, "MultiPath_Stamp_Bitmask: Warning! Compute returned 0, "
+                        "no paths found with current network conditions\r\n");
+                    /* This is not necessarily an error: If a message is destined to
+                     * myself, I can still deliver it with a bitmask of all 0s */
+                    /*return 0;*/
+                }
+            }
+            memcpy(mask, MP_Cache[dest_id][2], MultiPath_Bitmask_Size);
+
+            if (dg_dst->current_graph_type == DG_SRC_DST_GRAPH)
+            {
+                tmp_msk = (int64u *) mask;
+                tmp_dg_msk = (int64u *) dg_dst->bitmasks[DG_SRC_DST_GRAPH];
+
+                for (i = 0; i < MultiPath_Bitmask_Size/sizeof(int64u); i++)
+                    *tmp_msk++ |= *tmp_dg_msk++;
+            }
+            return 1;
+        } else { /* DG_NONE_GRAPH */ 
+            /* Default to 2 paths if static graphs are not given */
+            Alarm(PRINT, "Dissem graphs specified, but mask is NULL...defaulting to k = 2\n");
+            k = 2;
+        }
+    }
+
+    /* K Node Disjoint Paths */
     if (MP_Cache[dest_id][k] == NULL) {
         Alarm(PRINT, "COMPUTING [%u,%u] for k = %u\r\n", My_ID, dest_id, k);
-        ret = MultiPath_Compute(dest_id, k, &MP_Cache[dest_id][k], 0, 1);
+
+        /* Amy: Note that "require_reverse" option to MultiPath_Compute was
+         * previously always set to 1. This may matter for the
+         * intrusion-tolerant protocols. Should revisit how to unify. */
+        ret = MultiPath_Compute(dest_id, k, &MP_Cache[dest_id][k], 0, 0);
         if (ret == 0) {
             Alarm(PRINT, "MultiPath_Stamp_Bitmask: Warning! Compute returned 0, "
                 "no paths found with current network conditions\r\n");

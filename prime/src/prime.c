@@ -96,7 +96,7 @@ int main(int argc, char** argv)
   Alarm( PRINT, "| WWW:     www.dsn.jhu/prime   www.dsn.jhu.edu                              |\n");
   Alarm( PRINT, "| Contact: prime@dsn.jhu.edu                                                |\n");
   Alarm( PRINT, "|                                                                           |\n");
-  Alarm( PRINT, "| Version 3.1, Built March 14, 2018                                         |\n"); 
+  Alarm( PRINT, "| Version 3.2, Built November 26, 2018                                      |\n"); 
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use       |\n");
   Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                 |\n");

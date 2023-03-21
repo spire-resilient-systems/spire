@@ -1,3 +1,7 @@
+Version 1.2 - November 26, 2018
+    * Updated to use Spines 5.4, which fixed a bug that could be triggered when
+      link encryption is used in Spire
+
 Version 1.1 - March 14, 2018
     * Added capability to automatically reset the system if the system
       assumptions are violated (specifically, if there are no longer enough

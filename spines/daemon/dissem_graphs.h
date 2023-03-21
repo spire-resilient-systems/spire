@@ -43,20 +43,24 @@
 /* Switch to source/destination graph if number of source/destination problems
  * exceeds this threshold */
 #define DG_PROB_COUNT_THRESH     2
-#define DG_ON_PATH_THRESH        1
 
 /* Total number of pre-computed dissemination graphs for each flow */
 #define DG_NUM_GRAPHS    4
+
+/* Defining the four graph types */
+#define DG_NONE_GRAPH    0
+#define DG_K2_GRAPH      1
+#define DG_SRC_GRAPH     2
+#define DG_DST_GRAPH     3
+#define DG_SRC_DST_GRAPH 4
 
 /* Data structures for maintaining information about source/destination
  * problems for my flows */
 typedef struct DG_Dst_d {
     unsigned char *bitmasks[DG_NUM_GRAPHS+1];   /* Includes 2-path, src-problem, dst-problem, and src-dst-problem bitmasks */
     stdskl         edge_lists[DG_NUM_GRAPHS+1]; /* Contains edge keys and indexes corresponding to the bitmasks */
-    unsigned char *current_mask;                /* Points to mask being used for this destination */
+    int            current_graph_type;          /* Which graph are we currently using for this dest? (2path, src, dst, src-dst */
     int            problem_count;               /* How many edge problems do we know about for this destination? */
-    int            on_path_dst_problem_count;   /* How many edges in the 2-path graph for this destination are problematic? */
-    int            on_path_src_problem_count;   /* How many src problems (i.e. problems on my own edges) are on the 2-path graph for this dst? */
     int            problems[MAX_NODES + 1];     /* Which neighbors are currently problematic for this dst? */
 } DG_Dst;
 

@@ -185,7 +185,7 @@ static unsigned        Verbose_Tail      = 0;
 #endif
 
 static pkt_stats       Buf[SP_MAX_PKT_SIZE / sizeof(pkt_stats) + 1];
-static pkt_stats       Send_Buf[SP_MAX_PKT_SIZE / sizeof(pkt_stats) + 1];
+/* static pkt_stats       Send_Buf[SP_MAX_PKT_SIZE / sizeof(pkt_stats) + 1]; */
 
 /*********************************************************************
  ********************************************************************/

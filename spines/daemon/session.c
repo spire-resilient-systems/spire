@@ -725,6 +725,24 @@ void Session_Read(int sk, int dummy, void *dummy_p)
                 ses->total_len = Flip_int32(ses->total_len);
             }
 
+            /* Sanity check received length */
+            if (ses->total_len < sizeof(udp_header) || ses-> total_len > MAX_SPINES_CLIENT_MSG + sizeof(udp_header)) {
+                Alarm(PRINT, "Session_Read(): Invalid size recvd from "
+                      "client: recvd %d, max = %d (client data + "
+                      "udp_header)...disconnecting!\n",
+                      ses->total_len, MAX_SPINES_CLIENT_MSG + sizeof(udp_header));
+                
+                /* Disconnect the client */
+                if(ses->r_data == NULL) {
+                    Session_Close(ses->sess_id, SES_DISCONNECT);
+                }
+                else {
+                    Disconnect_Reliable_Session(ses);
+                }
+            }
+                
+
+            /* Set up to read data based on protocols used */
             if (ses->routing_used == MIN_WEIGHT_ROUTING || 
                     ses->routing_used == SOURCE_BASED_ROUTING) 
             {
@@ -738,11 +756,30 @@ void Session_Read(int sk, int dummy, void *dummy_p)
                 if((ses->total_len-sizeof(udp_header)-add_size)%MAX_SPINES_MSG != 0) {
                     ses->frag_num++;
                 }
+                /* Allow 0-byte pkts, but still need to have 1 fragment (which
+                 * will contain the udp header) */
+                if(ses->frag_num == 0) {
+                    ses->frag_num++;
+                }
                 ses->frag_idx = 0;
             }
             else if (ses->routing_used == IT_PRIORITY_ROUTING ||
                         ses->routing_used == IT_RELIABLE_ROUTING) 
             {
+                /* Check for len < MAX_SPINES_CLIENT_MSG above makes this unnecessary */
+                /* if (ses->total_len <= 0 || ses->total_len > MAX_PACKET_SIZE * MAX_PKTS_PER_MESSAGE) { */
+                /* if (ses->total_len <= 0 || ses->total_len > (MAX_SPINES_MSG + sizeof(udp_header)) * MAX_PKTS_PER_MESSAGE) {
+                    Alarm(PRINT, "Session_Read(): Invalid size recvd from "
+                          "client: recvd %d, max = %d...disconnecting!\n",
+                          ses->total_len,
+                          (MAX_SPINES_MSG + sizeof(udp_header)) * MAX_PKTS_PER_MESSAGE);
+                    if(ses->r_data == NULL) {
+                        Session_Close(ses->sess_id, SES_DISCONNECT);
+                    }
+                    else {
+                        Disconnect_Reliable_Session(ses);
+                    }
+                } */
                 ses->read_len = ses->total_len;
                 ses->frag_num = 1;
                 ses->frag_idx = 0;
@@ -1602,7 +1639,8 @@ int Process_Session_Packet(Session *ses)
              * split the original packet and send fragments, but this requires
              * reassembling the packet on the other side. */
             if (ses->read_len > msg_size_avail) {
-                Alarm(PRINT, "Session: packet too big... dropping\r\n");
+                Alarm(PRINT, "Session: packet too big... dropping (len = %d, "
+                      "max = %d)\r\n", ses->read_len, msg_size_avail);
                 return(NO_ROUTE);
             }
                 
@@ -2270,6 +2308,8 @@ int Session_Deliver_Data(Session *ses, char* buff, int16u len, int32u type, int 
 
                 /* Deliver the packet */
                 if((ses->udp_port != -1)&&(flags != 3)) {
+                    udp_header *udp_head_buf;
+
                     /* The session communicates via UDP */
 
                     /* Build UDP scatter to send */
@@ -2279,21 +2319,23 @@ int Session_Deliver_Data(Session *ses, char* buff, int16u len, int32u type, int 
                      * [2] original first data packet payload
                      * [3..n] original 2..n-2 data packet payloads
                      */
+
                     scat.num_elements = frag_pkt->scat.num_elements+2;
+
                     scat.elements[0].len = sizeof(int32);
                     scat.elements[0].buf = (char*)(&sum_len);
-                    for(i=0, j=1; i<frag_pkt->scat.num_elements; i++, j++) {
-                        if(i == 0) {
-                            udp_header *udp_head_buf;
-                            if ((udp_head_buf = (udp_header*) new_ref_cnt(PACK_BODY_OBJ)) == NULL) {
-                                Alarm(EXIT, "Session_Deliver_Data: Failed to allocate packet_body to hold copy of udp_header for fragmented delivery of UDP message.\n");
-                            }
-                            Copy_udp_header((udp_header *)frag_pkt->scat.elements[0].buf, udp_head_buf );
-                            udp_head_buf->len = sum_len;
-                            scat.elements[j].buf = (char*) udp_head_buf;
-                            scat.elements[j].len = sizeof(udp_header);
-                            j++;
-                        }
+
+                    if ((udp_head_buf = (udp_header*) new_ref_cnt(PACK_BODY_OBJ)) == NULL) {
+                        Alarm(EXIT, "Session_Deliver_Data: Failed to allocate packet_body to hold copy of udp_header for fragmented delivery of UDP message.\n");
+                    }
+
+                    Copy_udp_header((udp_header *)frag_pkt->scat.elements[0].buf, udp_head_buf );
+                    udp_head_buf->len = sum_len;
+
+                    scat.elements[1].buf = (char*) udp_head_buf;
+                    scat.elements[1].len = sizeof(udp_header);
+
+                    for(i=0, j=2; i<frag_pkt->scat.num_elements; i++, j++) {
                         scat.elements[j].buf = frag_pkt->scat.elements[i].buf + sizeof(udp_header);
                         scat.elements[j].len = frag_pkt->scat.elements[i].len - sizeof(udp_header);
                     }
@@ -2308,7 +2350,7 @@ int Session_Deliver_Data(Session *ses, char* buff, int16u len, int32u type, int 
                       ses->udp_port, IP1(ses->udp_addr), IP2(ses->udp_addr), IP3(ses->udp_addr), IP4(ses->udp_addr));
 
                     Delete_Frag_Element(&ses->frag_pkts, frag_pkt);
-                    dec_ref_cnt(scat.elements[0].buf);
+                    dec_ref_cnt(udp_head_buf);
                     return(BUFF_EMPTY);
                 }
                 else {

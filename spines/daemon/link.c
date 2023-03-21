@@ -794,9 +794,14 @@ int Link_Send(Link *lk, sys_scatter *scat)
   for (i = 0; i < scat->num_elements; i++)
   {
     cell.scat.elements[i].len = scat->elements[i].len;
-    cell.scat.elements[i].buf = new_ref_cnt(PACK_BODY_OBJ);
+    cell.scat.elements[i].buf = new_ref_cnt(PACK_OBJ);
     if (cell.scat.elements[i].buf == NULL) {
         Alarm(EXIT, "Link_Send: failed to allocate buffer\n");
+    }
+    if (scat->elements[i].len > MAX_PACKET_SIZE) {
+        Alarm(EXIT, "Link_Send: invalid buffer size. For element %d, len is %d, "
+                    "should be <= %d\n", i, scat->elements[i].len,
+                    MAX_PACKET_SIZE);
     }
     memcpy(cell.scat.elements[i].buf, scat->elements[i].buf, scat->elements[i].len);
   }
@@ -953,6 +958,7 @@ void Check_Link_Loss(Network_Leg *leg, int16u seq_no, int link_type)
   } 
 
   for (i = (*seq_ptr + 1) % PACK_MAX_SEQ; i != seq_no; i = (i+1) % PACK_MAX_SEQ) {
+    Alarm(DEBUG, "GAP: %d\n", i);
     l_data->loss_rate = (l_data->loss_rate * LOSS_DECAY_FACTOR) + (1.0 - LOSS_DECAY_FACTOR);
   }
   l_data->loss_rate = (l_data->loss_rate * LOSS_DECAY_FACTOR);

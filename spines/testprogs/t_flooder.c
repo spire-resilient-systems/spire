@@ -51,11 +51,12 @@ static int  Num_bytes;
 static int  Rate;
 static int  Num_pkts;
 static char IP[80];
+static char SRC_IP[80];
 static char filename[80];
 static int  fileflag;
 static int  sendPort;
 static int  recvPort;
-static int  Address;
+static int  Src_Address;
 static int  Send_Flag;
 static int  report_latency_stats;
 static int  verbose_mode;
@@ -164,6 +165,20 @@ int main( int argc, char *argv[] )
 	    perror("Failed to set TCP_NODELAY\n");
 	    exit(1);
 	}
+
+        name.sin_family = AF_INET;
+        if (Src_Address != 0) {
+            name.sin_addr.s_addr = htonl(Src_Address);
+        } else {
+            name.sin_addr.s_addr = INADDR_ANY;
+        }
+        name.sin_port = htons(recvPort);
+
+        if(bind(sk, (struct sockaddr *)&name, sizeof(name) ) < 0) {
+	  perror("err: bind");
+	  exit(1);
+        }
+ 
 
 #if 0	
 	/* Increasing TCP buffer to simulate application buffers */
@@ -615,13 +630,15 @@ int main( int argc, char *argv[] )
 
 static  void    Usage(int argc, char *argv[])
 {
+    int i1, i2, i3, i4;
+
     /* Setting defaults */
     Num_bytes             = 1000;
     Rate                  = -1;
     Num_pkts              = 10000;
     sendPort              = 8400;
     recvPort              = 8400;
-    Address               = 0;
+    Src_Address           = 0;
     Send_Flag             = 0;
     fileflag              = 0;
     report_latency_stats  = 0;
@@ -659,6 +676,11 @@ static  void    Usage(int argc, char *argv[])
 	    sscanf(argv[1], "%s", filename );
 	    fileflag = 1;
 	    argc--; argv++;
+	} else if( !strncmp( *argv, "-i", 2 ) ){
+            sscanf(argv[1], "%s", SRC_IP );
+            sscanf(SRC_IP ,"%d.%d.%d.%d",&i1, &i2, &i3, &i4);
+            Src_Address = ((i1 << 24 ) | (i2 << 16) | (i3 << 8) | i4);
+            argc--; argv++;
 	}else{
 	    printf( "Usage: t_flooder\r\n"
 		    "\t[-d <port number>] : to send packets on, default is 8400\r\n"
@@ -670,6 +692,7 @@ static  void    Usage(int argc, char *argv[])
 		    "\t[-f <filename>   ] : file where to save statistics\r\n"
 		    "\t[-v              ] : print verbose\r\n"
 		    "\t[-q              ] : report latency stats (required tight clock sync)\r\n"
+		    "\t[-i              ] : source address to bind to)\r\n"
 		    "\t[-s              ] : sender flooder\r\n");
 	    exit( 0 );
 	}

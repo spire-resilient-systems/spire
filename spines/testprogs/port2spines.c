@@ -330,7 +330,7 @@ static void Usage(int argc, char *argv[])
     } else if( !strncmp( *argv, "-i", 2 ) ){
       sscanf(argv[1], "%d", (int*)&Reporting_Interval );
       argc--; argv++;
-      if (Reporting_Interval < 0)
+      if (Reporting_Interval <= 0)
         Alarm(EXIT, "Invalid printing interval specified: %d. Must be > 0!\r\n", Reporting_Interval);
     } else if( !strncmp( *argv, "-v", 2 ) ){
       verbose_mode = 1;

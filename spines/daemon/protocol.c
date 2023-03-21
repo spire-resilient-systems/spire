@@ -413,7 +413,7 @@ int16u Dissemination_Header_Size(int dissemination)
 
             size += sizeof(rel_flood_tail);
             size += sizeof(rel_flood_hbh_ack);
-            size += sizeof(fragment_header);
+            size += sizeof(fragment_header); /* AB: why is this included twice? */
             break;
 
         case SOURCE_BASED_ROUTING:

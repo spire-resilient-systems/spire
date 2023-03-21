@@ -43,11 +43,6 @@
 #include "dissem_graphs.h"
 #undef ext_dg
 
-#define DG_K2_GRAPH      1
-#define DG_SRC_GRAPH     2
-#define DG_DST_GRAPH     3
-#define DG_SRC_DST_GRAPH 4
-
 /* Data types used for representing graphs during dissemination graph
  * computation */
 typedef struct DG_Node {
@@ -264,6 +259,154 @@ static int Node_Cmp(const void *l, const void *r)
         return 1;
     else
         return 0;
+}
+
+static Graph *Destination_Problem_Shortest_Path_Tree(Graph *g, Node_ID src, Node_ID dst, double max_latency)
+{
+    stdskl sp_nodes;
+    stdhash finished_sp_nodes;
+    SP_Node *min;
+    SP_Node *n;
+    DG_Edge *e;
+    Edge_Key *e_key;
+    Edge_Key search_key;
+    DG_Edge *search_val;
+    Graph *result_g;
+    stdit it, nit, min_it, sit;
+    double cost;
+
+    Alarm(DEBUG, "Destination_Problem_Shortest_Path_Tree called for source %lu\n", src);
+
+    /* Initialize result graph */
+    if ((result_g = malloc(sizeof(Graph))) == NULL) {
+        Alarm(EXIT, "ERROR: failed to allocate graph\n");
+    }
+    Graph_Init(result_g);
+
+    /* Build list of SP_Nodes and start building result */
+    stdskl_construct(&sp_nodes, sizeof(Node_ID), sizeof(SP_Node *), Node_Cmp);
+    stdhash_construct(&finished_sp_nodes, sizeof(Node_ID), sizeof(SP_Node *), Node_Cmp, 0, 0);
+    SP_Add_Node(&sp_nodes, src);
+    for (stdskl_begin(&g->Edges, &it); !stdskl_is_end(&g->Edges, &it); stdskl_it_next(&it))
+    {
+        e = (DG_Edge *)stdskl_it_val(&it);
+        e_key = (Edge_Key *)stdskl_it_key(&it);
+
+        /* Don't include edges adjacent to the destination, since we don't want
+         * to use those in our tree to the target neighbors */
+        if (e_key->src_id == dst || e_key->dst_id == dst)
+            continue;
+
+        SP_Add_Edge(&sp_nodes, e_key->src_id, e_key->dst_id, e);
+    }
+
+    /* Initialize source to distance 0 */
+    stdskl_find(&sp_nodes, &it, &src);
+    if (stdskl_is_end(&sp_nodes, &it)) {
+        Alarm(DEBUG, "Shortest_Path_Tree: Error: source does not appear in graph\n");
+        goto end;
+    }
+    n = *(SP_Node **) stdit_val(&it);
+    n->src_dist = 0;
+
+    /* Find shortest path from source to all other nodes */
+    while (!stdskl_empty(&sp_nodes))
+    {
+        /* Find the node at the shortest distance from the source */
+        min = NULL;
+        for (stdskl_begin(&sp_nodes, &it); !stdskl_is_end(&sp_nodes, &it); stdit_next(&it))
+        {
+            n = *(SP_Node **) stdit_val(&it);
+            if (min == NULL || n->src_dist < min->src_dist) {
+                min = n;
+                min_it = it;
+            }
+        }
+
+        /* If no node was reachable from the source, there is no path and we're done */
+        if (min->src_dist == DBL_MAX) {
+            break;
+        }
+
+        /* Otherwise, we found some node, so update its neighbors' distances from the source */
+        for (stdskl_begin(&min->nghbrs, &nit); !stdskl_is_end(&min->nghbrs, &nit); stdskl_it_next(&nit))
+        {
+            n = *(SP_Node **)stdskl_it_val(&nit);
+            e = *(DG_Edge **)stdskl_it_key(&nit);
+            cost = e->cost;
+
+            /* See if you can update distance */
+            if (min->src_dist + cost < n->src_dist) {
+                if (n->src_dist == DBL_MAX) n->src_dist = -1;
+                Alarm(DEBUG, "Updated %lu's distance from %f to %f\n", n->id, n->src_dist, min->src_dist + cost);
+                n->src_dist = min->src_dist + cost;
+                n->prev = min;
+                n->prev_dist = cost;
+                n->prev_edge = e;
+            }
+        }
+
+        /* Move handled node to finished list */
+        stdskl_erase(&sp_nodes, &min_it);
+        stdhash_insert(&finished_sp_nodes, &nit, &min->id, &min);
+    }
+
+    /* Add relevant paths to result graph */
+    /* Make sure src always appears, to handle case of single-node graph */
+    Graph_add_node(result_g, src); 
+    for (stdhash_begin(&finished_sp_nodes, &it); !stdhash_is_end(&finished_sp_nodes, &it); stdit_next(&it))
+    {
+        n = *(SP_Node **)stdit_val(&it);
+
+        /* Check and see if this node is a viable target neigbor of the
+         * destination. If not, we don't care about it so just continue */
+        search_key.src_id = n->id;
+        search_key.dst_id = dst;
+        /* Not a neighbor of the destination */
+        stdskl_find(&g->Edges, &sit, &search_key);
+        if (stdskl_is_end(&g->Edges, &sit))
+            continue;
+        /* Not reachable within the time constraint */
+        search_val = (DG_Edge *) stdskl_it_val(&sit);
+        if (search_val->cost + n->src_dist > max_latency)
+            continue;
+
+        /* add in the edge connecting this node to the destination */
+        Alarm(DEBUG, "Adding edge (%d, %d): %f, %hu\n", n->id, dst, search_val->cost, search_val->index);
+        Graph_add_edge(result_g, n->id, dst, search_val->cost, search_val->index);
+
+        /* This is a viable target! Add its path from the source to our graph
+         * */
+        Alarm(DEBUG, "Target destination neighbor %d for (%d,%d)\t:\t%f + %f = %f < %f\n", n->id, src, dst, search_val->cost, n->src_dist, search_val->cost + n->src_dist, max_latency);
+        while (n->id != src)
+        {
+            Alarm(DEBUG, "Adding edge (%d, %d): %f, %hu\n", n->prev->id, n->id, n->prev_dist, n->prev_edge->index);
+            Graph_add_edge(result_g, n->prev->id, n->id, n->prev_dist, n->prev_edge->index);
+            n = n->prev;
+        }
+    }
+
+    /* Warn if not all nodes were reachable */
+    if (!stdskl_empty(&sp_nodes)) {
+        Alarm(DEBUG, "Shortest_Path_Tree: Not all nodes were reachable from source %lu!\n", src);
+    }
+
+    /* Clean up */
+end:
+    for (stdskl_begin(&sp_nodes, &it); !stdskl_is_end(&sp_nodes, &it); stdit_next(&it))
+    {
+        stdskl_destruct(&(*(SP_Node **)stdit_val(&it))->nghbrs);
+        free(*(SP_Node **)stdit_val(&it));
+    }
+    for (stdhash_begin(&finished_sp_nodes, &it); !stdhash_is_end(&finished_sp_nodes, &it); stdit_next(&it))
+    {
+        stdskl_destruct(&(*(SP_Node **)stdit_val(&it))->nghbrs);
+        free(*(SP_Node **)stdit_val(&it));
+    }
+    stdskl_destruct(&sp_nodes);
+    stdhash_destruct(&finished_sp_nodes);
+
+    return result_g;
 }
 
 static Graph *Shortest_Path_Tree(Graph *g, Node_ID src)
@@ -578,11 +721,13 @@ static unsigned char *Source_Destination_Problem_Bitmask_from_SDP_Graphs(Node_ID
     stdit it;
     DG_Edge *e;
     Edge_Key *e_key;
+#if 0
     int num_paths;
     SD_Edge *path1, *path2, *tmp_path;
     int path1_count, path2_count, tmp_count, i;
     int32u next_id;
     Edge *edge_ptr;
+#endif
 
     if (src_g == NULL || dst_g == NULL)
         return Graph_to_Bitmask(NULL);
@@ -612,6 +757,7 @@ static unsigned char *Source_Destination_Problem_Bitmask_from_SDP_Graphs(Node_ID
     /* Set up mask to return */
     ret_mask = Graph_to_Bitmask(ret_g);
 
+#if 0
     /* Check that we actually have two disjoint paths */
     Set_Edges_to_Base_Cost(ret_g);
 
@@ -771,6 +917,7 @@ static unsigned char *Source_Destination_Problem_Bitmask_from_SDP_Graphs(Node_ID
         edge_ptr = Get_Edge(temp_node_ip[e_key->src_id], temp_node_ip[e_key->dst_id]);
         edge_ptr->cost = -1;
     }
+#endif
 
     Graph_Finish(ret_g);
     free(ret_g);
@@ -833,7 +980,7 @@ static Graph *Source_Problem_Graph(Graph *g, Node_ID src_id, Node_ID dst_id, dou
     return ret_g;
 }
 
-static Graph *Destination_Problem_Graph(Graph *g, Node_ID src_id, Node_ID dst_id, double max_latency)
+static Graph *Destination_Problem_SLST_Graph(Graph *g, Node_ID src_id, Node_ID dst_id, double max_latency)
 {
     stdskl Steiner_edges;
     stdskl Steiner_nodes;
@@ -966,6 +1113,21 @@ end:
     stdskl_destruct(&Steiner_nodes);
 
     /* Return the result graph we've constructed */
+    return ret_g;
+}
+
+static Graph *Destination_Problem_Graph(Graph *g, Node_ID src_id, Node_ID dst_id, double max_latency)
+{
+    Graph *ret_g;
+
+    ret_g = Destination_Problem_Shortest_Path_Tree(g, src_id, dst_id, max_latency);
+    if (stdskl_size(&ret_g->Edges) == 0) {
+        Alarm(PRINT, "Failed to find destination problem graph for %d->%d\n", src_id, dst_id);
+        Graph_Finish(ret_g);
+        free(ret_g);
+        ret_g = NULL;
+    }
+
     return ret_g;
 }
 
@@ -1203,7 +1365,7 @@ void DG_Compute_Graphs(void)
     /* Initialize */
     for (i = 0; i <= MAX_NODES; i++)
     {
-        DG_Destinations[i].current_mask = NULL;
+        DG_Destinations[i].current_graph_type = DG_NONE_GRAPH;
         for (j = 0; j <= DG_NUM_GRAPHS; j++)
         {
             DG_Destinations[i].bitmasks[j] = NULL;
@@ -1215,8 +1377,6 @@ void DG_Compute_Graphs(void)
             DG_Destinations[i].problems[j] = 0;
         }
         DG_Destinations[i].problem_count = 0;
-        DG_Destinations[i].on_path_dst_problem_count = 0;
-        DG_Destinations[i].on_path_src_problem_count = 0;
 
         DG_Source.problems[i] = 0;
     }
@@ -1292,7 +1452,7 @@ void DG_Compute_Graphs(void)
         }
 
         /* Initialize current bitmask to k = 2 */
-        DG_Destinations[dest_id].current_mask = DG_Destinations[dest_id].bitmasks[DG_K2_GRAPH];
+        DG_Destinations[dest_id].current_graph_type = DG_K2_GRAPH;
 
         /* If we failed to find src/dst graphs for the destination (i.e.
          * because it is not reachable within the chosen latency constraint),
@@ -1405,14 +1565,14 @@ int DG_Problem_On_Graph(stdskl *edge_list, Edge_Key edge_key, int type)
 void DG_Process_Edge_Update(Edge *edge, int16 new_cost)
 {
     DG_Dst *dg_dst, *tmp_dst;
-    Edge_Key edge_key;
+    Edge_Key edge_key, tmp_edge_key;
     stdit it;
     int16u edge_index;
     int i;
 
     /* Dissemination graph-based routing only works with problem-type routing
      * (as it requires identifying problems at the source and/or destination of
-     * each flow to select dissemination graphs */
+     * each flow to select dissemination graphs) */
     if (Route_Weight != PROBLEM_ROUTE)
         return;
 
@@ -1445,7 +1605,7 @@ void DG_Process_Edge_Update(Edge *edge, int16 new_cost)
                  "%d -> %d\n", edge_key.src_id, edge_key.dst_id, edge_index, edge->cost, new_cost);
 
     /* Update problem counts and graphs based on this update */
-    if (new_cost < 0) {
+    if (new_cost < 0) { /* PROBLEM STARTED */
         /* If we already knew about this problem, nothing more to do */
         stdskl_lowerb(&DG_Problem_List, &it, &edge_key);
         if (!stdskl_is_end(&DG_Problem_List, &it) && DG_Edge_Cmp(&edge_key, (Edge_Key *)stdit_key(&it)) == 0)
@@ -1460,18 +1620,18 @@ void DG_Process_Edge_Update(Edge *edge, int16 new_cost)
         for (i = 1; i <= MAX_NODES; i++)
         {
             tmp_dst = &DG_Destinations[i];
-            if (tmp_dst->current_mask == NULL) continue;
+            if (tmp_dst->current_graph_type == DG_NONE_GRAPH) continue;
 
             /* Check whether newly problematic edge is on the current graph for
              * this destination: if we are currently using source graph, ignore
              * additional source issues; if we are currently using dest graph,
              * ignore additional dest issues */
-            if ((tmp_dst->current_mask == tmp_dst->bitmasks[DG_SRC_GRAPH] && edge_key.src_id != My_ID) ||
-                (tmp_dst->current_mask == tmp_dst->bitmasks[DG_DST_GRAPH] && edge_key.dst_id != i))
+            if ((tmp_dst->current_graph_type == DG_SRC_GRAPH && edge_key.src_id != My_ID) ||
+                (tmp_dst->current_graph_type == DG_DST_GRAPH && edge_key.dst_id != i))
             {
-                if (DG_Edge_In_Graph(edge_index, tmp_dst->current_mask)) {
-                    Alarm(PRINT, "DG_Process_Edge_Update: switching dest %d to source-dest graph\n", i);
-                    tmp_dst->current_mask = tmp_dst->bitmasks[DG_SRC_DST_GRAPH];
+                if (DG_Edge_In_Graph(edge_index, tmp_dst->bitmasks[tmp_dst->current_graph_type])) {
+                    Alarm(PRINT, "DG_Process_Edge_Update: switching dest %d to source-dest graph from %d\n", i, tmp_dst->current_graph_type);
+                    tmp_dst->current_graph_type = DG_SRC_DST_GRAPH;
                 }
             }
         }
@@ -1480,38 +1640,34 @@ void DG_Process_Edge_Update(Edge *edge, int16 new_cost)
 
         /* only need to update if we have dissemination graphs for this
          * destination and we don't know about this problem already */
-        if (dg_dst->current_mask != NULL && dg_dst->problems[edge_key.src_id] == 0) {
+        if (dg_dst->current_graph_type != DG_NONE_GRAPH && dg_dst->problems[edge_key.src_id] == 0) {
 
             dg_dst->problems[edge_key.src_id] = 1;
             dg_dst->problem_count++;
-            if (DG_Edge_In_Graph(edge_index, dg_dst->bitmasks[DG_K2_GRAPH])) {
-                dg_dst->on_path_dst_problem_count++;
-            }
-            Alarm(PRINT, "New problem on (%d, %d) prob_count %d, onpath count: "
-                         "%d\n", edge_key.src_id, edge_key.dst_id,
-                         dg_dst->problem_count, dg_dst->on_path_dst_problem_count);
+            Alarm(PRINT, "New problem on (%d, %d) prob_count %d\n",
+                         edge_key.src_id, edge_key.dst_id,
+                         dg_dst->problem_count);
 
             /* Check if we need to switch to dst or src-dst graph */
-            if (dg_dst->problem_count >= DG_PROB_COUNT_THRESH ||
-                dg_dst->on_path_dst_problem_count >= DG_ON_PATH_THRESH)
+            if (dg_dst->problem_count == DG_PROB_COUNT_THRESH)
             {
                 /* New destination problem detected */
                 Alarm(PRINT, "DG_Process_Edge_Update: DETECTED destination problem on "
                              "edge (%u, %u) %d %d\n", edge_key.src_id,
                              edge_key.dst_id, edge->cost, new_cost);
 
-                if (dg_dst->current_mask == dg_dst->bitmasks[DG_SRC_GRAPH]) {
+                if (dg_dst->current_graph_type == DG_SRC_GRAPH) {
                     /* We were using src graph, so switch to src-dst */
-                    dg_dst->current_mask = dg_dst->bitmasks[DG_SRC_DST_GRAPH];
-                    Alarm(PRINT, "Now using src-dst mask\n");
-                } else if (dg_dst->current_mask == dg_dst->bitmasks[DG_K2_GRAPH]) {
+                    dg_dst->current_graph_type = DG_SRC_DST_GRAPH;
+                    Alarm(PRINT, "Now using src-dst mask (from src)\n");
+                } else if (dg_dst->current_graph_type == DG_K2_GRAPH) {
                     /* We were using kpaths: Check for existing problems on
                      * the dst graph before switching to it */
                     if (DG_Problem_On_Graph(&dg_dst->edge_lists[DG_DST_GRAPH], edge_key, DG_DST_GRAPH)) {
-                        dg_dst->current_mask = dg_dst->bitmasks[DG_SRC_DST_GRAPH];
-                        Alarm(PRINT, "Now using src-dst mask\n");
+                        dg_dst->current_graph_type = DG_SRC_DST_GRAPH;
+                        Alarm(PRINT, "Now using src-dst mask (from other)\n");
                     } else {
-                        dg_dst->current_mask = dg_dst->bitmasks[DG_DST_GRAPH];
+                        dg_dst->current_graph_type = DG_DST_GRAPH;
                         Alarm(PRINT, "Now using dst mask\n");
                     }
                 }
@@ -1524,46 +1680,41 @@ void DG_Process_Edge_Update(Edge *edge, int16 new_cost)
             DG_Source.problems[edge_key.dst_id] = 1;
             DG_Source.problem_count++;
 
-            for (i = 1; i <= MAX_NODES; i++)
+            if (DG_Source.problem_count == DG_PROB_COUNT_THRESH)
             {
-                tmp_dst = &DG_Destinations[i];
+                Alarm(PRINT, "DG_Process_Edge_Update: DETECTED source problem on "
+                             "edge (%u, %u) %d %d\n", edge_key.src_id,
+                             edge_key.dst_id, edge->cost, new_cost);
 
-                /* ignore if we don't have dissem graphs for this dst */
-                if (tmp_dst->current_mask == NULL) continue;
-
-                /* Update on-path problem counts for this destination */
-                if (DG_Edge_In_Graph(edge_index, tmp_dst->bitmasks[DG_K2_GRAPH])) {
-                    tmp_dst->on_path_src_problem_count++;
-                }
-
-                /* Check if we actually need to switch to a source or src-dst
-                 * graph for this destination */
-                if (DG_Source.problem_count >= DG_PROB_COUNT_THRESH ||
-                    tmp_dst->on_path_src_problem_count >= DG_ON_PATH_THRESH)
+                for (i = 1; i <= MAX_NODES; i++)
                 {
-                    Alarm(PRINT, "DG_Process_Edge_Update: DETECTED source problem on "
-                                 "edge (%u, %u) %d %d for %d\n", edge_key.src_id,
-                                 edge_key.dst_id, edge->cost, new_cost, i);
+                    tmp_dst = &DG_Destinations[i];
 
-                    if (tmp_dst->current_mask == tmp_dst->bitmasks[DG_DST_GRAPH]) {
+                    /* ignore if we don't have dissem graphs for this dst */
+                    if (tmp_dst->current_graph_type == DG_NONE_GRAPH) continue;
+
+                    /* Check if we should switch to a source or src-dst graph
+                     * for this destination */
+
+                    if (tmp_dst->current_graph_type == DG_DST_GRAPH) {
                         /* We were using dst graph, so switch to src-dst */
-                        tmp_dst->current_mask = tmp_dst->bitmasks[DG_SRC_DST_GRAPH];
-                        Alarm(PRINT, "Now using src-dst mask\n");
-                    } else if (tmp_dst->current_mask == tmp_dst->bitmasks[DG_K2_GRAPH]) {
+                        tmp_dst->current_graph_type = DG_SRC_DST_GRAPH;
+                        Alarm(PRINT, "Now using src-dst mask for %d (from dst)\n", i);
+                    } else if (tmp_dst->current_graph_type == DG_K2_GRAPH) {
                         /* We were using kpaths: Check for existing problems on
                          * the source graph before switching to it */
                         if (DG_Problem_On_Graph(&tmp_dst->edge_lists[DG_SRC_GRAPH], edge_key, DG_SRC_GRAPH)) {
-                            tmp_dst->current_mask = tmp_dst->bitmasks[DG_SRC_DST_GRAPH];
-                            Alarm(PRINT, "Now using src-dst mask\n");
+                            tmp_dst->current_graph_type = DG_SRC_DST_GRAPH;
+                            Alarm(PRINT, "Now using src-dst mask for %d (from other)\n", i);
                         } else {
-                            tmp_dst->current_mask = tmp_dst->bitmasks[DG_SRC_GRAPH];
-                            Alarm(PRINT, "Now using src mask\n");
+                            tmp_dst->current_graph_type = DG_SRC_GRAPH;
+                            Alarm(PRINT, "Now using src mask for %d\n", i);
                         }
                     }
                 }
             }
         }
-    } else {
+    } else { /* PROBLEM RESOLVED */
         /* If we don't have a problem currently marked on this edge, nothing to do */
         if (stdskl_is_end(&DG_Problem_List, stdskl_find(&DG_Problem_List, &it, &edge_key)))
             return;
@@ -1573,60 +1724,125 @@ void DG_Process_Edge_Update(Edge *edge, int16 new_cost)
         stdskl_erase(&DG_Problem_List, &it);
 
         /* RESOLVED DESTINATION PROBLEM */
-        if (dg_dst->current_mask != NULL && dg_dst->problems[edge_key.src_id] == 1) {
+        if (dg_dst->current_graph_type != DG_NONE_GRAPH && dg_dst->problems[edge_key.src_id] == 1) {
             /* Update problem counts */
             dg_dst->problems[edge_key.src_id] = 0;
-            dg_dst->problem_count--;
-            if (DG_Edge_In_Graph(edge_index, dg_dst->bitmasks[DG_K2_GRAPH])) {
-                dg_dst->on_path_dst_problem_count--;
+
+            /* Switch back to kpaths graph or src graph if we can (from
+             * destination or src-dst) */
+            if (dg_dst->problem_count == DG_PROB_COUNT_THRESH)
+            {
+                if (dg_dst->current_graph_type == DG_DST_GRAPH)
+                {
+                    Alarm(PRINT, "DG_Process_Edge_Update: RESOLVED destination problem on "
+                                 "edge (%u, %u) %d %d (from dst to k2)\n", edge_key.src_id,
+                                 edge_key.dst_id, edge->cost, new_cost);
+                    dg_dst->current_graph_type = DG_K2_GRAPH;
+                } else if (dg_dst->current_graph_type == DG_SRC_DST_GRAPH) {
+                    tmp_edge_key.src_id = My_ID;
+                    tmp_edge_key.dst_id = edge_key.dst_id;
+                    if (DG_Source.problem_count < DG_PROB_COUNT_THRESH) {
+                        Alarm(PRINT, "DG_Process_Edge_Update: RESOLVED destination problem on "
+                                     "edge (%u, %u) %d %d (from src-dst to k2)\n", edge_key.src_id,
+                                     edge_key.dst_id, edge->cost, new_cost);
+                        dg_dst->current_graph_type = DG_K2_GRAPH;
+                    } else if (!DG_Problem_On_Graph(&dg_dst->edge_lists[DG_SRC_GRAPH], tmp_edge_key, DG_SRC_GRAPH)) {
+                        Alarm(PRINT, "DG_Process_Edge_Update: RESOLVED destination problem on "
+                                     "edge (%u, %u) %d %d (from src-dst to src)\n", edge_key.src_id,
+                                     edge_key.dst_id, edge->cost, new_cost);
+                        dg_dst->current_graph_type = DG_SRC_GRAPH;
+                    }
+                    /* If there is still a non-source problem on the source
+                     * graph, stick with the src-dst graph */
+                }
             }
 
-            /* Switch back to kpaths graph if we can: Could potentially switch
-             * back to source only graph if we were using source-destination,
-             * but being conservative for now */
-            if (dg_dst->current_mask != dg_dst->bitmasks[DG_K2_GRAPH] &&
-                dg_dst->problem_count < DG_PROB_COUNT_THRESH &&
-                dg_dst->on_path_dst_problem_count < DG_ON_PATH_THRESH &&
-                DG_Source.problem_count < DG_PROB_COUNT_THRESH &&
-                dg_dst->on_path_src_problem_count < DG_ON_PATH_THRESH)
-            {
-                Alarm(PRINT, "DG_Process_Edge_Update: RESOLVED destination problem on "
-                             "edge (%u, %u) %d %d\n", edge_key.src_id,
-                             edge_key.dst_id, edge->cost, new_cost);
-                dg_dst->current_mask = dg_dst->bitmasks[DG_K2_GRAPH];
-            }
+            /* Update count */
+            dg_dst->problem_count--;
         }
 
         /* RESOLVED SOURCE PROBLEM */
         if (edge_key.src_id == My_ID && DG_Source.problems[edge_key.dst_id] == 1) {
             DG_Source.problems[edge_key.dst_id] = 0;
-            DG_Source.problem_count--;
 
-            for (i = 1; i <= MAX_NODES; i++)
+            if (DG_Source.problem_count == DG_PROB_COUNT_THRESH)
             {
-                tmp_dst = &DG_Destinations[i];
+                for (i = 1; i <= MAX_NODES; i++)
+                {
+                    tmp_dst = &DG_Destinations[i];
 
-                /* ignore if we don't have dissem graphs for this dst */
-                if (tmp_dst->current_mask == NULL) continue;
+                    /* ignore if we don't have dissem graphs for this dst */
+                    if (tmp_dst->current_graph_type == DG_NONE_GRAPH) continue;
 
-                /* Update on-path problem count for this destination */
-                if (DG_Edge_In_Graph(edge_index, tmp_dst->bitmasks[DG_K2_GRAPH])) {
-                    tmp_dst->on_path_src_problem_count--;
+                    /* Alarm(PRINT, "Evaluating source problem resolution for %d\n", i);
+                    Alarm(PRINT, "\tsrc prob count: %d\n", DG_Source.problem_count);
+                    Alarm(PRINT, "\tdst prob count: %d\n", tmp_dst->problem_count);
+                    Alarm(PRINT, "\tcurrent graph: %d\n", tmp_dst->current_graph_type); */
+
+                    if (tmp_dst->current_graph_type == DG_SRC_GRAPH) {
+                        Alarm(PRINT, "DG_Process_Edge_Update: RESOLVED source problem on "
+                                     "edge (%u, %u) %d %d for %d (from src to k2)\n", edge_key.src_id,
+                                     edge_key.dst_id, edge->cost, new_cost, i);
+                        tmp_dst->current_graph_type = DG_K2_GRAPH;
+                    } else if (tmp_dst->current_graph_type == DG_SRC_DST_GRAPH) {
+                        tmp_edge_key.src_id = My_ID;
+                        tmp_edge_key.dst_id = i;
+
+                        if (tmp_dst->problem_count < DG_PROB_COUNT_THRESH) {
+                            Alarm(PRINT, "DG_Process_Edge_Update: RESOLVED source problem on "
+                                         "edge (%u, %u) %d %d for %d (from src-dst to k2)\n", edge_key.src_id,
+                                         edge_key.dst_id, edge->cost, new_cost, i);
+                            tmp_dst->current_graph_type = DG_K2_GRAPH;
+                        } else if (!DG_Problem_On_Graph(&tmp_dst->edge_lists[DG_DST_GRAPH], tmp_edge_key, DG_DST_GRAPH)) {
+                            Alarm(PRINT, "DG_Process_Edge_Update: RESOLVED source problem on "
+                                         "edge (%u, %u) %d %d for %d (from src-dst to dst)\n", edge_key.src_id,
+                                         edge_key.dst_id, edge->cost, new_cost, i);
+                            tmp_dst->current_graph_type = DG_DST_GRAPH;
+                        }
+                        /* If there is still a non-dest problem on the dst
+                         * graph, stick with the src-dst graph */
+                    }
+                }
+            }
+
+            DG_Source.problem_count--;
+        }
+
+        /* Check for resolution of middle of network problems */
+        for (i = 1; i <= MAX_NODES; i++)
+        {
+            tmp_dst = &DG_Destinations[i];
+
+            /* See if resolution of "middle-of-network" problem allows us
+             * to go from src-dst graph to just source or just destination
+             * */
+            if (tmp_dst->current_graph_type == DG_SRC_DST_GRAPH)
+            {
+                if (DG_Source.problem_count < DG_PROB_COUNT_THRESH &&
+                    tmp_dst->problem_count < DG_PROB_COUNT_THRESH) {
+                       Alarm(EXIT, "ERROR!: No source OR destination problem "
+                             "when using src-dst graph for destination %d. Source "
+                             "prob count %d, Dest prob count %d\n",
+                             i, DG_Source.problem_count, tmp_dst->problem_count);
                 }
 
-                /* Switch back to kpaths graph if we can: Could potentially switch
-                 * back to dst only graph if we were using source-destination,
-                 * but being conservative for now */
-                if (tmp_dst->current_mask != tmp_dst->bitmasks[DG_K2_GRAPH] &&
-                    DG_Source.problem_count < DG_PROB_COUNT_THRESH &&
-                    tmp_dst->on_path_src_problem_count < DG_ON_PATH_THRESH &&
-                    tmp_dst->problem_count < DG_PROB_COUNT_THRESH &&
-                    tmp_dst->on_path_dst_problem_count < DG_ON_PATH_THRESH)
-                {
-                    Alarm(PRINT, "DG_Process_Edge_Update: RESOLVED source problem on "
-                                 "edge (%u, %u) %d %d for %d\n", edge_key.src_id,
-                                 edge_key.dst_id, edge->cost, new_cost, i);
-                    tmp_dst->current_mask = tmp_dst->bitmasks[DG_K2_GRAPH];
+                tmp_edge_key.src_id = My_ID;
+                tmp_edge_key.dst_id = i;
+
+                if (DG_Source.problem_count < DG_PROB_COUNT_THRESH) {
+                    if (!DG_Problem_On_Graph(&tmp_dst->edge_lists[DG_DST_GRAPH], tmp_edge_key, DG_DST_GRAPH)) {
+                        Alarm(PRINT, "DG_Process_Edge_Update: RESOLVED mid-net problem on "
+                                     "edge (%u, %u) %d %d (from src-dst to dst) for %d\n", edge_key.src_id,
+                                     edge_key.dst_id, edge->cost, new_cost, i);
+                        tmp_dst->current_graph_type = DG_DST_GRAPH;
+                    }
+                } else if (tmp_dst->problem_count < DG_PROB_COUNT_THRESH) {
+                    if (!DG_Problem_On_Graph(&tmp_dst->edge_lists[DG_SRC_GRAPH], tmp_edge_key, DG_SRC_GRAPH)) {
+                        Alarm(PRINT, "DG_Process_Edge_Update: RESOLVED mid-net problem on "
+                                     "edge (%u, %u) %d %d (from src-dst to src) for %d\n", edge_key.src_id,
+                                     edge_key.dst_id, edge->cost, new_cost, i);
+                        tmp_dst->current_graph_type = DG_SRC_GRAPH;
+                    }
                 }
             }
         }

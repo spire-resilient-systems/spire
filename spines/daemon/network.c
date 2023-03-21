@@ -83,7 +83,7 @@
 
 #include "spines.h"
 
-#define MAX_LATENCY 300
+#define MAX_LATENCY 600
 
 extern char Config_File_Found;
 
@@ -815,6 +815,7 @@ int Network_Leg_Update_Cost(Network_Leg *leg)
     return -1;
   }
 
+  Alarm(PRINT, "Network_Leg_Update_Cost: setting cost %hd, loss %f, latency %f\n", cost16, c_data->est_loss_rate, c_data->rtt);
   Network_Leg_Set_Cost(leg, cost16);
 
   return 1;
@@ -823,16 +824,23 @@ int Network_Leg_Update_Cost(Network_Leg *leg)
 float Expected_Latency(float rtt, float loss_rate)
 {
     float tmp, tmp1, tmp2, cost;
+    float loss_squared, loss_cubed;
+    float recovery_latency;
 
     tmp = rtt / 2.0;  /* one way delay */
 
     if (loss_rate > 0.0) {
+        loss_squared = loss_rate * loss_rate;
+        loss_cubed = loss_squared * loss_rate;
+
+        recovery_latency = tmp * 3.0 + 10.0;
+        if (recovery_latency > MAX_LATENCY) recovery_latency = MAX_LATENCY;
 
         /* 2*p^2 * max_latency (lost even after recovery) */
-        tmp1 = (float) (2.0 * loss_rate * loss_rate * MAX_LATENCY);
+        tmp1 = (float) ((2.0 * loss_squared - loss_cubed)  * MAX_LATENCY);
 
         /* (p - 2*p^2)(3*delay + delta) */
-        tmp2 = (float) ((tmp * 3.0 + 10.0) * (loss_rate - 2.0 * loss_rate * loss_rate));
+        tmp2 = (float) ((tmp * 3.0 + 10.0) * (loss_rate - 2.0 * loss_squared + loss_cubed));
 
         /* (1-p)*delay + (p - 2*p^2)(3*delay + delta) + 2*p^2 * max_latency */
         tmp  = (float) (tmp * (1.0 - loss_rate) + tmp1 + tmp2);

@@ -61,6 +61,7 @@
 #include "spines.h"
 
 static sp_time Client_Cost_Stats_Timeout = {30, 0};
+static sp_time Client_Cost_Print_Target = {0, 0};
 
 void Print_Client_Cost_Stats(int dummy, void *dummy_ptr);
 
@@ -116,6 +117,8 @@ void Init_Nodes(void)
     Edge_Key     key;
     Edge_Value  *val_ptr;
     int16u       index;
+    sp_time      now, wait_time;
+    long int     target_sec;
 
     Num_Neighbors = 0;
 
@@ -245,7 +248,13 @@ void Init_Nodes(void)
     Init_Routes();
     Print_Routes(NULL);
     if (Print_Cost) {
-      Print_Client_Cost_Stats(0, NULL);
+      now = E_get_time();
+      target_sec = now.sec / 30;
+      target_sec = (target_sec + 1) * 30;
+      Client_Cost_Print_Target.sec = target_sec;
+      Client_Cost_Print_Target.usec = 0;
+      wait_time = E_sub_time(Client_Cost_Print_Target, now);
+      E_queue(Print_Client_Cost_Stats, 0, NULL, wait_time);
     }
 }
 
@@ -473,6 +482,7 @@ void Print_Client_Cost_Stats(int dummy, void *dummy_ptr)
     stdit it;
     Client_ID *cid;
     int32u *count;
+    sp_time now, wait_time;
 
     Alarm(PRINT, "--- CLIENT COST STATS ---\n");
     for (stdskl_begin(&Client_Cost_Stats, &it); !stdskl_is_end(&Client_Cost_Stats, &it); stdskl_it_next(&it)) {
@@ -484,5 +494,8 @@ void Print_Client_Cost_Stats(int dummy, void *dummy_ptr)
     }
     Alarm(PRINT, "\n");
 
-    E_queue(Print_Client_Cost_Stats, 0, NULL, Client_Cost_Stats_Timeout);
+    Client_Cost_Print_Target = E_add_time(Client_Cost_Print_Target, Client_Cost_Stats_Timeout);
+    now = E_get_time();
+    wait_time = E_sub_time(Client_Cost_Print_Target, now);
+    E_queue(Print_Client_Cost_Stats, 0, NULL, wait_time);
 }

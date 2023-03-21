@@ -1,3 +1,26 @@
+Version 5.4 - November 26, 2018
+    * The main change is this version is to the dissemination-graph-based
+      routing algorithm
+        - Support for dissemination-graph-based routing in Spines 5.3 used
+          static pre-computed graphs in all cases, but switched between these
+          graphs based on changing network conditions. The 5.4 release makes
+          this approach more dynamic, using two dynamically computed (not
+          static) node-disjoint paths in the normal case, and including dynamic
+          node-disjoint paths as one component of the resilient graphs used
+          under the most problematic conditions.
+        - This approach is described in Amy Babay's 2018 PhD thesis, "Timely,
+          Reliable, and Cost-Effective Internet Transport Service using
+          Structured Overlay Networks"
+    * Fixed bug in the interaction between link encryption and rate limiting
+      added in Spines 5.3 that could cause crashes
+        - Reported by Tiger Gao, Daniel Qian, Elaine Wong, and Jason Wong
+    * Fixed bug in realtime link protocol's calculation of how many nacks can
+      fit in a packet
+    * Additional minor bugfixes, improved enforcement of message size
+      constraints
+    * Performance tuning, increasing maximum message sizes and default
+      bandwidth allowance (when rate limiting is used)
+
 Version 5.3 - March 9, 2018
     * Added Source-Based Routing capability (separate from K-paths used in
       Intrusion-Tolerant Messaging)

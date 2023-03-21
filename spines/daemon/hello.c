@@ -77,12 +77,22 @@ extern int16u      *Neighbor_IDs[];
 
 static const sp_time zero_timeout   = {     0,    0};
 /* Default Values */
-static       sp_time cnt_timeout    = {     0,    75000};
-             sp_time hello_timeout  = {     0,    75000};
+static       sp_time cnt_timeout    = {     0,    100000};
+             sp_time hello_timeout  = {     0,    100000};
 /* For simulating Internet rerouting */
 /*static       sp_time cnt_timeout    = {     0,    999999};
              sp_time hello_timeout  = {     0,    999999};*/
-static       sp_time ad_timeout     = {     6,    0};
+
+/* AB: Reduced ad_timeout from 6 seconds to 1 second. Note that ad_timeout is
+ * currently used both for sending hello pings on a disconnected link and for
+ * sending out (wireless broadcast?) pings to try to automatically discover
+ * links that may or may not exist. For a future version, we may want to
+ * separate these into two different timeouts (with reconnection attempts on
+ * known links being more frequent than auto-discovery attempts on potential
+ * links. For now we are just reducing the single timeout to be more reasonable
+ * for reconnection since we aren't actively using the wireless capabilities */
+static       sp_time ad_timeout     = {     1,    0};
+/* static       sp_time ad_timeout     = {     6,    0}; */
 
 int          hello_cnt_start        = (int) (0.5 + 0.7 * DEAD_LINK_CNT); 
 int          stable_delay_flag      = 1;

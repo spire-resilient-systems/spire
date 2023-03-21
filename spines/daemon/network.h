@@ -57,8 +57,8 @@
                                         a large effect for edges with small
                                         absolute latencies */
 #define LATENCY_ABS_NO_PROB_THRESH 3.0
-#define LOSS_PROB_THRESH           0.05 /* 5% loss = problem */
-#define LOSS_NO_PROB_THRESH        0.01
+#define LOSS_PROB_THRESH           0.02 /* 2% loss = problem */
+#define LOSS_NO_PROB_THRESH        0.005
 
 /* this is how often we will refill the leaky-bucket */
 #define LEG_BUCKET_FILL_USEC    500         /* How often to refill the leaky bucket (in microsec) */

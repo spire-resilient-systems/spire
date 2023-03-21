@@ -199,8 +199,9 @@ void Process_RT_UDP_data_packet(Link *lk, sys_scatter *scat,
 	    rt_data->recv_window[i%MAX_HISTORY].flags = EMPTY_CELL;
 	    /* Add lost packet to the retransm. request */
 	    
-	    if(rt_data->num_nacks*sizeof(int32) + 2*sizeof(int32)< 
-	       sizeof(packet_body) - sizeof(udp_header)) {
+	    if(rt_data->num_nacks*sizeof(rt_seq_type) + 2*sizeof(rt_seq_type)< 
+	       sizeof(packet_body) - sizeof(udp_header))
+            {
 		*(rt_seq_type*)(rt_data->nack_buff+rt_data->num_nacks*sizeof(rt_seq_type)) = i;
 		rt_data->num_nacks++;
 	    }
