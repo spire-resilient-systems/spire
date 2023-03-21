@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -48,6 +48,5 @@ int main(int argc, char **args)
   
   OPENSSL_RSA_Generate_Keys();
   TC_Generate(2*NUM_F + NUM_K + 1, "./keys");
-  TC_Generate(NUM_F + 1, "./sm_keys");
   return 0;
 }

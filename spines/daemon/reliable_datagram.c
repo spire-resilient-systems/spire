@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -186,7 +187,7 @@ int Reliable_Send_Msg(int16 linkid, char *buff, int16u buff_len, int32u pack_typ
     /* If I got here it means that I have some space in the window, 
      * so I can go ahead and send the packet */
     if(r_data->head > r_tail->seq_no)
-	Alarm(EXIT, "Reliable_Send_Msg(): sending a packet with a smaller seq_no\n");
+	Alarm(EXIT, "Reliable_Send_Msg(): sending a packet with a smaller seq_no (head %d, sending %d, link %d)\n", r_data->head, r_tail->seq_no, linkid);
     
     r_data->window[r_tail->seq_no%MAX_WINDOW].data_len = buff_len;
     r_data->window[r_tail->seq_no%MAX_WINDOW].pack_type = pack_type;
@@ -272,7 +273,7 @@ int Reliable_Send_Msg(int16 linkid, char *buff, int16u buff_len, int32u pack_typ
     hdr->ctrl_link_id     = lk->leg->ctrl_link_id;
     hdr->data_len         = buff_len; 
     hdr->ack_len          = ack_len;
-    hdr->seq_no           = Set_Loss_SeqNo(lk->leg);
+    hdr->seq_no           = Set_Loss_SeqNo(lk->leg, lk->link_type);
 
     /* Sending the data */
     if(network_flag == 1) {
@@ -501,7 +502,7 @@ void Send_Much(int16 linkid)
 	hdr.ctrl_link_id = lk->leg->ctrl_link_id;
 	hdr.data_len     = data_len; 
 	hdr.ack_len      = ack_len;
-	hdr.seq_no       = Set_Loss_SeqNo(lk->leg);
+	hdr.seq_no       = Set_Loss_SeqNo(lk->leg, lk->link_type);
 	    
 	scat.elements[1].len = data_len + ack_len;    
 	scat.elements[1].buf = send_buff;
@@ -655,7 +656,7 @@ void Send_Ack(int linkid, void* dummy)
     hdr.ctrl_link_id = lk->leg->ctrl_link_id;
     hdr.data_len     = 0; 
     hdr.ack_len      = ack_len;
-    hdr.seq_no       = Set_Loss_SeqNo(lk->leg);
+    hdr.seq_no       = Set_Loss_SeqNo(lk->leg, lk->link_type);
 
     /* Sending the ack*/
     if(network_flag == 1) {
@@ -749,15 +750,17 @@ void Reliable_timeout(int linkid, void *dummy)
     }
 
     /* Congestion control */
-    r_data->ssthresh = (unsigned int)(r_data->window_size - stream_window/2);
-    if(r_data->ssthresh < (unsigned int)Minimum_Window)
-	r_data->ssthresh = Minimum_Window;
+    if (TCP_Fairness) {
+        r_data->ssthresh = (unsigned int)(r_data->window_size - stream_window/2);
+        if(r_data->ssthresh < (unsigned int)Minimum_Window)
+            r_data->ssthresh = Minimum_Window;
 
-    r_data->window_size = r_data->window_size - stream_window + 1;
-    if(r_data->window_size < Minimum_Window)
-	r_data->window_size = (float)Minimum_Window;
-   
-    Alarm(DEBUG, "window adjusted: %5.3f timeout; tail: %d\n", r_data->window_size, r_data->tail);
+        r_data->window_size = r_data->window_size - stream_window + 1;
+        if(r_data->window_size < Minimum_Window)
+            r_data->window_size = (float)Minimum_Window;
+       
+        Alarm(DEBUG, "window adjusted: %5.3f timeout; tail: %d\n", r_data->window_size, r_data->tail);
+    }
 
     /* If there is already an ack to be sent on this link, cancel it, 
        as this packet will contain the ack info. */
@@ -853,7 +856,7 @@ void Reliable_timeout(int linkid, void *dummy)
 	hdr->ctrl_link_id = lk->leg->ctrl_link_id;
 	hdr->data_len     = data_len; 
 	hdr->ack_len      = ack_len;
-	hdr->seq_no       = Set_Loss_SeqNo(lk->leg);
+	hdr->seq_no       = Set_Loss_SeqNo(lk->leg, lk->link_type);
 	
 	scat->elements[1].len = data_len + ack_len;    
 	scat->elements[1].buf = send_buff;
@@ -993,20 +996,22 @@ void Send_Nack_Retransm(int linkid, void *dummy)
 	stream_window = r_data->window_size;
     }
 
-    if(r_data->cong_flag == 1) {
-	/* Congestion control */
-	r_data->ssthresh = (unsigned int)(r_data->window_size - stream_window/2);
-	if(r_data->ssthresh < (unsigned int)Minimum_Window) {
-	    r_data->ssthresh = Minimum_Window;
-	}
-	r_data->window_size = r_data->window_size - stream_window/2;
-	if(r_data->window_size < Minimum_Window) {
-	    r_data->window_size = (float)Minimum_Window;
-	}
-	Alarm(DEBUG, "window adjusted: %5.3f nack\n", r_data->window_size);
-    }
-    else {
-	r_data->cong_flag = 1;
+    if (TCP_Fairness) {
+        if(r_data->cong_flag == 1) {
+            /* Congestion control */
+            r_data->ssthresh = (unsigned int)(r_data->window_size - stream_window/2);
+            if(r_data->ssthresh < (unsigned int)Minimum_Window) {
+                r_data->ssthresh = Minimum_Window;
+            }
+            r_data->window_size = r_data->window_size - stream_window/2;
+            if(r_data->window_size < Minimum_Window) {
+                r_data->window_size = (float)Minimum_Window;
+            }
+            Alarm(DEBUG, "window adjusted: %5.3f nack\n", r_data->window_size);
+        }
+        else {
+            r_data->cong_flag = 1;
+        }
     }
 
     /* If there is already an ack to be sent on this link, cancel it, 
@@ -1100,7 +1105,7 @@ void Send_Nack_Retransm(int linkid, void *dummy)
 	hdr->ctrl_link_id = lk->leg->ctrl_link_id;
 	hdr->data_len     = data_len; 
 	hdr->ack_len      = ack_len;
-        hdr->seq_no       = Set_Loss_SeqNo(lk->leg);
+        hdr->seq_no       = Set_Loss_SeqNo(lk->leg, lk->link_type);
 	
 	scat->elements[1].len = data_len + ack_len;    
 	scat->elements[1].buf = send_buff;
@@ -1157,6 +1162,7 @@ int Process_Ack(int16 linkid, char *buff, int16u ack_len, int32u type)
     sp_time timeout_val, now, diff;
     int32u rtt_estimate;
     double old_window;
+    int16u to_copy;
 
     lk = Links[linkid];
     if(lk->r_data == NULL)
@@ -1174,21 +1180,28 @@ int Process_Ack(int16 linkid, char *buff, int16u ack_len, int32u type)
 	/* Alarm(DEBUG, "We also have NACKs here...\n"); */
 	if(r_data->nack_len + ack_len > sizeof(packet_body))
         {
-	    Alarmp(SPLOG_WARNING, PRINT, "WOW !!! a lot of nacks here.... definitely a bug\n");
-            return 0;
+	    Alarm(PRINT, "Reliable datagram: process ack on link %d: nack_len: %d; ack_len: %d (sizeof packet_body = %u)\n", linkid, r_data->nack_len, ack_len, sizeof(packet_body));
+	    Alarm(PRINT, "WOW !!! a lot of nacks here....is it a bug?\n");
         }
 
+        /* AB: Get amount of nacks we can copy...can end up buffering nacks if the
+         * link gets disconnected before we get to send some */
+	if(r_data->nack_len + ack_len - sizeof(reliable_tail) > sizeof(packet_body)) {
+            to_copy = sizeof(packet_body) - r_data->nack_len;
+        } else {
+            to_copy = ack_len - sizeof(reliable_tail);
+        }
+
+        /* Allocate nack buffer if necessary */
 	if(r_data->nack_buff == NULL) {
 	    if((r_data->nack_buff = (char*) new(PACK_BODY_OBJ))==NULL) {
 		Alarm(EXIT, "Process_Ack(): Cannot allocate pack_body object\n");
 	    }	
 	}
-	if(r_data->nack_len + ack_len - sizeof(reliable_tail) <
-	   sizeof(packet_body)) {
-	    memcpy(r_data->nack_buff+r_data->nack_len, buff+sizeof(reliable_tail), 
-		   ack_len-sizeof(reliable_tail));
-	    r_data->nack_len += ack_len - sizeof(reliable_tail);
-	}
+
+        /* Copy over nacks to nack buffer */
+	memcpy(r_data->nack_buff+r_data->nack_len, buff+sizeof(reliable_tail), to_copy);
+	r_data->nack_len += to_copy;
 	E_queue(Send_Nack_Retransm, (int)linkid, NULL, zero_timeout);
     }
 
@@ -1271,24 +1284,26 @@ int Process_Ack(int16 linkid, char *buff, int16u ack_len, int32u type)
 	    r_data->tail++;
 
 	    /* Congestion control */
-	    if(!stdcarr_empty(&(r_data->msg_buff))) {
-		/* there are other packets waiting, so it makes sense to increase the window */
-		old_window = r_data->window_size;
-		if(r_data->window_size < r_data->ssthresh) {
-		    /* Slow start */
-		    r_data->window_size += 1;
-		    if(r_data->window_size > r_data->max_window) {
-			r_data->window_size = (float)r_data->max_window;
-		    }
-		}
-		else {
-		    /* Congestion avoidance */
-		    r_data->window_size += 1/stream_window;
-		    if(r_data->window_size > r_data->max_window) {
-			r_data->window_size = (float)r_data->max_window;
-		    }
-		}
-	    }	    
+            if (TCP_Fairness) {
+                if(!stdcarr_empty(&(r_data->msg_buff))) {
+                    /* there are other packets waiting, so it makes sense to increase the window */
+                    old_window = r_data->window_size;
+                    if(r_data->window_size < r_data->ssthresh) {
+                        /* Slow start */
+                        r_data->window_size += 1;
+                        if(r_data->window_size > r_data->max_window) {
+                            r_data->window_size = (float)r_data->max_window;
+                        }
+                    }
+                    else {
+                        /* Congestion avoidance */
+                        r_data->window_size += 1/stream_window;
+                        if(r_data->window_size > r_data->max_window) {
+                            r_data->window_size = (float)r_data->max_window;
+                        }
+                    }
+                }
+            }
 	}		    
 	/* This was a fresh brand new ack. See if it freed some window slots
 	 * and we can send some more stuff */	

@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -58,12 +59,15 @@ typedef struct Edge_d
     int16          cost;                   /* cost of the edge */
     int16          age;                    /* Life of the state (in tens of seconds) */
 
+    int16          base_cost;              /* base cost of edge (from configuration file) */
+    int16u         index;                  /* index of edge (used for bitmask construction in source-based routing) */
+
     Link_State_LTS lts;                    /* lamport time stamp of most recent link state update on this Edge */
 
     struct Node_d *src;                    /* Source node */
     struct Node_d *dst;                    /* Destination node */
 
-    Network_Leg   *leg;                    /* the underlying communication leg */
+    struct Network_Leg_d   *leg;                    /* the underlying communication leg */
   
 } Edge;
 
@@ -76,7 +80,7 @@ typedef struct Edge_Key_d
 
 typedef struct Edge_Value_d
 {
-    int16u         cost;                   /* Edge Cost */
+    int16          cost;                   /* Edge Cost */
     int16u         index;                  /* Index in Bitmask */
 } Edge_Value;
 
@@ -94,7 +98,7 @@ void     Edge_Process_state_header(char *pos, int32 type);
 void    *Edge_Process_state_cell(Node_ID source, Node_ID sender, char *pos, int32 type);
 int      Edge_Destroy_State_Data(void *state);
 
-Edge    *Create_Edge(Node_ID source, Node_ID dest, int16 cost);
+Edge    *Create_Edge(Node_ID source, Node_ID dest, int16 cost, int16 base_cost, int16u index);
 Edge    *Get_Edge(Node_ID src, Node_ID dst);
 Edge    *Destroy_Edge(Node_ID source, Node_ID dest, int local_call);
 /*int      Edge_Update_Cost(int link_id, int mode);*/

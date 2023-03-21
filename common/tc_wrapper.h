@@ -24,10 +24,13 @@
  *   Amy Babay            babay@cs.jhu.edu
  *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
- * Major Contributor:
+ * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
  *
- * Copyright (c) 2017 Johns Hopkins University.
+ * Contributors:
+ *   Samuel Beckley       Contributions to HMIs
+ *
+ * Copyright (c) 2018 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -38,8 +41,8 @@
 
 #include "net_wrapper.h"
 
-void TC_Read_Partial_Key( int32u server_no, int32u site_id );
-void TC_Read_Public_Key();
+void TC_Read_Partial_Key( int32u server_no, int32u site_id, const char *keys_dir );
+void TC_Read_Public_Key( const char *keys_dir );
 
 int32u TC_Generate_Sig_Share( byte* destination, byte* hash  ); 
 void TC_Initialize_Combine_Phase( int32u number );

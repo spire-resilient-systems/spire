@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -42,8 +42,14 @@
 
 #include "packets.h"
 
+#define BATCH_PUSHBACK_TRIGGER 1
+#define BATCH_MAX_TRIGGER      2
+
 void SIG_Initialize_Data_Structure  (void);
+void SIG_Upon_Reset (void);
 void SIG_Attempt_To_Generate_PO_Messages(void);
 void SIG_Add_To_Pending_Messages(signed_message *m, int32u dest_bits,
 				 int32u timeliness);
+void SIG_Make_Batch(int trigger, void *dummyp);
+
 #endif

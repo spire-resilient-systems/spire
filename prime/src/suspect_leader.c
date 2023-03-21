@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -79,21 +79,17 @@ void SUSPECT_Initialize_Data_Structure()
     /* Init stddll for TAT challenges to leader */
     stddll_construct(&DATA.SUSP.turnaround_times, sizeof(tat_challenge));
 
-    /* Init other data structures that get reset each view change */
+    /* Set the new_leader_proof to NULL at the beginning */
+    DATA.SUSP.new_leader_proof = NULL;
+
     SUSPECT_Initialize_Upon_View_Change();
 
-    /* Start periodic functions that run repeatedly over time */
-    //SUSPECT_TAT_Measure_Periodically(0, NULL);
-    //SUSPECT_Ping_Periodically(0, NULL);
-    //SUSPECT_TAT_UB_Periodically(0, NULL);
-    
     Alarm(PRINT, "KLAT = %f\n",  VARIABILITY_KLAT);
 }
 
 void SUSPECT_Initialize_Upon_View_Change()
 {
     int i;
-    sp_time t;
 
     /* ------ TAT Leader ------ */
     /* Cleanup turnaround_times dll for new view */
@@ -126,6 +122,11 @@ void SUSPECT_Initialize_Upon_View_Change()
             DATA.SUSP.new_leader[i] = NULL;
         }
     }
+}
+
+void SUSPECT_Restart_Timed_Functions()
+{
+    sp_time t;
 
     /* Dequeue the SUSP periodic function with normal timeout,
      *  re-enqueue them with the view change specific timeouts */
@@ -143,6 +144,25 @@ void SUSPECT_Initialize_Upon_View_Change()
     t.usec = 20000;
     E_dequeue(SUSPECT_TAT_UB_Periodically, 0, 0);
     E_queue(SUSPECT_TAT_UB_Periodically, 0, 0, t);
+}
+
+void SUSPECT_Upon_Reset()
+{
+    int32u i;
+
+    stddll_clear(&DATA.SUSP.turnaround_times);
+    stddll_destruct(&DATA.SUSP.turnaround_times);
+
+    for (i = 1; i <= NUM_SERVERS; i++) {
+         if (DATA.SUSP.new_leader[i] != NULL) {
+            dec_ref_cnt(DATA.SUSP.new_leader[i]);
+            DATA.SUSP.new_leader[i] = NULL;
+        }
+    }
+    if (DATA.SUSP.new_leader_proof != NULL) {
+        dec_ref_cnt(DATA.SUSP.new_leader_proof);
+        DATA.SUSP.new_leader_proof = NULL;
+    }
 }
 
 void SUSPECT_TAT_Measure_Periodically(int dummy, void *dummyp)
@@ -174,8 +194,6 @@ void SUSPECT_TAT_Measure_Periodically(int dummy, void *dummyp)
 
     if (sw != NULL) {
         UTIL_Stopwatch_Stop(sw);
-        if (UTIL_Stopwatch_Elapsed(sw) > TAT_PRINT_THRESH)
-            //Alarm(PRINT, "  ** > Thresh in TAT measure: %f s; View %d\n", UTIL_Stopwatch_Elapsed(sw), DATA.View);
         if (DATA.SUSP.max_tat < UTIL_Stopwatch_Elapsed(sw)) {
             DATA.SUSP.max_tat = UTIL_Stopwatch_Elapsed(sw);
             DATA.SUSP.tat_max_change = 1;
@@ -224,7 +242,7 @@ void SUSPECT_Process_TAT_Measure(signed_message *mess)
     measure = (tat_measure_message*)(mess + 1);
 
     if (measure->view != DATA.View) {
-        Alarm(PRINT, "Process_TAT_Measure: Invalid View %d\n", measure->view);
+        Alarm(DEBUG, "Process_TAT_Measure: Invalid View %d\n", measure->view);
         return;
     }
 
@@ -245,7 +263,7 @@ void SUSPECT_Process_TAT_Measure(signed_message *mess)
         accept = DATA.SUSP.tat_acceptable * VARIABILITY_KLAT;
         if (DATA.VIEW.view_change_done == 1)
             accept += (double)PRE_PREPARE_SEC + (double)(PRE_PREPARE_USEC)/1000000.0;
-        Alarm(DEBUG, "[%u]: L=%f, rtt=%f, A=%f\n", 
+        Alarm(PRINT, "[%u]: L=%f, rtt=%f, A=%f\n", 
                 DATA.View, DATA.SUSP.tat_leader, DATA.SUSP.tat_acceptable, accept);
     }
     SUSPECT_Suspect_Leader();
@@ -289,7 +307,7 @@ void SUSPECT_Process_RTT_Ping (signed_message *mess)
     ping = (rtt_ping_message*)(mess + 1);
 
     if (ping->view != DATA.View) {
-        Alarm(PRINT, "Process_RTT_Ping: Old View %d\n", ping->view);
+        Alarm(DEBUG, "Process_RTT_Ping: Old View %d\n", ping->view);
         return;
     }
 
@@ -315,7 +333,7 @@ void SUSPECT_Process_RTT_Pong (signed_message *mess)
     rtt_p = (rtt_pong_message *)(mess + 1);
 
     if (rtt_p->view != DATA.View) {
-        Alarm(PRINT, "Process_RTT_Pong: Old View %d\n", rtt_p->view);
+        Alarm(DEBUG, "Process_RTT_Pong: Old View %d\n", rtt_p->view);
         return;
     }
 
@@ -358,7 +376,7 @@ void SUSPECT_Process_RTT_Measure (signed_message *mess)
 
     measure = (rtt_measure_message*)(mess + 1);
     if (measure->view != DATA.View) {
-        Alarm(PRINT, "Process_RTT_Measure: Old View %d\n", measure->view);
+        Alarm(DEBUG, "Process_RTT_Measure: Old View %d\n", measure->view);
         return;
     }
 
@@ -425,7 +443,7 @@ void SUSPECT_Process_TAT_UB (signed_message *mess)
     ub = (tat_ub_message*)(mess + 1);
 
     if (ub->view != DATA.View) {
-        Alarm(PRINT, "Process_TAT_UB: Old View %d\n", ub->view);
+        Alarm(DEBUG, "Process_TAT_UB: Old View %d\n", ub->view);
         return;
     }
 
@@ -451,7 +469,7 @@ void SUSPECT_Process_TAT_UB (signed_message *mess)
         accept = DATA.SUSP.tat_acceptable * VARIABILITY_KLAT;
         if (DATA.VIEW.view_change_done == 1)
             accept += (double)PRE_PREPARE_SEC + (double)(PRE_PREPARE_USEC)/1000000.0;
-        Alarm(DEBUG, "[%u]: L=%f, rtt=%f, A=%f\n", 
+        Alarm(PRINT, "[%u]: L=%f, rtt=%f, A=%f\n", 
                 DATA.View, DATA.SUSP.tat_leader, DATA.SUSP.tat_acceptable, accept);
     }
     SUSPECT_Suspect_Leader();
@@ -540,7 +558,7 @@ void SUSPECT_Process_New_Leader(signed_message *mess)
 
     /* Preinstall new view and start sending new_leader_proof messages */
     DATA.View = nlm_specific->new_view;
-    Alarm(DEBUG, "READY for View Change: 2F+K+1 New_Leader\n");
+    Alarm(PRINT, "READY for View Change: 2F+K+1 New_Leader\n");
     
     if (DATA.SUSP.new_leader_proof != NULL) {
         dec_ref_cnt(DATA.SUSP.new_leader_proof);
@@ -645,7 +663,7 @@ void SUSPECT_Process_New_Leader_Proof(signed_message *mess)
     /* Preinstall the new view and start sending new_leader_proof message */
     UTIL_Stopwatch_Start(&DATA.VIEW.vc_sw);
     DATA.View = new_view;
-    Alarm(DEBUG, "READY for View Change: New_Leader_Proof Received\n");
+    Alarm(PRINT, "READY for View Change: New_Leader_Proof Received\n");
 
     /* Take this message and claim it as our own */
     if (DATA.SUSP.new_leader_proof != NULL) {
@@ -661,6 +679,7 @@ void SUSPECT_Process_New_Leader_Proof(signed_message *mess)
     memset(DATA.SUSP.new_leader_proof, 0, sizeof(signed_message));
     DATA.SUSP.new_leader_proof->machine_id = VAR.My_Server_ID;
     DATA.SUSP.new_leader_proof->type = NEW_LEADER_PROOF;
+    DATA.SUSP.new_leader_proof->incarnation = DATA.PR.new_incarnation_val[VAR.My_Server_ID];
     DATA.SUSP.new_leader_proof->len = size;
     if (E_in_queue(SUSPECT_New_Leader_Periodically, 0, NULL))
         E_dequeue(SUSPECT_New_Leader_Periodically, 0, NULL);

@@ -24,10 +24,13 @@
  #   Amy Babay            babay@cs.jhu.edu
  #   Thomas Tantillo      tantillo@cs.jhu.edu
  #
- # Major Contributor:
+ # Major Contributors:
  #   Marco Platania       Contributions to architecture design 
  #
- # Copyright (c) 2017 Johns Hopkins University.
+ # Contributors:
+ #   Samuel Beckley       Contributions to HMIs 
+ #
+ # Copyright (c) 2018 Johns Hopkins University.
  # All rights reserved.
  #
  # Partial funding for Spire research was provided by the Defense Advanced 
@@ -38,11 +41,14 @@
 
 CC=gcc
 CFLAGS= -Wall -W -g
-TARGET=scada_master
-LIBS=-lpthread ../prime/OpenTC-1.1/TC-lib-1.0/.libs/libTC.a \
-		../spines/libspines/libspines.a ../prime/stdutil/lib/libstdutil.a -lrt -ldl -lcrypto -lm
-INC= -I ../prime/stdutil/include -I ../spines/libspines
-OBJECTS=scada_master.o \
+TARGET=scada_master gen_keys
+INC= -I ../prime/stdutil/include -I ../spines/libspines -I ../common
+
+TC_LIB=../prime/OpenTC-1.1/TC-lib-1.0/.libs/libTC.a
+LIBSPREAD_UTIL=../prime/stdutil/lib/libstdutil.a
+SPINES_LIB=../spines/libspines/libspines.a
+
+SM_OBJ=scada_master.o \
 		queue.o \
 		../common/scada_packets.o \
         ../common/net_wrapper.o \
@@ -52,21 +58,34 @@ OBJECTS=scada_master.o \
 		../common/key_value.o \
 		../config/cJSON.o \
 		../config/config_helpers.o
+GEN_KEYS_OBJ = generate_keys.o \
+		       ../common/openssl_rsa.o \
+			   ../common/tc_wrapper.o
 
-all: $(TARGET)
-
-$(TARGET): $(OBJECTS)
-		$(CC) -o $(TARGET) $(OBJECTS) $(LIBS)
-
-clean:
-	rm -f $(OBJECTS)
-	rm -f $(TARGET)
+all: scada_master gen_keys
 
 scada_master.o: scada_master.c ../common/scada_packets.h \
 				../common/net_wrapper.h ../common/def.h ../common/openssl_rsa.h \
 				../common/tc_wrapper.h ../common/itrc.h ../common/key_value.h \
 				../config/cJSON.h ../config/config_helpers.h
-	$(CC) -c $(CFLAGS) $(INC) -o scada_master.o scada_master.c 
+	$(CC) -c $(CFLAGS) $(CPPFLAGS) $(INC) -o scada_master.o scada_master.c 
+
+scada_master: $(SM_OBJ)
+		$(CC) -o scada_master $(SM_OBJ) $(TC_LIB) $(LIBSPREAD_UTIL) $(SPINES_LIB) -lpthread -ldl -lcrypto -lm -lrt
+
+generate_keys.o: generate_keys.c ../common/itrc.h ../common/tc_wrapper.h
+	$(CC) -c $(CFLAGS) $(CPPFLAGS) $(INC) -o generate_keys.o generate_keys.c
+
+gen_keys: $(GEN_KEYS_OBJ)
+	$(CC) $(CFLAGS) -o gen_keys $(GEN_KEYS_OBJ) $(LIBSPREAD_UTIL) $(TC_LIB) -lcrypto -ldl -lpthread -lrt
 
 %.o:	%.c
-	$(CC) $(CFLAGS) $(INC) -c -o $*.o $*.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) $(INC) -c -o $*.o $*.c
+
+clean:
+	rm -f $(GEN_KEYS_OBJ)
+	rm -f $(SM_OBJ)
+	rm -f $(TARGET)
+
+distclean: clean
+	cd ./sm_keys; rm -f *.pem; rm -f *.key

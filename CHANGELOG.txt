@@ -1,0 +1,23 @@
+Version 1.1 - March 14, 2018
+    * Added capability to automatically reset the system if the system
+      assumptions are violated (specifically, if there are no longer enough
+      correct replicas with the system state to re-integrate recovering
+      replicas) based on a signal from Prime
+    * Added new HMIs representing the 3-breaker, 5-breaker, and timing
+      measurement systems demonstrated at the Hawaiian Electric Company in
+      January/February 2018, as well as a new Energy Management System (EMS)
+      HMI
+    * Added additional example configurations and scripts to switch between
+      configurations
+        - Changed default configuration to use 6 replicas (simultaneously
+          supporting one compromise and one proactive recovery) instead of 4
+          (supporting one compromise or recovery at a time)
+    * Some improvements to message validation
+    * Updated to use Prime 3.1 (see Prime Changelog)
+    * Updated to use Spines 5.3 (see Spines Changelog)
+    * Included versions of pvbrowser, opendnp3, and OpenPLC tested to work
+      with Spire as part of the Spire release package
+    * Updated Makefile to compile the emulated PLCs for our example systems
+
+Version 1.0 - May 17, 2017
+    * Initial release.

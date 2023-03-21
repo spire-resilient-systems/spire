@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -165,7 +166,7 @@ int main( int argc, char *argv[] )
   int  i, j, ret, k;
   int16u prio_change;
   sp_time t1, t2;
-  sp_time start, now, report_time, expire_time, checkpoint;
+  sp_time start, now, report_time, /*expire_time,*/ checkpoint;
   spines_nettime expiration;
   trie_node *root;
   unsigned char temp_path[10];
@@ -264,7 +265,7 @@ int main( int argc, char *argv[] )
         }
         else  {
             daemon_ptr = (struct sockaddr *)&unix_addr;
-            sprintf(unix_addr.sun_path, "%s%hu", SPINES_UNIX_SOCKET_PATH, spinesPort);
+            sprintf(unix_addr.sun_path, "%s%hu", SPINES_UNIX_SOCKET_PATH, (unsigned short) spinesPort);
             printf("Using IPC on Port %s\n", unix_addr.sun_path);
         }
     } else {
@@ -383,7 +384,7 @@ int main( int argc, char *argv[] )
    
     for(i=1; i<=Num_pkts; i++) {
       t1 = E_get_time();
-      t2 = E_add_time(t1,expire_time);
+      /*t2 = E_add_time(t1,expire_time);*/
     
       f_pkt->seq_num      = htonl(i);
       f_pkt->origin_sec   = htonl(t1.sec);
@@ -569,31 +570,6 @@ int main( int argc, char *argv[] )
       if(ret <= 0) {
 	    printf("Disconnected by spines...\n");
 	    exit(0);
-        /* sk = spines_socket(PF_SPINES, SOCK_DGRAM, Protocol, NULL);
-        if(sk <= 0) {
-            printf("error socket...\n");
-            exit(0);
-        }
-    
-        name.sin_family = AF_INET;
-        name.sin_addr.s_addr = INADDR_ANY;
-        name.sin_port = htons(recvPort);	
-    
-        if(spines_bind(sk, (struct sockaddr *)&name, sizeof(name) ) < 0) {
-            perror("err: bind");
-            exit(1);
-        }
-    
-        if(Group_Address != -1) {
-            mreq.imr_multiaddr.s_addr = htonl(Group_Address);
-            mreq.imr_interface.s_addr = htonl(INADDR_ANY);
-      
-            if(spines_setsockopt(sk, IPPROTO_IP, SPINES_ADD_MEMBERSHIP, (void *)&mreq, sizeof(mreq)) < 0) {
-	        printf("Mcast: problem in setsockopt to join multicast address");
-	        exit(0);
-            }	    
-        }
-        continue; */
       }
       if(ret != Num_bytes) {
 	printf("corrupted packet... ret: %d; msg_size: %d\n", ret, Num_bytes);
@@ -604,9 +580,6 @@ int main( int argc, char *argv[] )
 
       if (ntohl(f_pkt->seq_num) == -1)
         break;
-
-      /* if (ntohl(f_pkt->seq_num) == 1000)
-        sleep(10); */
 
       if (first_pkt_flag) {
 	start = E_get_time();       /* we calc start time as local clock when first packet arrives */

@@ -1,0 +1,520 @@
+==============================================================================
+General (non-intrusion-tolerant) source-based routing
+==============================================================================
+    - The interface for using source-based routing is to specify
+      SOURCE_BASED_ROUTING as the routing part of the "protocol" parameter in
+      spines_socket. To choose between flooding, disjoint paths, or the
+      dissemination-graph approach from ICDCS 2017 paper, spines_setsockopt is
+      used to set the SPINES_DISJOINT_PATHS parameter (0 = flooding, 1-5 = 1-5
+      disjoint paths, 6=dissemination graphs).
+        - Note: maybe want to add a check in spines_socket to disallow using
+          SOURCE_BASED_ROUTING with link protocols other than UDP and soft
+          real-time.
+    - Session_Send_Message (session.c) will call MultiPath_Stamp_Bitmask to set
+      the correct bitmask (based on SPINES_DISJOINT_PATHS setting and network
+      conditions) on the packet
+    - Deliver_and_Forward_Data (route.c) calls Source_Based_Disseminate
+      (route.c) to send the packet: Source_Based_Disseminate essentially just
+      looks at the bitmask stamped on the packet and forwards it on any edges
+      specified on the bitmask
+    
+    - Note that the above is mostly present in Spines 5.2 (with the exception
+      of the dissemination graph option k=6). New additions below:
+
+    - Deduplication
+        - To deduplicate packets sent redundantly using dissemination graphs,
+          we add a source-based routing header (sb_header) to each packet using
+          source-based routing. This includes a source sequence number (int32u)
+          and source incarnation (int32u)
+        - We also store received sequence numbers for each source in the
+          Source_Seq_Hist matrix (defined in route.c)
+            - For each source, we store SOURCE_HIST_SIZE (currently 100,000)
+              sequence numbers. When we get a new packet, we look it up in the
+              Source_Seq_Hist matrix to see if it was already received.
+            - If the packet is more than SOURCE_HIST_SIZE sequence numbers
+              behind the latest sequence number we have from that source, we
+              discard the packet as too old to be useful. 
+                - To handle crash/recovery (in which case the recovered node
+                  will restart its source sequence at zero, we use the source
+                  incarnation (set to the seconds part of the current time at
+                  startup). If we receive a packet with an old sequence number
+                  but new incarnation, we will count it as new. This means we
+                  can't crash and recover more than once per second, but that's
+                  not a major limitation.
+                - This also lets us handle sequence number wraparound (we use
+                  int32u for both the sequence number and incarnation), since
+                  we can just increment our incarnation when the sequence
+                  number rolls over (since incarnation is tied to time, this
+                  means we can't send more than 2^32 messages per second, but
+                  that isn't physically feasible anyway). Increasing the seq
+                  and incarnation to int64u is also fine (just makes the header
+                  slightly larger).
+                - Note that there may be a way for this to break the reliable
+                  link or reliable session in some cases, but as long as the
+                  reliability windows are less than the
+                  SOURCE_HIST_SIZE, reliability backpressure should kick in
+                  before this becomes a problem.
+        - Each daemon maintains a "My_Source_Seq" variable which is incremented
+          and stamped on each packet in session.c and a "My_Source_Incarnation"
+          variable that is set at startup to the current time (in epoch
+          seconds)
+        
+    - Changes to packet storage and handling in real-time link protocol
+
+    ----------------------------------------------------------------------- 
+    Affected Files
+    ----------------------------------------------------------------------- 
+    daemon/realtime_udp.c
+        - Forward_RT_UDP_Data
+            - Changed packet storage to work with source-based routing.
+              Previously, we only stored the data, and the seq at the end of
+              the packet was recalculated if the packet was retransmitted.
+              However, now we include the dissemination header (i.e. bitmask
+              after the seq and want to save that header for future
+              retransmissions. So now to store the packet, we include the data,
+              seq, and dissemination header. The seq will get overwritten if
+              the packet is retransmitted.
+        - Send_RT_Retransm
+            - Changed to account for the fact that the stored packet we are
+              retransmitting already includes ack and dissemination header, and
+              to adjust ack_len to include dissemination header
+
+    daemon/net_types.h
+        - Added sb_header to contain source_seq and source_incarnation
+    daemon/route.c
+        - Creating Source_Seq_Hist matrix for deduplication
+        - Init_Routes
+            - Initialize My_Source_Seq to 0
+            - Initialize My_Source_Incarnation to current time
+        - Source_Based_Disseminate
+            - Adding deduplication logic
+    daemon/route.h
+        - Define My_Source_Seq
+        - Define My_Source_Incarnation
+    daemon/session.c
+        - Allow multi-fragment messages with source-based routing?
+        - Stamp packets with source sequence and incarnation
+
+==============================================================================
+Adding dissemination graphs
+==============================================================================
+
+    - The interface for using the dissemination-graph-based routing method
+      (from ICDCS 2017) is to specify SOURCE_BASED_ROUTING as the routing part
+      of the "protocol" parameter in spines socket, and then use
+      spines_setsockopt to set the SPINES_DISJOINT_PATHS option to DG_K_FLAG
+      (defined in multipath.h = (MULTIPATH_MAX_K + 1) = 6)
+    - dissem_graphs.c and dissem_graphs.h are all new. These files include all
+      the functions for computing dissemination graphs, and for selecting which
+      graph should be used when a routing update occurs.
+    - The only functions exposed to other files are:
+        - DG_Compute_Graphs: Called once at start up to compute all graphs for
+          destinations specified in the configuration file. This currently
+          happens at the very end of Init_Multipath in multipath.c
+        - DG_Process_Edge_Update: Called when edge weights change to check
+          whether any flows should be changed to use a different dissemination
+          graph
+
+    -------------------------------------------------------------------------- 
+    Affected Files
+    -------------------------------------------------------------------------- 
+    daemon/dissem_graphs.c
+        - NEW
+    daemon/Makefile.in
+        -  Added dissem_graphs.o
+    daemon/link_state.c
+        - Changes to update dissemination graphs being used for routing
+          appropriately based on edge updates
+            - Edge_Process_state_cell
+                - Added call to DG_Process_Edge_Update to update dissemination
+                  graphs if necessary (note that this only has an effect if
+                  PROBLEM_ROUTE routing is used)
+    daemon/multipath.c
+        - Add call to initialize dissemination graphs -- should this be
+          separate from multipath?
+        - Multipath_Compute
+            - Changed to allow it to be used for computing two static
+              node-disjoint paths for dissemination graphs as well, by having
+              it take the bitmask to stamp as a parameter (rather than always
+              using the MP_Cache) and providing options to use the base cost
+              rather than current weights in the calculation and ignore reverse
+              edges
+        - Multipath_Stamp_Bitmask
+            - Added case for dissemination graphs. If number of requested paths
+              is DG_K_FLAG, we use the relevant dissemination graph. Note that
+              if there is no dissemination graph available for this
+              source-destination pair, we default to two disjoint paths
+    daemon/multipath.h
+        - Define DG_K_FLAG
+        - Change definition of MultiPath_Compute to take additional parameters
+    daemon/network.c
+        - Network_Leg_Set_Cost
+            - Added call to DG_Process_Edge_Update to update dissemination
+              graphs if needed when a weight change occurs
+
+==============================================================================
+Changes to link weight updates
+==============================================================================
+    - Added PROBLEM_ROUTE metric for use with dissemination graphs. We switch
+      to a source-problem, destination-problem, or source-destination-problem
+      graph based on the number of links adjacent to the source/destination
+      that are currently classified as problematic.
+
+    -------------------------------------------------------------------------- 
+    Affected Files
+    -------------------------------------------------------------------------- 
+    daemon/hello.c
+        - Changed code for deciding when to update cost
+            - Added case for PROBLEM_ROUTE type
+            - Added NET_UPDATE_THRESHOLD define for 0.15 threshold for
+              detecting a change worth sending an update about
+            - Bug fix? Changed so that update_cost doesn't get reset to 0 for
+              AVERAGE_ROUTE metric when latency changes significantly but loss
+              doesn't
+            - Is there still an issue of not being able to get back to "normal"
+              weight since we only update if change is at least .15 times the
+              current value? Maybe should allow change regardless if it's been
+              long enough
+            - Using "reported_ts" to indicate the last time we sent an update
+              for this link. To improve stability, we don't allow sending that
+              indicates a link improvement until at least 30 seconds have
+              passed since we decided the link got worse. We always send an
+              update indicating that the link got worse immediately though.
+              (only used for PROBLEM_ROUTE)
+    daemon/link.c
+        - Updating initialization of c_data to include new reported_ts
+    daemon/link.h
+        - Updating Control_Data struct to include reported_ts (time last update
+          was sent)
+    daemon/link_state.c
+            - Edge_Process_state_cell
+                - Change call to Create_Edge to take new base_cost and index
+                  parameters
+            - Edge_Create_Edges
+                - Changed to add base_cost and index parameters to establish
+                  normal-case weight that we'll use for deciding if an edge is
+                  problematic
+    daemon/link_state.h
+        - Changed Edge struct to include base_cost and index
+        - Changed Edge_Value struct to make cost an int16 instead of int16u to
+          match usage other places and allow negative weights
+    daemon/multipath.c
+        - Multipath_Compute
+            - Changed calculation to allow negative weights (but take the
+              absolute value to use in the calculation) to support
+              PROBLEM_ROUTE routing (where positive vs negative indicates
+              problem vs no problem and absolute value indicates actual weight)
+    daemon/network.c
+        - Added Problem_Route_Stable_Time to prevent a problem from being
+          marked as resolved for at least 30 seconds
+        - Create_Network_Leg
+            - Change call to Create_Edge to include new parameters (index, base
+              cost)
+        - Network_Leg_Initial_Cost
+            - Added PROBLEM_ROUTE
+        - Network_Leg_Set_Cost
+            - Removed sanity check disallowing negative weights. (Should
+              make this more specific and only allow negative weights if
+              PROBLEM_ROUTE is used?)
+        - Network_Leg_Update_cost
+            - Added calculation for PROBLEM_ROUTE
+    daemon/network.h
+        - Defining constants for deciding what qualifies as a problem in
+          PROBLEM_ROUTE routing
+    daemon/node.c
+        - Init_Nodes
+            - Changing Create_Edge calls to use new parameters
+    daemon/route.c
+        - RR_Init
+            - Changes to work with negative weights
+    daemon/route.h
+        - Define PROBLEM_ROUTE
+    daemon/multipath.c
+        - Remove edge index labeling (moved to Init_Nodes)
+
+==============================================================================
+Other performance tuning
+==============================================================================
+
+    -------------------------------------------------------------------------- 
+    Affected Files
+    -------------------------------------------------------------------------- 
+    daemon/hello.c
+        - Changed timeouts (back?) to 75ms instead of 999.999ms, so it doesn't
+          take
+          8 seconds to reroute by default
+        - Turned stable_delay_flag (back?) on. This was done to help with the
+          issue I saw where sometimes neighbors could get stuck trying to
+          re-establish the link between them after a disconnection (one side
+          resets, sends new control link id, then thinks the other side reset,
+          so it picks a new control link id, but by that point the other side
+          has accepted the first id...).
+    daemon/link.h
+        - Increasing window sizes
+    daemon/network.c
+        - Network_Leg_Initial_Cost
+            - Changed LATENCY_ROUTE and AVERAGE_ROUTE to start at MAX_LATENCY
+              rather than 4 to avoid switching to a new leg until we have
+              evidence that it is good.
+        - Network_Leg_Update_cost
+            - AVERAGE_ROUTE
+                - Separated Expected_Latency calculation out into its own
+                  function
+                - Changed to use NET_UPDATE_THRESHOLD for deciding whether to
+                  update or not
+    daemon/session.h
+        - Increase MAX_BUFF_SESS from 500 to 9000
+
+==============================================================================
+Changed Loss Rate Calculation
+==============================================================================
+
+    - Simplified the calculation and changed to use per-link-type sequence
+      numbers (so the order that we process different link types does get
+      perceived as loss)
+
+    -------------------------------------------------------------------------- 
+    Affected Files
+    -------------------------------------------------------------------------- 
+    daemon/hello.c
+        - Net_Send_Hello
+            - Changed call to Set_Loss_SeqNo to match new usage
+        - Process_hello_packet
+            - Changed Loss_Data initialization and call to Check_Link_Loss to
+              match new loss checking daemon/link.c
+        - Updating initialization of l_data to include per-link-type loss
+          sequence numbers
+        - Changing l_data->loss_rate to start at 0 instead of UNKNOWN (-1) --
+          just uses decay function from beginning instead of waiting to have a
+          certain amount of data
+        - Check_Link_Loss, Compute_Loss_Rate
+            - Simplified to use per-link-type sequence numbers and decay
+              function. Note that this currently counts reordered packets as
+              lost
+        - Set_Loss_SeqNo
+            - Changed to use per-link-type sequence numbers
+    daemon/link.h
+        - Defining LOSS_DECAY_FACTOR
+        - Updating Loss_Data struct to maintain sequence numbers per link-type
+        - Redefining Check_Link_Loss and Set_Loss_SeqNo to take link_type
+          parameter, since we now use link-specific sequence numbers
+          daemon/protocol.c
+        - Added link type parameter to Check_Link_Loss call
+          daemon/reliable_datagram.c
+        - Changing Set_Loss_SeqNo calls to use link type param
+          daemon/realtime_udp.c
+        - Forward_RT_UDP_Data
+            - Change Set_Loss_SeqNo call to use link type param daemon/udp.c
+        - Change call to Set_Loss_SeqNo to use link type param
+
+
+==============================================================================
+Made TCP Fairness Optional
+==============================================================================
+    - Related: Added per-leg rate limiting
+    - Default is to have TCP fairness off. Can be turned back on by the -tf
+      commandline flag
+    - Default is to rate limit to 500Mbps. Can adjust with -rl commandline
+      option. -rl takes rate to limit to in Kbps as an option. -1 is used to
+      signal no limit.
+
+    -------------------------------------------------------------------------- 
+    Affected Files
+    -------------------------------------------------------------------------- 
+    daemon/link.c
+        - Wrapping TCP fairness code in "if (TCP_Fairness)"
+        - Link_Send:
+            - Changed to enforce rate limiting on each leg (sort of alternative
+              to TCP fairness -- allow anything up to some constant rate)
+                - Leg_Try_Send_Buffered is where we try to send packets that
+                  couldn't be sent immediately due to rate limiting
+                - This rate limiting can be turned off using "-rl -1" on the
+                  commandline
+        - Fill_Leg_Bucket
+            - Rate limiting bucket for the leg
+    daemon/link.h
+        - Defining struct for buffering packets that cannot be sent immediately
+          due to leg rate limiting
+        - Adding new rate-limiting-related functions Fill_Leg_Bucket and
+          Leg_Try_Send_Buffered
+    daemon/network.c
+        - Create_Network_Leg
+            - Added initialization for rate-limiting bucket
+    daemon/network.h
+        - Defining rate-limiting variables (Leg_Rate_Limit_kbps,
+          Leg_Bucket_Cap, Leg_Max_Buffered) and constant LEG_BUCKET_FILL_USEC
+        - Adding rate-limiting variables to Network_Leg struct (bucket_bytes,
+          bucket_last_filled, bucket_buf)
+    daemon/reliable_datagram.c
+        - Wrapping TCP fairness code in "if (TCP_Fairness)"
+    daemon/reliable_session.c
+        - Wrapping TCP fairness code in "if (TCP_Fairness)"
+    daemon/spines.c
+        - Added TCP_Fairness variable
+        - Added commandline option for TCP fairness (by default TCP fairness is
+          turned off)
+    daemon/spines.h
+        - extern TCP_Fairness
+
+==============================================================================
+Added Cost Accounting
+==============================================================================
+
+    - Periodic printing of how many messages have been sent by each node for
+      each destination daemon/client port to allow measuring how much each flow
+      "costs" (i.e. how many packets for that flow are sent throughout the
+      network)
+    - This is enabled by using the -pc (print cost) commandline flag
+
+    -------------------------------------------------------------------------- 
+    Affected Files
+    -------------------------------------------------------------------------- 
+    daemon/link.c
+        - Link_Send:
+            - Added instrumentation to track how many packets are sent for each
+              destination daemon/client port
+    daemon/net_types.h
+        - Added Is_data_type macro (used for cost accounting to count number of
+          data packets sent per edge)
+    daemon/node.c
+        - Added Client_Cost_Stats_Timeout (print cost stats with this
+          frequency) for cost accounting
+        - Added Print_Client_Cost_Stats function to do periodic cost printing
+        - Added Client_ID_cmp function used for storing per-client cost info in
+          Client_Cost_Stats stdskl
+        - Init_Nodes
+            - Added initialization of Client_Cost_Stats stdskl
+            - Moved labeling of edges with source-based routing bitmask index
+              from multipath.c to here
+            - Add call to Print_Client_Cost_Stats
+    daemon/node.h
+        - Added Client_ID struct used as key for client cost stats (daemon ID +
+          port)
+    daemon/spines.c
+        - Added Client_Cost_Stats variable
+        - Added Print_Cost flag (-pc commandline option) to determine whether
+          or not to print
+    daemon/spines.h
+        - extern Client_Cost_Stats
+        - extern Print_Cost
+
+==============================================================================
+Reliable Session tuning and debugging
+==============================================================================
+
+    -------------------------------------------------------------------------- 
+    Affected Files
+    -------------------------------------------------------------------------- 
+    daemon/reliable_session.c
+        - Bug fixes:
+            - If you have buffered packets already and are adding a newly
+              received in-order packet to the buffer, don't return before
+              trying to move as many packets as possible from the receive
+              window to the buffer. Otherwise you can get stuck when filling in
+              a gap, as you might never receive the next in-order packet to
+              trigger delivering subsequent packets (because you already have
+              it)
+            - When buffering packets after the newly received one, had been
+              inc_ref_cnting the wrong buffer
+        - Some retabbing/formatting
+        - Changed nack code to allow having more nacks than can fit in a single
+          packet
+        - Changed Reliable_Ses_Send to try to buffer packets if there is no
+          route instead of just dropping them (will block if there is no route
+          for too long)
+        - In Ses_Reliable_Timeout, changed to re-enqueue even if there is no
+          current route (since it might be a temporary problem)
+
+==============================================================================
+Test programs (spines2port, port2spines, u_flooder)
+==============================================================================
+    - Changing reporting format
+    - Changing to use Alarm instead of printf (allows using threaded alarm)
+
+    -------------------------------------------------------------------------- 
+    Affected Files
+    -------------------------------------------------------------------------- 
+    testprogs/port2spines.c
+        - Changing to use Alarm instead of printf
+        - Change reporting format
+        - Make source-based routing a valid -D option (3)
+    testprogs/sp_bflooder.c
+        - Delete unused code
+    testprogs/sp_tflooder.c
+        - Change to print every pkts_sending/100, rather than every packet
+    testprogs/spines2port.c
+        - Changing to use Alarm instead of printf
+        - Change reporting format
+        - Separate wait_time (time to wait before delivering packet) and
+          expire_time (throw packet away if it arrived too late)
+        - Add signal handler to print out stats before exiting on SIGINT
+        - Made calculating time based on source timestamp the default. Can
+          still use pkt arrival time by setting Arrival_Base_Time_Flag (-t)
+    testprogs/u_flooder.c
+        - Added option to not have sender try to bind (to allow sender to send
+          to receiver on same machine)
+
+==============================================================================
+Fix Memory Leak from OpenSSL Contexts
+==============================================================================
+
+- Added missing CTX_cleanup calls to fix memory leak coming from not correctly
+  freeing OpenSSL context structures
+
+    -------------------------------------------------------------------------- 
+    Affected Files
+    -------------------------------------------------------------------------- 
+    daemon/intrusion_tol_udp.c
+        - Adding EVP_MD_CTX_cleanup calls
+
+==============================================================================
+Minor cleanup/edits
+==============================================================================
+
+    -------------------------------------------------------------------------- 
+    Affected Files
+    -------------------------------------------------------------------------- 
+    daemon/intrusion_tol_udp.c
+        - comment typo fix
+    daemon/multicast.c
+        - Deleted unused zero_timeout variable
+    daemon/multipath.c
+        - Multipath_Compute
+            - Added special case for sending to myself -- don't actually want
+              to try to do the calculation, just set bitmask to all zeros and
+              report that you have as many paths as you want, since I can
+              always deliver to myself
+        - Multipath_Stamp_Bitmask
+            - Changed so that we don't consider MultiPath_Compute returning 0
+              as an error. (change in MultiPath_Compute may make this
+              unnecessary?)
+    daemon/reliable_datagram.c
+        - Changed nack code to allow having more nacks than can fit in a single
+          packet
+    daemon/route.c
+        - Free Routing_Regime in RR_Fini (fix leak)
+    daemon/session.c
+        - Delete unused code
+        - Some retabbing/formatting
+    daemon/spines.c
+        - Some reformatting and extra sanity checking of commandline inputs
+    daemon/state_flood.c
+        - delete unused constant
+    daemon/udp.c
+        - delete unused constant
+    daemon/network.h
+        - Defining NET_UPDATE_THRESHOLD and NET_UPDATE_THRESHOLD_ABS
+
+==============================================================================
+Debugging
+==============================================================================
+
+    -------------------------------------------------------------------------- 
+    Affected Files
+    -------------------------------------------------------------------------- 
+    libspread-util/src/alarm.c
+        - Change to printout in exit to make it clear whether threaded or
+          non-threaded version was used
+    libspread-util/src/memory.c
+        - Added printout to case where threshold is set to 0 for valgrinding to
+          make it clear what version is running

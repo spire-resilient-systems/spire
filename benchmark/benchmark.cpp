@@ -24,10 +24,13 @@
  *   Amy Babay            babay@cs.jhu.edu
  *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
- * Major Contributor:
+ * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
  *
- * Copyright (c) 2017 Johns Hopkins University.
+ * Contributors:
+ *   Samuel Beckley       Contributions to HMIs
+ *
+ * Copyright (c) 2018 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -81,6 +84,7 @@ void Gen_Msg()
     nBytes = sizeof(signed_message) + mess->len;
     seq.seq_num++;
     ret = IPC_Send(ipc_sock, (void *)mess, nBytes, itrc_main.ipc_remote);
+    if (ret < 0) printf("Gen_Msg: IPC_Send error!\n");
     free(mess);
 }
 
@@ -91,9 +95,10 @@ void Process_Msg()
     double latency;
     signed_message *mess;
     benchmark_msg *ben;
-    struct timeval now, rtt, ping, pong; //, apx_oneway;
+    struct timeval now, rtt, ping; //, pong; //, apx_oneway;
 
     ret = IPC_Recv(ipc_sock, buf, MAX_LEN);
+    if (ret < 0) printf("Process_Msg: IPC_Recv error!\n");
     mess = (signed_message *)buf;
     ben = (benchmark_msg *)(mess + 1);
 
@@ -101,8 +106,8 @@ void Process_Msg()
     
     ping.tv_sec  = ben->ping_sec;
     ping.tv_usec = ben->ping_usec;
-    pong.tv_sec  = ben->pong_sec;
-    pong.tv_usec = ben->pong_usec;
+    //pong.tv_sec  = ben->pong_sec;
+    //pong.tv_usec = ben->pong_usec;
     //apx_oneway = diffTime(pong, ping);
     //printf("\tapx_oneway = %lu s %lu us\n", apx_oneway.tv_sec, apx_oneway.tv_usec);
 
@@ -179,8 +184,7 @@ static void init(int ac, char **av)
     My_IP = getIP();
 
     // Open file for recording statistics
-    //sprintf(filename, "./benchmark%d.out", My_ID);
-    /* sprintf(filename, "/scada_logs/emu/5-5-5-4/2_22_2017/benchmark%d.out", My_ID);
+    /* sprintf(filename, "./benchmark%d.out", My_ID);
     fw = fopen(filename, "w");
     if (fw == NULL) {
         printf("ERROR: unable to open file %s for writing\n", filename);
@@ -192,14 +196,18 @@ static void init(int ac, char **av)
     memset(&itrc_main, 0, sizeof(itrc_data));
     sprintf(itrc_main.ipc_local, "%s%d", (char *)BM_IPC_MAIN, My_ID);
     sprintf(itrc_main.ipc_remote, "%s%d", (char *)BM_IPC_ITRC, My_ID);
+    sprintf(itrc_main.prime_keys_dir, "%s", (char *)PROXY_PRIME_KEYS);
+    sprintf(itrc_main.sm_keys_dir, "%s", (char *)PROXY_SM_KEYS);
     ipc_sock = IPC_DGram_Sock(itrc_main.ipc_local);
 
     // Setup IPC for the Worker Thread (running the ITRC Client)
     memset(&itrc_thread, 0, sizeof(itrc_data));
     sprintf(itrc_thread.ipc_local, "%s%d", (char *)BM_IPC_ITRC, My_ID);
     sprintf(itrc_thread.ipc_remote, "%s%d", (char *)BM_IPC_MAIN, My_ID);
+    sprintf(itrc_thread.prime_keys_dir, "%s", (char *)PROXY_PRIME_KEYS);
+    sprintf(itrc_thread.sm_keys_dir, "%s", (char *)PROXY_SM_KEYS);
     ip_ptr = strtok(av[2], ":");
-    sprintf(itrc_thread.spines_ext_addr, ip_ptr);
+    sprintf(itrc_thread.spines_ext_addr, "%s", ip_ptr);
     ip_ptr = strtok(NULL, ":");
     sscanf(ip_ptr, "%d", &itrc_thread.spines_ext_port);
 

@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -49,13 +49,14 @@
 #include "pre_order.h"
 #include "order.h"
 #include "tc_wrapper.h"
-#include "proactive_recovery.h"
+#include "catchup.h"
 
 /* Global Variables */
 extern server_variables     VAR;
 extern server_data_struct   DATA;
 
 /* Local Functions */
+void VIEW_Clear_Data_Structures();
 void VIEW_Try_Send_Replay_Prepare();
 void VIEW_Try_Send_Replay_Commit();
 void VIEW_Try_Execute_Replay();
@@ -78,14 +79,48 @@ void VIEW_Initialize_Data_Structure()
     stdhash_construct(&DATA.VIEW.unique_partial_sig, sizeof(int32u),
             sizeof(signed_message **), NULL, NULL, 0);
    
-    /* Re-initialize things that happen each view change */
     VIEW_Initialize_Upon_View_Change();
 
     /* Special case for first view (no view change needed to start it) */
     DATA.VIEW.view_change_done = 1;
+    DATA.VIEW.executed_ord = 1;
+    UTIL_Stopwatch_Start(&DATA.ORD.leader_duration_sw);
+
 }
 
 void VIEW_Initialize_Upon_View_Change()
+{
+    int32u i;
+
+    for (i = 1; i <= NUM_SERVERS; i++) {
+        DATA.VIEW.max_pc_seq[i] = 0;
+    }
+    
+    VIEW_Clear_Data_Structures();
+
+    for (i = 1; i < MAX_MESS_TYPE; i++) {
+        DATA.VIEW.vc_stats_send_size[i] = 0;
+        DATA.VIEW.vc_stats_send_count[i] = 0;
+    }
+    DATA.VIEW.vc_stats_sent_bytes = 0;
+    DATA.VIEW.vc_stats_recv_bytes = 0;
+
+    DATA.VIEW.view_change_done      = 0;
+    DATA.VIEW.executed_ord          = 0;
+    DATA.VIEW.numSeq                = 0;
+    DATA.VIEW.complete_state        = 0;
+    DATA.VIEW.replay_prepare_count  = 0;
+    DATA.VIEW.replay_commit_count   = 0;
+    DATA.VIEW.sent_replay_prepare   = 0;
+    DATA.VIEW.sent_replay_commit    = 0;
+    DATA.VIEW.executed_replay       = 0;
+    DATA.VIEW.started_vc_measure    = 0;
+    DATA.VIEW.done_vc_measure       = 0;
+    
+    UTIL_Stopwatch_Start(&DATA.VIEW.vc_stats_sw);
+}
+
+void VIEW_Clear_Data_Structures()
 {
     int32u i;
     stdit it;
@@ -93,8 +128,6 @@ void VIEW_Initialize_Upon_View_Change()
     signed_message **mess_arr;
 
     for (i = 1; i <= NUM_SERVERS; i++) {
-        DATA.VIEW.max_pc_seq[i] = 0;
-
         if (DATA.VIEW.report[i] != NULL) {
             dec_ref_cnt(DATA.VIEW.report[i]);
             DATA.VIEW.report[i] = NULL;
@@ -159,30 +192,20 @@ void VIEW_Initialize_Upon_View_Change()
             DATA.VIEW.replay_commit[i] = NULL;
         }
     }
+}
 
-    for (i = 1; i < MAX_MESS_TYPE; i++) {
-        DATA.VIEW.vc_stats_send_size[i] = 0;
-        DATA.VIEW.vc_stats_send_count[i] = 0;
+void VIEW_Upon_Reset()
+{
+    int32u i;
+
+    VIEW_Clear_Data_Structures();
+
+    for (i = 1; i <= NUM_SERVERS; i++) {
+        stdskl_destruct(&DATA.VIEW.pc_set[i]);
     }
-    DATA.VIEW.vc_stats_sent_bytes = 0;
-    DATA.VIEW.vc_stats_recv_bytes = 0;
-    UTIL_Stopwatch_Start(&DATA.VIEW.vc_stats_sw);
-
-    DATA.VIEW.view_change_done      = 0;
-    DATA.VIEW.executed_ord          = 0;
-    DATA.VIEW.numSeq                = 0;
-    DATA.VIEW.complete_state        = 0;
-    DATA.VIEW.replay_prepare_count  = 0;
-    DATA.VIEW.replay_commit_count   = 0;
-    DATA.VIEW.sent_replay_prepare   = 0;
-    DATA.VIEW.sent_replay_commit    = 0;
-    DATA.VIEW.executed_replay       = 0;
-    DATA.VIEW.started_vc_measure    = 0;
-    DATA.VIEW.done_vc_measure       = 0;
-
-    /* Start periodic retransmissions until we finish the view change
-     * and at least one ordinal thereafter */
-    VIEW_Periodic_Retrans(0, NULL);
+    stdhash_destruct(&DATA.VIEW.unique_vc_list);
+    stddll_destruct(&DATA.VIEW.pending_vc_list);
+    stdhash_destruct(&DATA.VIEW.unique_partial_sig);
 }
 
 void VIEW_Periodic_Retrans(int d1, void *d2)
@@ -198,6 +221,7 @@ void VIEW_Periodic_Retrans(int d1, void *d2)
      * my own replay_prepare or replay_commits (since other VC messages
      * have been overtaken by this point) */
     if (DATA.VIEW.replay) {
+        Alarm(PRINT, "VIEW: resending replay\n");
         UTIL_Broadcast(DATA.VIEW.replay);
 
         if (DATA.VIEW.replay_prepare[VAR.My_Server_ID])
@@ -209,8 +233,10 @@ void VIEW_Periodic_Retrans(int d1, void *d2)
     /* Otherwise, send the VC list and VC partial sigs to try to generaet
      * a VC Proof to challenge the leader to give a replay response */
     else {
-        if (DATA.VIEW.my_vc_list)
+        if (DATA.VIEW.my_vc_list) {
+            Alarm(PRINT, "VIEW: resending vc_list and partials\n");
             UTIL_Broadcast(DATA.VIEW.my_vc_list);
+        }
         
         for (stdhash_begin(&DATA.VIEW.unique_partial_sig, &it); 
             !stdhash_is_end(&DATA.VIEW.unique_partial_sig, &it); stdit_next(&it))
@@ -238,12 +264,15 @@ void VIEW_Start_View_Change()
     Alarm(DEBUG, "Starting view change to view %d\n", DATA.View);
 
     SUSPECT_Initialize_Upon_View_Change();
+    SUSPECT_Restart_Timed_Functions();
     RB_Initialize_Upon_View_Change();
+    RB_Periodic_Retrans(0, NULL);
     VIEW_Initialize_Upon_View_Change();
+    VIEW_Periodic_Retrans(0, NULL);
 
     /* Go through slots that have been ordered (we have prepare certificate)
      *      but have not yet been executed (e.g. no PO request) */
-    for (i = DATA.ORD.ARU + 1; i <= DATA.ORD.high_seq; i++) {
+    for (i = DATA.ORD.ARU + 1; i <= DATA.ORD.high_prepared; i++) {
         slot = UTIL_Get_ORD_Slot_If_Exists(i);
         if (slot == NULL)  /* Skipping gaps, maybe due to bad leader */
             continue;
@@ -310,6 +339,7 @@ void VIEW_Start_View_Change()
     }
     UTIL_Stopwatch_Stop(&DATA.VIEW.vc_sw);
     Alarm(DEBUG, "\t[SUSP to Report/PC_Set] = %f\n", UTIL_Stopwatch_Elapsed(&DATA.VIEW.vc_sw));
+    Alarm(PRINT, "\tAdded Report and PC_Set to Pending\n");
 }
 
 void VIEW_Process_Report(signed_message *mess)
@@ -339,7 +369,7 @@ void VIEW_Process_Report(signed_message *mess)
         return;
     }
  
-    Alarm(DEBUG, "VIEW_Process_Report: [id, view, seq, execARU, pc_set_size] = "
+    Alarm(PRINT, "VIEW_Process_Report: [id, view, seq, execARU, pc_set_size] = "
                 " [%d, %d, %d, %d, %d]\n", report->rb_tag.machine_id,
                 report->rb_tag.view, report->rb_tag.seq_num, report->execARU,
                 report->pc_set_size);
@@ -351,15 +381,19 @@ void VIEW_Process_Report(signed_message *mess)
     DATA.VIEW.report[report->rb_tag.machine_id] = mess;
     if (report->execARU > DATA.VIEW.max_pc_seq[report->rb_tag.machine_id])
         DATA.VIEW.max_pc_seq[report->rb_tag.machine_id] = report->execARU;
-    
-    /* if (DATA.ORD.ARU < report->execARU) {
-        if (DATA.PR.catchup_target < report->execARU)
-            DATA.PR.catchup_target = report->execARU;
-        if (DATA.PR.recovery_in_progress == 0) {
-            DATA.PR.recovery_in_progress = 1;
-            PR_Catchup_Periodically(0, NULL);
+   
+    if (DATA.ORD.ARU < report->execARU) {
+
+        Alarm(PRINT, "Schedule_Catchup from Report message in VC\n");
+        CATCH_Schedule_Catchup();
+
+        /* TODO - make sure we reset catchup_target to something we actually executed
+        * through to prevent malicious from making it too high for later catchups */
+        if (DATA.CATCH.vc_catchup_target < report->execARU) {
+            DATA.CATCH.vc_catchup_target = report->execARU;
+            DATA.CATCH.vc_catchup_source = report->rb_tag.machine_id;
         }
-    } */
+    }
 
     VIEW_Check_Complete_State(report->rb_tag.machine_id);
 }
@@ -865,7 +899,6 @@ void VIEW_Try_Send_Replay_Prepare()
 void VIEW_Try_Send_Replay_Commit()
 {
     signed_message         *re_commit;
-    replay_message         *replay;
     replay_prepare_message *stored_rp;
     int32u                  i, count;
 
@@ -879,8 +912,6 @@ void VIEW_Try_Send_Replay_Commit()
 
     if (DATA.VIEW.replay == NULL || DATA.VIEW.replay_prepare_count < 2*VAR.F + VAR.K)
         return;
-
-    replay = (replay_message *)(DATA.VIEW.replay + 1);
 
     /* If we have >= 2f+k matching replay prepares to the replay, send re_commit */
     count = 0;
@@ -945,6 +976,10 @@ void VIEW_Try_Execute_Replay()
     VIEW_Execute_Replay();
 
     DATA.VIEW.view_change_done = 1;
+    UTIL_Stopwatch_Start(&DATA.ORD.leader_duration_sw);
+
+    /* Reset any stored catchup targets from report messages in this view change */
+    CATCH_Reset_View_Change_Catchup();
 
     if (UTIL_I_Am_Leader()) {
         DATA.ORD.should_send_pp = 1;
@@ -979,8 +1014,8 @@ void VIEW_Execute_Replay()
 {
     stdhash full_pc_set;
     stdit it, hit;
-    int32u i, j;
-    po_seq_pair ps;
+    int32u i, j, peek;
+    po_seq_pair ps, *prev_made_elig;
     signed_message *mess, *pptr, *prev_pp_part, *dummy_pp_part;
     pre_prepare_message *pp;
     complete_pre_prepare_message *complete_pp, *prev_pp;
@@ -1030,8 +1065,9 @@ void VIEW_Execute_Replay()
     while (!stdhash_is_end(&DATA.ORD.History, &it)) {
         slot = *(ord_slot **)stdit_val(&it);
         //if (slot->seq_num == DATA.ORD.ARU) {
-        if (((GC_LAG > DATA.ORD.ARU || slot->seq_num >= DATA.ORD.ARU - GC_LAG) && slot->seq_num <= DATA.ORD.ARU) 
-             || (slot->seq_num >= rep->startSeq && slot->view >= DATA.View))
+        //if (((GC_LAG > DATA.ORD.ARU || slot->seq_num >= DATA.ORD.ARU - GC_LAG) && slot->seq_num <= DATA.ORD.ARU) 
+        if ( (slot->seq_num >= DATA.ORD.stable_catchup && slot->seq_num <= DATA.ORD.ARU) || 
+             (slot->seq_num >= rep->startSeq && slot->view >= DATA.View) )
         {
             stdit_next(&it);
             continue;
@@ -1070,11 +1106,15 @@ void VIEW_Execute_Replay()
         dummy_pp_part->len = pp->num_acks_in_this_message * 
                                 sizeof(po_aru_signed_message);
         prev_pp_part = dummy_pp_part;
+        /* Here, we just need a po_seq_pair array of size NUM_SERVERS
+         * that is set to all zeros, so be borrow from last_executed */
+        prev_made_elig = (po_seq_pair *)pp->last_executed;
     } else {
         slot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ARU);
         assert(slot != NULL);
         prev_pp = &slot->complete_pre_prepare;
         prev_pp_part = slot->pre_prepare_parts_msg[1];
+        prev_made_elig = (po_seq_pair *)slot->made_eligible;
     }
 
     /* Iterate from execARU to startSeq - 1, creating ordering slots.
@@ -1083,7 +1123,9 @@ void VIEW_Execute_Replay()
      * Pre-prepare and other information. If not, set it as a no-op.
      * After each slot, Execute_Commit it - which means it will either
      * get executed (if we have the PO info) or will be marked as pending.
-     * As soon as we finish going through this, view change is done. */
+     * As soon as we finish going through this, view change is done.
+     * Roll back ppARU to work for the Execute_Commit on slots */
+    DATA.ORD.ppARU = DATA.ORD.ARU;
     for (i = DATA.ORD.ARU + 1; i < rep->startSeq; i++) {
         
         slot = UTIL_Get_ORD_Slot(i);
@@ -1101,9 +1143,15 @@ void VIEW_Execute_Replay()
             slot->type = SLOT_NO_OP;
 
             /* setup complete_pp */
+            /* first, copy in the previous one */
             memcpy(&slot->complete_pre_prepare, prev_pp, 
                 sizeof(complete_pre_prepare_message));
+
+            /* Adjust the seq_num, and make last_executed equal to the 
+             * previous slot's made_eligible to indicate no_op */
             slot->complete_pre_prepare.seq_num = slot->seq_num;
+            memcpy(&slot->complete_pre_prepare.last_executed, prev_made_elig, 
+                sizeof(slot->complete_pre_prepare.last_executed));
             slot->total_parts = 1; 
             slot->num_forwarded_parts = slot->total_parts;
 
@@ -1123,6 +1171,12 @@ void VIEW_Execute_Replay()
             slot->num_forwarded_parts = slot->total_parts;
             slot->complete_pre_prepare.seq_num = slot->seq_num;
             slot->complete_pre_prepare.view = slot->view;
+
+            /* Copy in the last_executed and proposal_digest */
+            memcpy((byte *)slot->complete_pre_prepare.last_executed, 
+                    &pp->last_executed, sizeof(pp->last_executed));
+            memcpy((byte *)&slot->complete_pre_prepare.proposal_digest, 
+                    &pp->proposal_digest, DIGEST_SIZE);
 
             /* NOTE: skipping storing the part, not incrementing the
              * reference count, assuming large messages with 1 part
@@ -1159,15 +1213,56 @@ void VIEW_Execute_Replay()
         ORDER_Update_Forwarding_White_Line();
         RECON_Update_Recon_White_Line();
 
+        /* NEW: setup the made_eligible for the slot */
+        /* This first case is the exception, where this slot is a NO_OP and the
+         * next slot is a PC_SET message. Since that PC_Set message was created 
+         * with the impression that this slot would be ordered/executed, the
+         * next slot's Pre-Prepare will have a last_executed that potentially does
+         * not match the made_eligible vector that we were copying across NO_OP
+         * slots. We need to peek ahead to grab that PC_Set's last_executed and
+         * make it this slot's made_eligible. Since this "NO_OP" is actually
+         * making things eligible, we call it a NO_OP_PLUS slot */
+        peek = i+1; 
+        if (slot->type == SLOT_NO_OP && peek < rep->startSeq &&
+            !stdhash_is_end(&full_pc_set, stdhash_find(&full_pc_set, &it, &peek)))
+        {
+            slot->type = SLOT_NO_OP_PLUS;
+
+            mess = *(signed_message **)stdit_val(&it);
+            pptr = (signed_message *)(((char *)mess) +
+                  sizeof(signed_message) + sizeof(pc_set_message));
+            pp = (pre_prepare_message *)(pptr + 1);
+
+            for (j = 0; j < NUM_SERVERS; j++)
+                slot->made_eligible[j] = pp->last_executed[j];
+
+        }
+        /* This is the normal case, where we are just calculting the made_eligible
+         * on this slot based on last_executed and the matrix of po_arus */
+        else {
+            for (j = 0; j < NUM_SERVERS; j++) {
+                ps = PRE_ORDER_Proof_ARU(j+1, slot->complete_pre_prepare.cum_acks);
+                if (PRE_ORDER_Seq_Compare(ps, slot->complete_pre_prepare.last_executed[j]) > 0) 
+                    slot->made_eligible[j] = ps;
+                else 
+                    slot->made_eligible[j] = slot->complete_pre_prepare.last_executed[j];
+            }
+        }
+        slot->populated_eligible = 1;
+
         /* Execute the slot */
         prev_pp = &slot->complete_pre_prepare;
         prev_pp_part = slot->pre_prepare_parts_msg[1];
+        prev_made_elig = (po_seq_pair *)slot->made_eligible;
+        Alarm(PRINT, "  Executing type %u for slot %u after VC\n", slot->type, slot->seq_num);
         ORDER_Execute_Commit(slot);
     }
 
-    /* Rollback ppARU to be correct for this view after we potentially cleaned out
-     * old ord slots */
-    DATA.ORD.ppARU = rep->startSeq - 1;
+    /* Rollback ppARU and high_prepared to be correct for this view after we potentially 
+     *  cleaned out old ord slots */
+    ORDER_Adjust_High_Prepared();
+    ORDER_Adjust_ppARU();
+    assert(DATA.ORD.ppARU == rep->startSeq - 1);
 
     /* Cleanup the function-local hash table, done with it */
     stdhash_clear(&full_pc_set);

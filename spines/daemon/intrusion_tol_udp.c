@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -812,7 +813,7 @@ void Process_DH_IT(Link *lk, sys_scatter *scat,
             int32u type, int mode)
 {
     Int_Tol_Data *itdata;
-    int bn_size, ret;
+    int bn_size, ret, cr_fail;
     unsigned int sign_len;
     BIGNUM *bn;
     char *read_ptr, *end_ptr;
@@ -954,6 +955,7 @@ void Process_DH_IT(Link *lk, sys_scatter *scat,
         return;
     }
 
+    cr_fail = 0;
     ret = EVP_VerifyInit(&md_ctx, EVP_sha256()); 
     if (ret != 1) { 
         Alarm(PRINT, "Process_DH_IT: VerifyInit failed\r\n");
@@ -965,21 +967,24 @@ void Process_DH_IT(Link *lk, sys_scatter *scat,
     ret = EVP_VerifyUpdate(&md_ctx, (unsigned char*)phdr, sizeof(packet_header));
     if (ret != 1) {
         Alarm(PRINT, "Process_DH_IT: VerifyUpdate for packet_header failed\r\n");
-        return;
+        cr_fail = 1;
+        goto cr_cleanup;
     }
 
     ret = EVP_VerifyUpdate(&md_ctx, (unsigned char*)scat->elements[1].buf, 
                             (unsigned int)(data_len - sign_len));
     if (ret != 1) {
         Alarm(PRINT, "Process_DH_IT: VerifyUpdate for packet_body failed\r\n");
-        return;
+        cr_fail = 1;
+        goto cr_cleanup;
     }
 
     stdhash_find(&Node_Lookup_Addr_to_ID, &it, &src);
     if (stdhash_is_end(&Node_Lookup_Addr_to_ID,  &it)) {
         Alarm(PRINT, "Process_DH_IT: \
                       source not in config file");
-        return;
+        cr_fail = 1;
+        goto cr_cleanup;
     }
     src_id = *(int32u *)stdhash_it_val(&it);
     /* printf("SRC_ID = %d, MSG_LEN = %d, DATA_LEN = %d\n", src_id, data_len - sign_len, data_len); */
@@ -988,8 +993,13 @@ void Process_DH_IT(Link *lk, sys_scatter *scat,
                             Pub_Keys[src_id]);
     if (ret != 1) {
         Alarm(PRINT, "Process_DH_IT: VerifyFinal failed\r\n");
-        return;
+        cr_fail = 1;
+        goto cr_cleanup;
     }
+
+    cr_cleanup:
+        EVP_MD_CTX_cleanup(&md_ctx);
+        if (cr_fail) return;
 
     /* Possibly send response, maybe just set state flag */
     
@@ -1267,7 +1277,7 @@ void Fill_Bucket_IT(int link_id, void* dummy)
 /* void Assign_Resources_IT(Node *next_hop)                */
 /*                                                         */
 /* Method for which lower level fills in its window with   */
-/*  packets from high-level disseminationh algorithm in    */
+/*  packets from high-level dissemination algorithm in     */
 /*  a round-robin fashion. Only dissemination algorithms   */
 /*  in the queue are considered.                           */
 /*                                                         */
@@ -1780,7 +1790,7 @@ int Send_IT_Data_Msg(int link_id, int64u seq)
     /* hdr.data_len         = data_len; */
     hdr->ack_len         = ack_len;
     /* hdr.seq_no           = Set_Loss_SeqNo(lk->leg); */
-    /* hdr.seq_no           = 0; */
+    hdr->seq_no          = 0;
    
     /* printf("\tlen = %d\n", data_len); */
     ret = IT_Link_Send(lk, link_scat);
@@ -3047,6 +3057,8 @@ void Key_Exchange_IT(int link_id, void *dummy)
     if (sign_len != Signature_Len)
         Alarm(PRINT, "Key_Exchange_IT: sign_len (%d) != Key_Len (%d)\r\n",
                         sign_len, Signature_Len);
+
+    EVP_MD_CTX_cleanup(&md_ctx);
 
     /* ret = EVP_VerifyInit(&md_ctx, EVP_sha256()); 
     if (ret != 1) { 

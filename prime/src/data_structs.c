@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -58,6 +58,7 @@
 #include "suspect_leader.h"
 #include "reliable_broadcast.h"
 #include "view_change.h"
+#include "catchup.h"
 #include "proactive_recovery.h"
 #include "utility.h"
 
@@ -73,21 +74,22 @@ benchmark_struct    BENCH;
 void DAT_Initialize() 
 {
   int32u i;
-  signed_message *mess;
+  /* signed_message *mess; */
   /* char buf[128]; */
   
   /* VAR and NET get initialized elsewhere. */
   
   /* Initialize data structures */
   DATA.View    = 1;
+  PR_Initialize_Data_Structure();
   PRE_ORDER_Initialize_Data_Structure();
   ORDER_Initialize_Data_Structure();
   SIG_Initialize_Data_Structure();
   SUSPECT_Initialize_Data_Structure();
   RB_Initialize_Data_Structure();
   VIEW_Initialize_Data_Structure();
-  PR_Initialize_Data_Structure();
-  Alarm(DEBUG, "Initialized PO, ORDER, SIG, SUSP, and RB data structures.\n");
+  CATCH_Initialize_Data_Structure();
+  Alarm(DEBUG, "Initialized PO, ORDER, SIG, SUSP, RB, VIEW, CATCH, and PR data structures.\n");
 
   /* We need to initialize the erasure codes no matter what because
    * we use erasure-encoded reconciliation in Prime. */
@@ -101,16 +103,13 @@ void DAT_Initialize()
   BENCH.num_flooded_pre_prepares = 0;
   BENCH.clock_started            = 0;
 
-  for(i = 0; i < 21; i++) {
-    BENCH.bits[i] = 0;
-    BENCH.total_bits_sent[i] = 0;  
-  }
-
   BENCH.num_signatures = 0;
   BENCH.total_signed_messages = 0;
   BENCH.max_signature_batch_size = 0;
-  for(i = 0; i < MAX_MESS_TYPE; i++)
+  for(i = 0; i < MAX_MESS_TYPE; i++) {
     BENCH.signature_types[i] = 0;
+    BENCH.profile_count[i] = 0;
+  }
 
   /* sprintf(buf, "state_machine_out.%d.log", VAR.My_Server_ID);
   if((BENCH.state_machine_fp = fopen(buf, "w")) == NULL) {
@@ -119,9 +118,9 @@ void DAT_Initialize()
   } */
 
   /* Send first PO-Request to tell everyone about my incarnation change */
-  mess = PRE_ORDER_Construct_Update(NEW_INCARNATION);
+  /* mess = PRE_ORDER_Construct_Update(NEW_INCARNATION);
   PROCESS_Message(mess);
-  dec_ref_cnt(mess);
+  dec_ref_cnt(mess); */
 
   Alarm(PRINT, "Initialized data structures.\n");
 }

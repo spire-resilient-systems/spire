@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -129,6 +129,21 @@ void Init_Network(void)
   memset(&NET.client_addr, 0, sizeof(struct sockaddr_un));
   NET.client_addr.sun_family = AF_UNIX;
   sprintf(NET.client_addr.sun_path, "%s%d", (char *)CLIENT_IPC_PATH, VAR.My_Server_ID);
+
+  max_rcv_buff(NET.from_client_sd);
+  max_snd_buff(NET.from_client_sd);
+  max_rcv_buff(NET.to_client_sd);
+  max_snd_buff(NET.to_client_sd);
+
+/* TESTING IPC BUFFER SIZE + NONBLOCK */
+/*  int on, on_len;
+  on_len = sizeof(on);
+  getsockopt(NET.to_client_sd, SOL_SOCKET, SO_SNDBUF, (void *)&on, &on_len);
+  printf("size = %d\n", on);
+
+  on = 1;
+  ioctl(NET.to_client_sd, FIONBIO, &on); */
+
 #else
   /* Each server listens for incoming TCP connections from clients on
    * port PRIME_TCP_PORT */
@@ -528,11 +543,29 @@ void Initialize_Spines(int dummy, void *dummy_p)
   }
 #endif
 
+  if (my_ip != spines_ip)  /* TCP */
+  {
+      spines_addr.sin_family = AF_INET;
+      spines_addr.sin_port   = htons(SPINES_PORT);
+      spines_addr.sin_addr.s_addr = spines_ip;
+      Alarm(PRINT, "Spines INET Socket!\n");
+      spines_recv_sk = spines_socket(PF_SPINES, SOCK_DGRAM, protocol, 
+                     (struct sockaddr *)&spines_addr);
+  } else { /* IPC */
+      spines_uaddr.sun_family = AF_UNIX;
+      sprintf(spines_uaddr.sun_path, "%s%d", "/tmp/spines", SPINES_PORT);
+      Alarm(PRINT, "Spines UNIX Socket to %s!\n", spines_uaddr.sun_path);
+      spines_recv_sk = spines_socket(PF_SPINES, SOCK_DGRAM, protocol, 
+                       (struct sockaddr *)&spines_uaddr);
+  }
+
+#if 0
   spines_uaddr.sun_family = AF_UNIX;
   sprintf(spines_uaddr.sun_path, "%s%d", "/tmp/spines", SPINES_PORT);
   //printf("Spines Unix Socket to %s!\n", spines_uaddr.sun_path);
   spines_recv_sk = spines_socket(PF_SPINES, SOCK_DGRAM, protocol, 
                    (struct sockaddr *)&spines_uaddr);
+#endif
 
   if(spines_recv_sk == -1) {
     Alarm(DEBUG, "%d Could not connect to Spines daemon.\n", VAR.My_Server_ID );
@@ -686,9 +719,19 @@ void Net_Srv_Recv(channel sk, int source, void *dummy_p)
       NET.client_sd[mess->machine_id] = sk; */
   }
 
+  /* Function used to first decide whether or not we should even look at this message 
+   * based on the state we are in (STARTUP, RESET, RECOVERY, NORMAL) */
+  if (!VAL_State_Permits_Message(mess)) {
+    Alarm(PRINT, "State %u does not permit processing type %s, from %u\n",
+            DATA.PR.recovery_status[VAR.My_Server_ID], UTIL_Type_To_String(mess->type),
+            mess->machine_id);
+    return;
+  }
+
   /* 1) Validate the Packet.  If the message does not validate, drop it. */
   if (!VAL_Validate_Message(mess, received_bytes)) {
-    Alarm(PRINT, "VALIDATE FAILED for type %d\n", mess->type);
+    Alarm(PRINT, "VALIDATE FAILED for type %s from %u\n", 
+            UTIL_Type_To_String(mess->type), mess->machine_id);
     return;
   }
 

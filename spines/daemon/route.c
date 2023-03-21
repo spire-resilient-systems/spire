@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -102,6 +103,14 @@ static const sp_time            Reroute_Timeout    = { 0, 100 };
 
 static long                     Route_Compute_Duration;
 static Routing_Compute_Duration Routing_Compute_Durations[NUM_ROUTING_COMPUTE_DURATIONS];
+
+#define SOURCE_HIST_SIZE 100000
+typedef struct dummy_seq_pair {
+    int32u seq;
+    int32u incarnation;
+} seq_pair;
+
+static seq_pair Source_Seq_Hist[MAX_NODES+1][SOURCE_HIST_SIZE] = {{{0,0}}};
 
 /*********************************************************************
  * Lookup a node's routing index based on its Node_ID
@@ -278,16 +287,22 @@ static double RR_Init(Routing_Regime *rr)
 
       edge = *(Edge**) stdhash_it_val(&inner_it);
 
-      if (edge->cost < 0) {
+      if (edge->cost == -1)
+        continue;
+
+      /* if (edge->cost < 0) {
 	    assert(edge->cost == -1);
-	    continue;
-      }
+	    continue; 
+      } */
       
       src_index       = RR_Get_Node_Index(rr, edge->src->nid, 1);
       dst_index       = RR_Get_Node_Index(rr, edge->dst->nid, 1);
 
       rt              = &rr->Routes[src_index * num_nodes + dst_index];
-      rt->cost        = edge->cost;
+      /* AB: Made it legal to have negative weight edges for problem type
+       * routing, so want to take the absolute value here */
+      /*rt->cost        = edge->cost;*/
+      rt->cost        = abs(edge->cost);
       rt->distance    = 1;
       rt->predecessor = edge->src->nid;
       rt->forwarder   = (edge->src != This_Node ? NULL : edge->dst);
@@ -374,6 +389,8 @@ static void RR_Fini(Routing_Regime *rr)
   free(rr->Routes);
   stdhash_destruct(&rr->Node_Indexes);
   free(rr->Node_IDs);
+  /* AB: added to fix memory leak */
+  free(rr);
 }
 
 /*********************************************************************
@@ -511,6 +528,8 @@ void Init_Routes(void)
 {
   assert(Current_Routing == NULL);
   Set_Routes(0, NULL);
+  My_Source_Seq = 0;
+  My_Source_Incarnation = E_get_time().sec;
 }
 
 /*********************************************************************
@@ -741,14 +760,50 @@ void Discard_Mcast_Neighbors(Group_ID mcast_address)
 
 int Source_Based_Disseminate(Link *src_link, sys_scatter *scat, int mode)
 {
-    int32u i, last_hop_ip;
+    int32u i, last_hop_ip, src_id, seq_index;
     stdit it;
     udp_header *hdr;
+    sb_header *s_hdr;
     Node *nd;
     unsigned char *routing_mask, *path;
+    seq_pair prev_seq;
 
     hdr = (udp_header *)scat->elements[1].buf;
-    routing_mask = (unsigned char*)scat->elements[scat->num_elements-1].buf;
+    s_hdr = (sb_header *)scat->elements[scat->num_elements-1].buf;
+    routing_mask = (unsigned char*)((char*)s_hdr + sizeof(sb_header));
+
+    /* Look up source to see if this is a duplicate source sequence */
+    stdhash_find(&Node_Lookup_Addr_to_ID, &it, &hdr->source);
+    if (stdhash_is_end(&Node_Lookup_Addr_to_ID,  &it)) {
+        Alarm(PRINT, "Source_Based_Disseminate: Source node %d not in config file\n", hdr->source);
+        return NO_ROUTE;
+    }
+    src_id = *(int32u *)stdhash_it_val(&it);
+
+    /* Check whether we have already seen this packet; if so, don't forward again */
+    seq_index = s_hdr->source_seq % SOURCE_HIST_SIZE;
+    prev_seq = Source_Seq_Hist[src_id][seq_index];
+    if (prev_seq.seq == s_hdr->source_seq && prev_seq.incarnation == s_hdr->source_incarnation) {
+        Alarm(DEBUG, "Source_Based_Disseminate: Duplicate Packet with source seq %u, %u...dropping\n", s_hdr->source_seq, s_hdr->source_incarnation);
+        return NO_ROUTE;
+    }
+
+     /* If the packet is so old we can't tell whether it is a duplicate or not,
+      * just throw it away.
+      * NOTE: check whether this breaks the reliable link protocol (but
+      * reliable links don't currently work with source based routing
+      * anyway...) */
+    if (prev_seq.incarnation > s_hdr->source_incarnation ||
+       (prev_seq.seq > s_hdr->source_seq && prev_seq.incarnation == s_hdr->source_incarnation)) {
+        Alarm(PRINT, "Source_Based_Disseminate: got very old packet (past "
+                     "deduplication window) from %u with source seq %u, %u; already "
+                     "had %u, %u...dropping\n", src_id, s_hdr->source_seq, s_hdr->source_incarnation,
+                     prev_seq.seq, prev_seq.incarnation);
+        return NO_ROUTE;
+    }
+
+    Source_Seq_Hist[src_id][seq_index].seq = s_hdr->source_seq;
+    Source_Seq_Hist[src_id][seq_index].incarnation = s_hdr->source_incarnation;
 
     if (src_link == NULL)
         last_hop_ip = My_Address;

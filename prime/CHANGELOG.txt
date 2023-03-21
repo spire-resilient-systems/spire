@@ -1,3 +1,12 @@
+Version 3.1 - March 14, 2018
+    * Added capability to automatically reset the system if the system
+      assumptions are violated (specifically, if there are no longer enough
+      correct replicas with the system state to re-integrate recovering
+      replicas)
+    * Improved proactive recovery implementation to ensure that recovering
+      replicas can always rejoin the system and issue new updates (regardless
+      of their malicious activity prior to being recovered)
+
 Version 3.0 - May 17, 2017
     * Redesigned replication model:
         - Each Prime replica now serves a single application replica

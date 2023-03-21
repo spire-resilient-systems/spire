@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -63,6 +63,11 @@ typedef struct server_variables_dummy {
   int32u F;
   int32u K;
 } server_variables;
+
+/* typedef struct configuration_variables_dummy {
+  int32u 
+  int32u  
+} configuration_variables; */
 
 typedef struct network_variables_dummy {
   int32    My_Address;
@@ -138,10 +143,7 @@ typedef struct dummy_benchmark_struct {
 
   int32u num_po_acks_sent;
   int32u num_acks;
-  double total_bits_sent[3];
   int32u clock_started;
-
-  double bits[25];
 
   int32u num_signatures;
   int32u total_signed_messages;
@@ -155,6 +157,8 @@ typedef struct dummy_benchmark_struct {
   util_stopwatch total_test_sw;
 
   FILE *state_machine_fp;
+
+  int32u profile_count[MAX_MESS_TYPE];
 
 } benchmark_struct;
 
@@ -172,7 +176,14 @@ typedef struct dummy_po_data_struct {
   /* Last po-request I've executed for each server */
   po_seq_pair last_executed_po_reqs[NUM_SERVER_SLOTS];
 
-  /* For each server, what is the last one I've sent a PO-Ack for */
+  /* Placeholder for sending (and resending) PO Ack parts that are bundled into
+   * PO Ack messages. If we were unable to fit all the PO Ack parts into a single
+   * message, these point to where we need to pick up from. If we are ready
+   * for a fresh scan, these are both set to 0 */
+  int32u po_ack_start_server;
+  po_seq_pair po_ack_start_seq;
+
+  /* For each server, what is the last po_request I've sent a PO-Ack for */
   po_seq_pair max_acked[NUM_SERVER_SLOTS];
 
   /* For each server, I've collected PO-Requests contiguously up to
@@ -181,6 +192,9 @@ typedef struct dummy_po_data_struct {
 
   /* For each (i, j), I know that i has acknowledged (cumulatively or
    * regularly) having PO_Requests through [i][j] from j */
+  /* It seems this is only used today in the recon protocol to determine
+   * which replicas should be held responsible for sending PO_requests
+   * that are missed by other replicas */
   po_seq_pair cum_max_acked[NUM_SERVER_SLOTS][NUM_SERVER_SLOTS];
 
   /* For each server, I know that at least 2f+k+1 total servers, possibly
@@ -193,6 +207,11 @@ typedef struct dummy_po_data_struct {
    * and set to 1 when we update the cum aru */
   char cum_aru_updated;
 
+  /* Hash table used to figure out which po_request (incarnation, seq_num)
+   * has become eligible for execution in the PRE_ORDER_Proof_ARU function. */
+  stdhash incarnation_tally;
+
+  /* Collection of PO Slots that we have in memory */
   stdhash History[NUM_SERVER_SLOTS];
 
   /* This is the highest sequence number (client update) from each replica that
@@ -202,6 +221,10 @@ typedef struct dummy_po_data_struct {
    * that is more up-to-date than we know (indicating the leader already knew
    * something we didn't send him directly) */
   po_seq_pair max_num_sent_in_proof[NUM_SERVER_SLOTS];
+
+  /* Flag that is set to 1 whenever you store a fresh new po_aru that has
+   * more up-to-date information from the originating replica */
+  int32u new_po_aru;
   
   /* The last PO-ARU I've received from each server */
   po_aru_signed_message cum_acks[NUM_SERVER_SLOTS];
@@ -243,6 +266,10 @@ typedef struct dummy_po_data_struct {
   dll_struct po_request_dll;
   dll_struct proof_matrix_dll;
 
+  /* Queue of PO_Ack_Parts that need to be signed using this separate
+   * DLL of messages */
+  dll_struct ack_batch_dll;
+
   /* If we try to execute a local commit but don't yet have all of
    * the PO-Requests that become eligible, we need to hold off on
    * executing.  When we hold off b/c of PO-Request (i, j), we'll
@@ -257,6 +284,11 @@ typedef struct dummy_po_data_struct {
   //int32u Recon_Max_Sent[NUM_SERVER_SLOTS][NUM_SERVER_SLOTS];
   
   //int32u debug_drop;
+
+  /* Temporary Variable Used to handle the nested case of processing messages.
+   * TODO: Figure out a better way - perhaps a parameter to the function,
+   * or some kind of state */
+  int32u Nested_Ignore_Incarnation;
 
 } po_data_struct;
 
@@ -275,10 +307,20 @@ typedef struct dummy_po_slot {
 
   /* Tracks the acks received and digests from each server */
   int32u ack_received[NUM_SERVER_SLOTS]; 
-  po_ack_part ack[NUM_SERVER_SLOTS]; 
+  signed_message *ack[NUM_SERVER_SLOTS];
+  po_ack_part *ack_part[NUM_SERVER_SLOTS]; 
   
   /* Used to keep track of how many updates are packed into this po_request */
   int32u num_events;
+
+  /* Snapshot of the preinstalled incarnation vector when the certificate was completed
+   * and corresponing flag indicating whether snapshot is present */
+  int32u preinstalled_snapshot[NUM_SERVER_SLOTS];
+  int32u snapshot;
+  
+  /* Stores the po_certificate associated with this po_slot once it is completed */
+  signed_message *po_cert;
+  int32u signed_po_cert;
 
 } po_slot;
 
@@ -289,9 +331,11 @@ typedef struct dummy_ord_slot {
   int32u view;
 
   /* type indicating what kind of slot this is:
-   *    SLOT_COMMIT - created normally w/ commit cert
-   *    SLOT_PC_SET - created by replay message during view change
-   *    SLOT_NO_OP  - created as no_op during view change */
+   *    SLOT_COMMIT      - created normally w/ commit cert
+   *    SLOT_PC_SET      - created by replay message during view change
+   *    SLOT_NO_OP       - created as no_op during view change
+   *    SLOT_NO_OP_PLUS  - created as no_op during view change, but needed
+   *                        to make certain po_requests eligible */
   int32u type;
 
   /* current pre prepare */
@@ -302,7 +346,9 @@ typedef struct dummy_ord_slot {
   int32u collected_all_parts;
   int32u should_handle_complete_pre_prepare;
   complete_pre_prepare_message complete_pre_prepare;
+  //byte pre_prepare_digest[DIGEST_SIZE];
   int32u sent_prepare; /* I accepted this pre-prepare as valid and sent a prepare for it */
+  int32u sent_commit;  /* I sent a commit after getting PP + enough valid prepares */
 
   /* Flag: did we forward the Pre-Prepare part? */
   int32u forwarded_pre_prepare_parts[MAX_PRE_PREPARE_PARTS+1];
@@ -310,21 +356,18 @@ typedef struct dummy_ord_slot {
 
   /* current prepares */
   signed_message* prepare[NUM_SERVER_SLOTS]; 
-  int32u ordered;
-  /*int32u bound; */
-  int32u executed;
 
   /* current commits */
-  signed_message* commit[NUM_SERVER_SLOTS];        
+  signed_message* commit[NUM_SERVER_SLOTS]; 
+
+  /* status flags */
+  int32u ordered;             // 2f+k+1 commits collected w/ certificate
+  int32u executed;            // slot was actually executed in Execute_Commit
 
   /* When a Prepare certificate is ready, we mark the flag here.  The
    * dispatcher sees this and sends a commit, then sets the flag so we 
    * only send the commit once. */
   int32u prepare_certificate_ready;
-  /*int32u sent_commit;*/
-
-  /* Flag to signal if a a commit certificate should be executed */
-  int32u execute_commit;	
 
   /* Last prepare certificate */
   prepare_certificate_struct prepare_certificate;	
@@ -340,9 +383,9 @@ typedef struct dummy_ord_slot {
   /* Have we already reconciled on this slot? */
   int32u reconciled;
 
-  /* In case of catchup and this slot is either SLOT_NO_OP or SLOT_PC_SET,
-   * we want to collect f+1 matching copies of the pre-prepare, then go
-   * with that */
+  /* In case of catchup and this slot is either SLOT_NO_OP SLOT_NO_OP_PLUS,
+   * or SLOT_PC_SET, we want to collect f+1 matching copies of the pre-prepare, 
+   * then go with that */
   signed_message *pp_catchup_replies[NUM_SERVER_SLOTS];
 
   /* Maintains the PO Slots that become eligible for execution
@@ -357,6 +400,18 @@ typedef struct dummy_ord_slot {
    *   PC_SET = ordered during view change, only pre-prepare, need f others
    *   NO_OP  = skipped over during view change, only PP, need f others */
   signed_message *ord_certificate;
+  int32u signed_ord_cert;
+
+  /* Vector describing what was made eligible as a result of applying the 
+   * matrix in this slot to the last_executed vector on the PP for this slot.
+   * This vector should become the last_executed in the next ord_slot */
+  po_seq_pair made_eligible[NUM_SERVERS];
+  int32u populated_eligible;
+
+  /* Snapshot of the preinstalled incarnation vector when the certificate was completed 
+   * and corresponding flag indicating whether snapshot is present */
+  int32u preinstalled_snapshot[NUM_SERVER_SLOTS];
+  int32u snapshot;
 
 } ord_slot;
 
@@ -368,8 +423,11 @@ typedef struct dummy_ordering_data_struct {
    *    consecutive valid pre-prepares for */
   int32u ppARU;
 
-  /* Highest Global sequence number ordered/bound so far */
-  int32u high_seq;
+  /* Highest Global sequence number prepared so far (Prepare Certificate) */
+  int32u high_prepared;
+
+  /* Highest Global sequence number ordered so far (Commit Certificate) */
+  int32u high_committed;
 
   /* If I'm the leader, flag indicating whether to send pre_prepare
    *    at the next timeout */
@@ -392,6 +450,27 @@ typedef struct dummy_ordering_data_struct {
 
   int32u forwarding_white_line;
   int32u recon_white_line;
+
+  /* Seq num of the ordinal that is the current stable catchup point. This is
+   * useeful for the technique to ensure a full catchup history is present at 
+   * all replicas, even after they recover and/or jump. */
+  int32u stable_catchup;
+
+  /* Width of fixed-size chunk that is cleared at a time during garbage collection.
+   * When CATCHUP_HISTORY > 0, these are equal. Otherwise, this is set to 1. */
+  int32u gc_width;
+
+  /* ATTACK settings to make the leader (if specified on the command line)
+   * behave maliciously */
+  util_stopwatch leader_duration_sw;
+  int32u delay_attack;
+  int32u microseconds_delayed;
+  float step_duration;
+
+  /* ATTACK settings to make the leader send inconsistent PPs */
+  int32u inconsistent_pp_attack;
+  int32u inconsistent_pp_type;
+  float inconsistent_delay;
 
 } ordering_data_struct;
 
@@ -446,7 +525,7 @@ typedef struct dummy_suspect_leader_data_struct {
     /* ---- New Leader Election ---- */
     /* flag indicating if we've suspected the leader this view yet */
     int32u leader_suspected;
-    /* array to store new_leader messagse from replicas */
+    /* array to store new_leader messages from replicas */
     signed_message *new_leader[NUM_SERVER_SLOTS];
     /* large signed_message containing new_leader_proof */
     signed_message *new_leader_proof;
@@ -568,39 +647,156 @@ typedef struct dummy_view_change {
 
 } view_change_struct;
 
-typedef struct dummy_proactive_recovery {
+typedef struct dummy_catchup {
 
-  /* Am I currently trying to catcup my ARU? */
-  int32u recovery_in_progress;
+  /* Am I currently trying to catchup my ARU? */
+  int32u catchup_in_progress;
 
-  /* The global sequence that I'm waiting for my ARU to catchup to */
-  int32u catchup_target;
+  /* The replica who gave us the highest report message that caused us to try 
+   * and catchup */
+  int32u vc_catchup_source;
 
-  /* Throttling settings for other replicas */
-  /* (1) keep track of when I last helped them catchup to prevent being 
-   * drained of resources */
-
-  /* (2) keep track of the sequence number (eventually also epoch) that
-   * I sent them, to prevent replay attacks */
-  int32u caught_up_seq[NUM_SERVER_SLOTS];
-
-/* ===== NEW CATCHUP BELOW ===== */
+  /* The sequence number of ordinal from the above report message */
+  int32u vc_catchup_target;
 
   /* Store the latest ordinal certificate received from each replica
-   *   This can be either (a) commit_cert (normal ordering),
+   *   This must be (a) commit_cert (normal ordering). 
+   *   Can't be (by enforcement):
    *   (b) pc_set (ordered prepare cert during view change) - requires f others,
    *   (c) no_op (skip ordinal during view change) - requires f others
    *
    *   Note: my own latest cert is stored in my slot */
   signed_message *last_ord_cert[NUM_SERVER_SLOTS];
 
-  /* Timer used to rate limit how often replicas ask me to recover. This
+  /* Store the latest catchup_request message RECEIVED from each replica in
+   *    case we need to enqueue an event to help them later */
+  signed_message *last_catchup_request[NUM_SERVER_SLOTS];
+
+  /* Store the most recent catchup_request SENT to each replica in
+   *    order to verify the nonce matches the one we challenged with,
+   *    as well as the perioid catchup_request that gets broadcast
+   *    to all replicas on a slow timeout? */
+  signed_message *sent_catchup_request[NUM_SERVER_SLOTS];
+
+  /* Timer used to rate limit how often replicas ask me to catchup. This
    *   represents the next time we are willing to help that replica.
    *   Note: my own slot is used as a personal timer to not try to often */
   sp_time next_catchup_time[NUM_SERVER_SLOTS];
 
+  /* The replica that I start asking for help this round */
+  int32u starting_catchup_id;
+
   /* Used to keep track of who we're asking to help us catchup each instance */
   int32u next_catchup_id;
+
+  /* Replica that I will next do periodic catchup with in the background */
+  int32u periodic_catchup_id;
+
+  /* Flag used to limit the replia to jumping only once per catchup round */
+  //int32u jumped_this_round;
+  int32u force_jump;
+
+} catchup_struct;
+
+/* This stores state related to proactive recovery, both of myself and of
+ *    the other peer replicas in the system */
+typedef struct dummy_proactive_recovery_struct {
+
+  /* State of recovery that each replica is currently in from my point of view
+   * 4 possible states:
+   *    STARTUP
+   *    RESET
+   *    RECOVERY
+   *    NORMAL 
+   */
+  int32u recovery_status[NUM_SERVER_SLOTS];
+  int32u num_startup;
+  int32u startup_finished;
+
+  /* For each server, store preinstalled and installed incarnation and latest session key */
+  /* Preinstalled - updated when accepting a new recovery message from replica */
+  int32u preinstalled_incarnations[NUM_SERVER_SLOTS];
+
+  /* Installed - updated when executing first po_request from new incarnation */
+  int32u installed_incarnations[NUM_SERVER_SLOTS];
+
+  /* Lastest session key - updated when executing first po_request from new incarnation */
+  /* PRTODO: session key structure */
+
+  /* Timer used to rate limit how often I will participate in each replica's
+   *   proactive recovery process */
+  //sp_time next_recovery_time[NUM_SERVER_SLOTS];
+  int32u last_recovery_time[NUM_SERVER_SLOTS];
+
+  /* Storage for the (static) public key of each replica's TPM */
+  /* tpm_pubkey[NUM_SERVER_SLOTS]; */
+
+  /* Storage for the TPM monotonically increasing sequence number */
+  int32u monotonic_counter[NUM_SERVER_SLOTS];
+
+  /* Store the New_Incarnation message from each replica */
+  signed_message *new_incarnation[NUM_SERVER_SLOTS];
+  int32u new_incarnation_val[NUM_SERVER_SLOTS];
+  //signed_message *highest_recv_incarnation[NUM_SERVER_SLOTS];
+  signed_message *sent_incarnation_ack[NUM_SERVER_SLOTS];
+  signed_message *recv_incarnation_ack[NUM_SERVER_SLOTS];
+  int32u incarnation_ack_count;
+  signed_message *incarnation_cert[NUM_SERVER_SLOTS];
+
+  /* Recovery information used to catchup to the current execution point */
+  /* Pending PO_requests and Pre-Prepares that are known about beyond the current ARU.
+   * Note: this is necessary to ensure that ephemeral replicas that recover do not 
+   * send messages that conflict with ones sent in their previous incarnation */
+  signed_message *catchup_request;
+  dll_struct outbound_pending_share_dll[NUM_SERVER_SLOTS];
+  signed_message *jump_message[NUM_SERVER_SLOTS];
+  int32u jump_count;
+  signed_message *pending_state[NUM_SERVER_SLOTS];
+  stdhash pending_shares[NUM_SERVER_SLOTS];
+  int32u complete_pending_state[NUM_SERVER_SLOTS];
+  int32u complete_recovery_state_count;
+  int32u complete_recovery_state;
+
+  /* System Reset (Fresh Start) storage */
+  signed_message *reset_vote[NUM_SERVER_SLOTS];
+  int32u reset_vote_count;
+  signed_message *reset_share[NUM_SERVER_SLOTS];
+  int32u reset_share_count;
+  int32u reset_min_wait_done;
+  signed_message *reset_proposal;
+  signed_message *reset_prepare[NUM_SERVER_SLOTS];
+  int32u reset_prepare_count;
+  int32u reset_sent_prepare;
+  signed_message *reset_commit[NUM_SERVER_SLOTS];
+  int32u reset_commit_count;
+  int32u reset_sent_commit;
+
+  /* System reset view change storage */
+  /* array to store new_leader messages from replicas */
+  signed_message *reset_newleader[NUM_SERVER_SLOTS];
+  /* large signed_message containing reset_newleaderproof */
+  signed_message *reset_newleaderproof;
+  /* array to store view change messages from replicas */
+  signed_message *reset_viewchange[NUM_SERVER_SLOTS];
+  int32u reset_viewchange_bitmap;
+  /* stores the reset_newview message from the next leader */
+  signed_message *reset_newview;
+  /* flag indicating whether we've finished collecting reset viewchange state */
+  int32u reset_collected_vc_state;
+  signed_message *reset_carry_over_proposal;
+
+  /* Certificate to prove that we finished the reset case with a new membership */
+  signed_message *reset_certificate;
+  /* Digest of the reset_proposal that we used to jumpstart the system. This is
+   * compared against the digest on PP and ORD certs to determine if we are
+   * not in the same global incarnation */
+  byte proposal_digest[DIGEST_SIZE];
+  /* Storage for jump_messages that show that the originator is not in the same
+   * global incarnation compared with our proposal_digest. If we collect f+k+1
+   * such messages from different replicas, we can reset ourselves, since our
+   * global incarnation cannot exist among enough correct replicas */
+  signed_message *jump_mismatch[NUM_SERVER_SLOTS];
+  int32u jump_mismatch_count;
 
 } proactive_recovery_struct;
 
@@ -614,7 +810,18 @@ typedef struct dummy_signature_data_struct {
    * function immediately. */
   int32u num_consecutive_messages_read;
 
-  sp_time sig_time;
+  //sp_time sig_time;
+  sp_time sig_min_time;
+  sp_time sig_max_time;
+
+  // Debug + Benchmark timing of the batch events
+  util_stopwatch max_batch_sw;
+  util_stopwatch pb_batch_sw[100];
+  int32u pb_count;
+
+  float ipc_send_agg;
+  float ipc_send_msg[50];
+  int32u ipc_count;
 
 } signature_data_struct;
 
@@ -639,7 +846,10 @@ typedef struct dummy_server_data_struct {
   /* View Change data structure */
   view_change_struct VIEW;
 
-  /* Proactive Recovery data structure */
+  /* Catchup data structure */
+  catchup_struct CATCH;
+
+  /* Proactive recovery data structure */
   proactive_recovery_struct PR;
 
   signature_data_struct SIG;

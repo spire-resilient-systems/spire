@@ -24,10 +24,13 @@
  #   Amy Babay            babay@cs.jhu.edu
  #   Thomas Tantillo      tantillo@cs.jhu.edu
  #
- # Major Contributor:
+ # Major Contributors:
  #   Marco Platania       Contributions to architecture design 
  #
- # Copyright (c) 2017 Johns Hopkins University.
+ # Contributors:
+ #   Samuel Beckley       Contributions to HMIs 
+ #
+ # Copyright (c) 2018 Johns Hopkins University.
  # All rights reserved.
  #
  # Partial funding for Spire research was provided by the Defense Advanced 
@@ -86,6 +89,3 @@ benchmark.o: benchmark.cpp  \
 		../config/cJSON.h \
 		../config/config_helpers.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o benchmark.o benchmark.cpp
-
-%.o:    %.c
-	$(CC) $(CFLAGS) -c -o $*.o $*.c	

@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -100,7 +100,7 @@ int32u TC_Generate_Sig_Share( byte* destination, byte* hash  )
     TC_IND_SIG *signature;
     int32u length;
     BIGNUM *hash_bn;
-    int32u ret;
+    /*int32u ret;*/
     /*BIGNUM *bn;*/
     int32u pad;
  #if TIME_GENERATE_SIG_SHARE
@@ -112,7 +112,8 @@ int32u TC_Generate_Sig_Share( byte* destination, byte* hash  )
     hash_bn = BN_bin2bn( hash, DIGEST_SIZE, NULL );
 
     signature = TC_IND_SIG_new();
-    ret = genIndSig( tc_partial_key, hash_bn, signature, 0);
+    /*ret = genIndSig( tc_partial_key, hash_bn, signature, 0);*/
+    genIndSig( tc_partial_key, hash_bn, signature, 0);
     //assert(ret, TC_NOERROR, "genIndSig");
 
   
@@ -177,6 +178,7 @@ void TC_Add_Share_To_Be_Combined( int server_no, byte *share )
 #endif
 
     set_TC_SIG(server_no, signature, tc_partial_signatures );
+    TC_IND_SIG_free( signature );
 }
 
 void TC_Destruct_Combine_Phase( int32u number ) 
@@ -197,6 +199,8 @@ void TC_Combine_Shares( byte *signature_dest, byte *digest )
 
     ret = TC_Combine_Sigs( tc_partial_signatures, tc_partial_key, 
 	    hash_bn, &combined_signature, 0);
+    if (ret != TC_NOERROR)
+        printf("Error in TC_Combine_Sigs!\n");
 
     /* There is a probable security error here. We need to make sure
      * that we don't exit if there is an arithmetic error in the
@@ -207,6 +211,8 @@ void TC_Combine_Shares( byte *signature_dest, byte *digest )
 
     ret = TC_verify(hash_bn, combined_signature, 
 		tc_public_key[1]);    
+    if (ret != 1)
+        printf("TC_verify failed!!\n");
 		//tc_public_key[VAR.My_Site_ID]); //XXX: if want to use for multi-site, will need to change this
 
     length = BN_num_bytes( combined_signature );

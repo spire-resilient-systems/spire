@@ -34,6 +34,8 @@
 
 int jacobi(BIGNUM* p,BIGNUM* q);
 
+int TC_bn2int(BIGNUM *bn);
+
 TC_DEALER *TC_generate(int bits, int l, int k,unsigned long val_e)
 {
 	TC_DEALER *tc = NULL;
@@ -293,11 +295,14 @@ TC_IND * TC_read_share(char* file)
 	current = RSA_new();
 	
 	PEM_read_RSAPublicKey(read, &current, NULL, NULL);
-	tci->l = atoi(BN_bn2dec(current->e));
-	tci->k = atoi(BN_bn2dec(current->n));
+	tci->l = TC_bn2int(current->e);
+	tci->k = TC_bn2int(current->n);
+	/*tci->l = atoi(BN_bn2dec(current->e));
+	tci->k = atoi(BN_bn2dec(current->n));*/
 
 	PEM_read_RSAPublicKey(read, &current, NULL, NULL);
-	tci->mynum = atoi(BN_bn2dec(current->e));
+	/*tci->mynum = atoi(BN_bn2dec(current->e));*/
+	tci->mynum = TC_bn2int(current->e);
 	tci->v = BN_dup(current->n);
 
 	PEM_read_RSAPublicKey(read, &current, NULL, NULL);
@@ -406,7 +411,7 @@ BN_print_fp(stdout, tci->n);
 printf("\n-----si----\n");
 BN_print_fp(stdout, tci->si);
 printf("\n-----End user %d-----\n", i);
-#endif DEBUG
+#endif /* DEBUG */
 
 		current->e = BN_new();
 		current->n = BN_new();
@@ -451,4 +456,16 @@ printf("\n-----End user %d-----\n", i);
 	fclose(out);
 
 	printf("Done Writing\n");
+}
+
+int TC_bn2int(BIGNUM *bn)
+{
+    int ret;
+    char *bn_string;
+
+	bn_string = BN_bn2dec(bn);
+    ret = atoi(bn_string);
+	OPENSSL_free(bn_string);
+
+    return ret;
 }

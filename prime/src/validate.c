@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -45,20 +45,22 @@
 #include "validate.h"
 #include "data_structs.h"
 #include "order.h"
+#include "pre_order.h"
 #include "error_wrapper.h"
 #include "merkle.h"
 #include "openssl_rsa.h"
 #include "utility.h"
 #include "packets.h"
 #include "tc_wrapper.h"
+#include "proactive_recovery.h"
 
 extern server_variables   VAR;
 extern server_data_struct DATA;
 
 int32u VAL_Validate_Signed_Message(signed_message *mess, int32u num_bytes, 
 				   int32u verify_signature); 
-int32u VAL_Signature_Type         (int32u message_type, int32u sender_id); 
-int32u VAL_Validate_Sender        (int32u sig_type, int32u sender_id); 
+int32u VAL_Validate_Sender        (int32u sig_type, int32u sender_id);
+int32u VAL_Validate_Incarnation   (int32u sig_type, signed_message *mess);
 int32u VAL_Is_Valid_Signature     (int32u sig_type, int32u sender_id, 
 				   int32u site_id, signed_message *mess);
 
@@ -94,8 +96,137 @@ int32u VAL_Validate_Replay_Commit(replay_commit_message *r_commit, int32u num_by
 
 int32u VAL_Validate_Catchup_Request(catchup_request_message *c_request, int32u num_bytes);
 int32u VAL_Validate_ORD_Certificate(ord_certificate_message *ord_cert, int32u num_bytes);
-int32u VAL_Validate_PO_Certificate(po_certificate_message *po_cert, int32u num_bytes);
-//int32u VAL_Validate_Catchup_Reply  (catchup_reply_message *c_reply, int32u num_bytes);
+int32u VAL_Validate_PO_Certificate (po_certificate_message *po_cert, int32u num_bytes);
+int32u VAL_Validate_Jump           (jump_message *jump, int32u num_bytes);
+
+int32u VAL_Validate_New_Incarnation(new_incarnation_message *new_inc, int32u num_bytes);
+int32u VAL_Validate_Incarnation_Ack(incarnation_ack_message *inc_ack, int32u num_bytes);
+int32u VAL_Validate_Incarnation_Cert(incarnation_cert_message *inc_cert, int32u num_bytes, int32u machine_id, int32u incarnation);
+int32u VAL_Validate_Pending_State(pending_state_message *pend_state, int32u num_bytes);
+int32u VAL_Validate_Pending_Share(pending_share_message *pend_share, int32u num_bytes);
+int32u VAL_Validate_Reset_Vote(reset_vote_message *reset_vote, int32u num_bytes);
+int32u VAL_Validate_Reset_Share(reset_share_message *reset_share, int32u num_bytes);
+int32u VAL_Validate_Reset_Proposal(reset_proposal_message *reset_proposal, int32u num_bytes);
+int32u VAL_Validate_Reset_Prepare(reset_prepare_message *reset_prepare, int32u num_bytes);
+int32u VAL_Validate_Reset_Commit(reset_commit_message *reset_commit, int32u num_bytes);
+int32u VAL_Validate_Reset_NewLeader(reset_newleader_message *reset_newleader, int32u num_bytes);
+int32u VAL_Validate_Reset_NewLeaderProof(reset_newleaderproof_message *reset_nlp, int32u num_bytes);
+int32u VAL_Validate_Reset_ViewChange(reset_viewchange_message *reset_viewchange, int32u num_bytes);
+int32u VAL_Validate_Reset_NewView(reset_newview_message *reset_newview, int32u num_bytes);
+int32u VAL_Validate_Reset_Certificate(reset_certificate_message *reset_cert, int32u num_bytes);
+
+/* Determine if a message from the network is permitted to be processed
+ * based on my current state (STARTUP, RESET, RECOVERY, NORMAL) */
+int32u VAL_State_Permits_Message(signed_message *mess)
+{
+    switch (DATA.PR.recovery_status[VAR.My_Server_ID])
+    {
+        case PR_STARTUP:
+            switch (mess->type) {
+                case NEW_INCARNATION:
+                case INCARNATION_ACK:
+                case INCARNATION_CERT:
+                case RESET_VOTE:
+                case RESET_SHARE:
+                case RESET_PROPOSAL:
+                case RESET_CERT:
+                  return 1;
+                default:
+                  return 0;
+            }
+            break;
+
+        case PR_RESET:
+            switch (mess->type) {
+                case RB_INIT:
+                case RB_ECHO:
+                case RB_READY:
+                case NEW_INCARNATION:
+                case RESET_SHARE:
+                case RESET_PROPOSAL:
+                case RESET_PREPARE:
+                case RESET_COMMIT:
+                case RESET_NEWLEADER:
+                case RESET_NEWLEADERPROOF:
+                case RESET_VIEWCHANGE:
+                case RESET_NEWVIEW:
+                case RESET_CERT:
+                    return 1;
+                default:
+                    return 0;
+            }
+            break;
+
+        case PR_RECOVERY:
+            switch (mess->type) {
+                case PO_REQUEST:
+                case PO_ACK:
+                case PO_ARU:
+                case PRE_PREPARE:
+                case PREPARE: 
+                case COMMIT:
+                case ORD_CERT:
+                case PO_CERT:
+                case JUMP:
+                case NEW_INCARNATION:
+                case INCARNATION_CERT:
+                case PENDING_STATE:
+                case PENDING_SHARE:
+
+                case UPDATE:
+                    return 1;
+                default:
+                    return 0;
+            }
+            break;
+
+        case PR_NORMAL:
+            switch (mess->type) {
+                case PO_REQUEST: 
+                case PO_ACK: 
+                case PO_ARU: 
+                case PROOF_MATRIX:
+                case PRE_PREPARE: 
+                case PREPARE: 
+                case COMMIT:
+                case RECON:
+                case TAT_MEASURE: 
+                case RTT_PING: 
+                case RTT_PONG: 
+                case RTT_MEASURE:
+                case TAT_UB:
+                case NEW_LEADER: 
+                case NEW_LEADER_PROOF:
+                case RB_INIT:
+                case RB_ECHO:
+                case RB_READY:
+                case REPORT:
+                case PC_SET: 
+                case VC_LIST:
+                case VC_PARTIAL_SIG:
+                case VC_PROOF:
+                case REPLAY:
+                case REPLAY_PREPARE: 
+                case REPLAY_COMMIT:
+                case ORD_CERT: 
+                case PO_CERT:
+                case CATCHUP_REQUEST: 
+                case JUMP:
+
+                case NEW_INCARNATION:
+                case INCARNATION_CERT:
+
+                case UPDATE:
+                    return 1;
+                default:
+                    return 0;
+            }
+            break;
+
+        default:
+            return 0;
+    }
+}
 
 /* Determine if a message from the network is valid. */
 int32u VAL_Validate_Message(signed_message *message, int32u num_bytes) 
@@ -103,8 +234,8 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
   byte *content;
   int32u num_content_bytes;
 
-  /* Since we use Merkle trees, all messages except client updates
-   * need to be Merkle-tree verified. */
+  util_stopwatch profile_sw;
+  UTIL_Stopwatch_Start(&profile_sw);
 
   /* This is a signed message */
   if (!VAL_Validate_Signed_Message(message, num_bytes, 1)) {
@@ -112,6 +243,16 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     VALIDATE_FAILURE_LOG(message,num_bytes);
     return 0;
   }
+
+  /* Check that the machine that sent us this message has been in our global
+   * incarnation at any point yet, or is sending us a new_incarnation message,
+   * or is already marked as STARTUP */
+  /* if (DATA.PR.preinstalled_incarnations[mess->machine_id] == 0 &&
+       (DATA.PR.recovery_status[mess->machine_id] != PR_STARTUP || 
+        mess->type = NEW_INCARNATION))
+  {
+        return;
+  } */
   
   content = (byte*)(message + 1);
   num_content_bytes = num_bytes - sizeof(signed_message) - MT_Digests_(message->mt_num) * DIGEST_SIZE; /* always >= 0, since checked in Validate_Signed_Message */
@@ -335,17 +476,129 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     }
     break;
 
-  /* case CATCHUP_REPLY:
-    if((!VAL_Validate_Catchup_Reply((catchup_reply_message* )content, num_content_bytes))) {
+  case JUMP:
+    if((!VAL_Validate_Jump((jump_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
     }
-    break; */
+    break;
+
+  case NEW_INCARNATION:
+    if((!VAL_Validate_New_Incarnation((new_incarnation_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case INCARNATION_ACK:
+    if((!VAL_Validate_Incarnation_Ack((incarnation_ack_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case INCARNATION_CERT:
+    if((!VAL_Validate_Incarnation_Cert((incarnation_cert_message* )content, num_content_bytes, message->machine_id, message->incarnation))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case PENDING_STATE:
+    if((!VAL_Validate_Pending_State((pending_state_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case PENDING_SHARE:
+    if((!VAL_Validate_Pending_Share((pending_share_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case RESET_VOTE:
+    if((!VAL_Validate_Reset_Vote((reset_vote_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case RESET_SHARE:
+    if((!VAL_Validate_Reset_Share((reset_share_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case RESET_PROPOSAL:
+    if((!VAL_Validate_Reset_Proposal((reset_proposal_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case RESET_PREPARE:
+    if((!VAL_Validate_Reset_Prepare((reset_prepare_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case RESET_COMMIT:
+    if((!VAL_Validate_Reset_Commit((reset_commit_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case RESET_NEWLEADER:
+    if((!VAL_Validate_Reset_NewLeader((reset_newleader_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case RESET_NEWLEADERPROOF:
+    if((!VAL_Validate_Reset_NewLeaderProof((reset_newleaderproof_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case RESET_VIEWCHANGE:
+    if((!VAL_Validate_Reset_ViewChange((reset_viewchange_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case RESET_NEWVIEW:
+    if((!VAL_Validate_Reset_NewView((reset_newview_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+
+  case RESET_CERT:
+    if((!VAL_Validate_Reset_Certificate((reset_certificate_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
 
   default:
-    Alarm(DEBUG, "Not yet checking message type %d!\n", message->type);
+    Alarm(PRINT, "Not yet checking message type %d!\n", message->type);
+    //return 0;
   }
-  
+ 
+  UTIL_Stopwatch_Stop(&profile_sw);
+  if (UTIL_Stopwatch_Elapsed(&profile_sw) >= 0.002) {
+    Alarm(DEBUG, "PROF VAL: %s took %f s\n", 
+            UTIL_Type_To_String(message->type), UTIL_Stopwatch_Elapsed(&profile_sw));
+  }
+ 
   return 1;
 }
 
@@ -389,7 +642,7 @@ int32u VAL_Validate_Signed_Message(signed_message *mess, int32u num_bytes,
   /* Should validate site_id too? */
  
   /* Validate sender and signature */
-  sig_type = VAL_Signature_Type( mess->type, mess->machine_id );
+  sig_type = VAL_Signature_Type( mess );
   if (sig_type == VAL_TYPE_INVALID) {
     VALIDATE_FAILURE("Sig Type invalid");
     return 0;
@@ -397,7 +650,9 @@ int32u VAL_Validate_Signed_Message(signed_message *mess, int32u num_bytes,
     return 1;
   } else if (sig_type == VAL_SIG_TYPE_SERVER || 
              sig_type == VAL_SIG_TYPE_MERKLE ||
-             sig_type == VAL_SIG_TYPE_CLIENT) {
+             sig_type == VAL_SIG_TYPE_CLIENT ||
+             sig_type == VAL_SIG_TYPE_TPM_SERVER ||
+             sig_type == VAL_SIG_TYPE_TPM_MERKLE) {
     sender_id = mess->machine_id;
   } else {
     /* threshold signed */
@@ -410,6 +665,15 @@ int32u VAL_Validate_Signed_Message(signed_message *mess, int32u num_bytes,
     return 0;
   }
 
+  /* Validates the incarnation on session-key signed messages */
+  if (!DATA.PO.Nested_Ignore_Incarnation && !VAL_Validate_Incarnation(sig_type, mess)) {
+    VALIDATE_FAILURE("Invalid incarnation");
+    return 0;
+  }
+
+  /* PRTODO: validate the monotonically increasing counter on TPM signed messages */
+
+  //return 1;
   if (verify_signature && !VAL_Is_Valid_Signature(sig_type, sender_id, mess->site_id, mess)) {
     VALIDATE_FAILURE("Invalid signature");
     return 0;
@@ -422,24 +686,38 @@ int32u VAL_Validate_Signed_Message(signed_message *mess, int32u num_bytes,
  * signature is on the message, a client signature, a server signature, or a
  * threshold signature. 
  * 
- * returns: VAL_SIG_TYPE_SERVER, VAL_SIG_TYPE_CLIENT, VAL_SIG_TYPE_SITE, or
- * VAL_TYPE_INVALID */
-int32u VAL_Signature_Type(int32u message_type, int32u sender_id) 
+ * returns: VAL_SIG_TYPE_SERVER, VAL_SIG_TYPE_CLIENT, VAL_SIG_TYPE_SITE, 
+ * VAL_SIG_TYPE_TPM_SERVER, VAL_SIG_TYPE_TPM_MERKLE, or VAL_TYPE_INVALID */
+int32u VAL_Signature_Type(signed_message *mess) 
 {
+  int32u sender_id;
   int sig_type = VAL_TYPE_INVALID;
+  po_request_message *po_request;
+  update_message *up;
   
   /* Return the type of the signature based on the type of the message. If
    * the type is not found, then return TYPE_INVALID */
-
-  switch(message_type) {
+  sender_id = mess->machine_id;
+  switch(mess->type) {
 
   case UPDATE:
-    if (sender_id >= 1 && sender_id <= NUM_SERVERS)
-      sig_type = VAL_SIG_TYPE_SERVER;
+    if (sender_id >= 1 && sender_id <= NUM_SERVERS) {
+        up = (update_message *)(mess + 1);
+        if (mess->monotonic_counter > 0) {
+            if (up->seq_num == 1) {
+                Alarm(PRINT, "VAL: Got TPM-Signed first Update from %u\n", mess->machine_id);
+                sig_type = VAL_SIG_TYPE_TPM_SERVER;
+            }
+            else
+                sig_type = VAL_TYPE_INVALID;
+        }
+        else 
+          sig_type = VAL_SIG_TYPE_SERVER;
+    }
     else
       sig_type = VAL_SIG_TYPE_CLIENT;
     break;
-  
+ 
   case PO_ARU:
   case NEW_LEADER:
   case REPORT:
@@ -448,6 +726,28 @@ int32u VAL_Signature_Type(int32u message_type, int32u sender_id)
     break;
 
   case PO_REQUEST:
+    po_request = (po_request_message *)(mess + 1);
+    if (mess->monotonic_counter > 0) {
+        if (po_request->seq.seq_num == 1) {
+            Alarm(PRINT, "VAL: Got TPM-Signed first PO_Req from %u\n", mess->machine_id);
+            sig_type = VAL_SIG_TYPE_TPM_MERKLE;
+        }
+        else 
+            sig_type = VAL_TYPE_INVALID;
+    }
+    else
+        sig_type = VAL_SIG_TYPE_MERKLE;
+    break;
+
+  case RB_INIT:
+  case RB_ECHO:
+  case RB_READY: 
+    if (mess->monotonic_counter > 0)
+        sig_type = VAL_SIG_TYPE_TPM_MERKLE;
+    else
+        sig_type = VAL_SIG_TYPE_MERKLE;
+    break;
+
   case PO_ACK:
   case PROOF_MATRIX:
   case RECON:
@@ -460,25 +760,43 @@ int32u VAL_Signature_Type(int32u message_type, int32u sender_id)
   case TAT_MEASURE:
   case TAT_UB:
   case NEW_LEADER_PROOF:
-  case RB_INIT:
-  case RB_ECHO:
-  case RB_READY:
   case VC_LIST:
   case VC_PARTIAL_SIG:
   case VC_PROOF:
   case REPLAY:
   case REPLAY_PREPARE:
   case REPLAY_COMMIT:
-  case CATCHUP_REQUEST:
-  case ORD_CERT:
   case PO_CERT:
-  //case CATCHUP_REPLY:
+  case ORD_CERT:
+  case PENDING_SHARE:
     sig_type = VAL_SIG_TYPE_MERKLE;
+    break;
+
+  case RESET_NEWLEADER:
+  case RESET_VIEWCHANGE:
+  case RESET_NEWVIEW:
+    sig_type = VAL_SIG_TYPE_TPM_SERVER;
+    break;
+
+  case CATCHUP_REQUEST:
+  case JUMP:
+  case NEW_INCARNATION:
+  case INCARNATION_ACK:
+  case INCARNATION_CERT:
+  case PENDING_STATE:
+  case RESET_VOTE:
+  case RESET_SHARE:
+  case RESET_PROPOSAL:
+  case RESET_PREPARE:
+  case RESET_COMMIT:
+  case RESET_NEWLEADERPROOF:
+  case RESET_CERT:
+    sig_type = VAL_SIG_TYPE_TPM_MERKLE;
     break;
   }
 
   return sig_type;
-} 
+}
 
 /* Determine if the sender is valid depending on the specified signature type.
  * 
@@ -488,7 +806,8 @@ int32u VAL_Validate_Sender(int32u sig_type, int32u sender_id)
   if (sender_id < 1) 
     return 0;
 
-  if ((sig_type == VAL_SIG_TYPE_SERVER || sig_type == VAL_SIG_TYPE_MERKLE)
+  if ((sig_type == VAL_SIG_TYPE_SERVER || sig_type == VAL_SIG_TYPE_MERKLE || 
+       sig_type == VAL_SIG_TYPE_TPM_SERVER || sig_type == VAL_SIG_TYPE_TPM_MERKLE) 
       && sender_id <= NUM_SERVERS) {
     return 1;
   } 
@@ -501,6 +820,62 @@ int32u VAL_Validate_Sender(int32u sig_type, int32u sender_id)
   return 0;
 }
 
+/* Determine if the incarnation on a session key-signed message is valid, that
+ * is if it matches what we have preinstalled for this sender.
+ *
+ * return: 1 if incarnation is valid, 0 if incarnation is not valid */
+int32u VAL_Validate_Incarnation(int32u sig_type, signed_message *mess)
+{
+  jump_message *jm;
+  update_message *up;
+  signed_message *payload;
+
+  /* Special case for pending shares, which are session signed but do not
+   * get checked against the installed_incarnations - instead they get checked against
+   * the vector of incarnations present in the jump message */
+  if (mess->type == PENDING_SHARE) {
+    if (DATA.PR.jump_message[mess->machine_id] == NULL) {
+        Alarm(PRINT, "Jump message from %u is NULL\n", mess->machine_id); 
+        return 0;
+    }
+    jm = (jump_message *)(DATA.PR.jump_message[mess->machine_id] + 1);
+    if (mess->incarnation != jm->installed_incarn[mess->machine_id-1]) {
+        Alarm(PRINT, "Pending Share incarnation mismatch. mess = %u != jm = %u\n",
+            mess->incarnation, jm->installed_incarn[mess->machine_id-1]);
+        return 0;
+    }
+    return 1;
+  }
+
+  if (mess->type == UPDATE && mess->machine_id == VAR.My_Server_ID) {
+    up = (update_message *)(mess + 1);
+    payload = (signed_message *)(up + 1);
+    if (payload->type == CLIENT_STATE_TRANSFER)
+        return 1;
+  }
+
+  /* Normal check: updates coming from other Prime replicas. Note that the first
+   * po_request from recovering replicas are TPM signed, so the incarnation is
+   * not checked here for those */
+  if (sig_type == VAL_SIG_TYPE_MERKLE || sig_type == VAL_SIG_TYPE_SERVER) {
+    /* if (mess->incarnation != DATA.PR.preinstalled_incarnations[mess->machine_id]) {
+        Alarm(PRINT, "VAL Incarnation FAIL: mess->incarnation %u != preinstalled[%u] %u\n",
+            mess->incarnation, mess->machine_id, DATA.PR.preinstalled_incarnations[mess->machine_id]);
+        return 0;
+    } */
+    if (mess->incarnation != DATA.PR.installed_incarnations[mess->machine_id]) {
+        Alarm(PRINT, "VAL Incarnation FAIL: mess->incarnation %u != installed[%u] %u\n",
+            mess->incarnation, mess->machine_id, DATA.PR.installed_incarnations[mess->machine_id]);
+        Alarm(PRINT, "    sig_type = %u\n", sig_type);
+        return 0;
+    }
+  }
+
+  /* All other SIG types do not / cannot require a valid incarnation */
+  return 1;
+}
+
+
 /* Determine if the signature is valid. Assume that the lengths of the message
  * is okay. */
 int32u VAL_Is_Valid_Signature(int32u sig_type, int32u sender_id, 
@@ -508,7 +883,8 @@ int32u VAL_Is_Valid_Signature(int32u sig_type, int32u sender_id,
 {
   int32 ret;
  
-  if (sig_type == VAL_SIG_TYPE_MERKLE) {
+  //if (sig_type == VAL_SIG_TYPE_MERKLE || (sig_type == VAL_SIG_TYPE_TPM && mess->type != UPDATE)) {
+  if (sig_type == VAL_SIG_TYPE_MERKLE || sig_type == VAL_SIG_TYPE_TPM_MERKLE) {
     ret = MT_Verify(mess);
     if(ret == 0) {
         Alarm(PRINT, "MT_Verify returned 0 on message from machine %d type %d "
@@ -518,7 +894,8 @@ int32u VAL_Is_Valid_Signature(int32u sig_type, int32u sender_id,
     return ret;
   }
 
-  if (sig_type == VAL_SIG_TYPE_SERVER) {
+  //if (sig_type == VAL_SIG_TYPE_SERVER || (sig_type == VAL_SIG_TYPE_TPM && mess->type == UPDATE)) {
+  if (sig_type == VAL_SIG_TYPE_SERVER || sig_type == VAL_SIG_TYPE_TPM_SERVER) {
     /* Check an RSA signature using openssl. A server sent the message. */
     ret = 
       OPENSSL_RSA_Verify( 
@@ -636,8 +1013,8 @@ int32u VAL_Validate_PO_Ack(po_ack_message *po_ack, int32u num_bytes)
     return 0;
   }
 
-  expected_num_bytes = (sizeof(po_ack_message) +
-			(po_ack->num_ack_parts * sizeof (po_ack_part)));
+  expected_num_bytes = sizeof(po_ack_message) + 
+                        (po_ack->num_ack_parts * sizeof(po_ack_part));
 
   if(num_bytes != expected_num_bytes) {
     VALIDATE_FAILURE("PO-Ack wrong expected bytes.");
@@ -647,14 +1024,14 @@ int32u VAL_Validate_PO_Ack(po_ack_message *po_ack, int32u num_bytes)
   /* Iterate over each ack part in the aggregate PO-Ack, and sanity check it */
   part = (po_ack_part *)(po_ack+1);
   for (p = 0; p < po_ack->num_ack_parts; p++) {
-    if (part[p].seq.seq_num == 0) {
+    if (part[p].seq.seq_num == 0) { 
       VALIDATE_FAILURE("Invalid PO-Ack part seq_num");
       return 0;
-    }
+    }    
     if (part[p].originator < 1 || part[p].originator > NUM_SERVERS) {
       VALIDATE_FAILURE("Invalid PO-Ack part originator");
       return 0;
-    }
+    }    
   }
 
   return 1;
@@ -675,6 +1052,7 @@ int32u VAL_Validate_Proof_Matrix(proof_matrix_message *pm, int32u num_bytes)
   int32u expected_size;
   po_aru_signed_message *po_aru;
   int32u i;
+  int32u nested_state = DATA.PO.Nested_Ignore_Incarnation;
 
   if(num_bytes < (sizeof(proof_matrix_message))) {
     VALIDATE_FAILURE("proof_matrix too small");
@@ -687,7 +1065,8 @@ int32u VAL_Validate_Proof_Matrix(proof_matrix_message *pm, int32u num_bytes)
     VALIDATE_FAILURE("proof_matrix wrong size");
     return 0;
   }
-
+  
+  DATA.PO.Nested_Ignore_Incarnation = 1;
   po_aru = (po_aru_signed_message *)(pm+1);
   for (i = 1; i <= pm->num_acks_in_this_message; i++)
   {
@@ -698,10 +1077,14 @@ int32u VAL_Validate_Proof_Matrix(proof_matrix_message *pm, int32u num_bytes)
 
     if (po_aru->header.type != PO_ARU || !VAL_Validate_Message((signed_message *) po_aru, sizeof(po_aru_signed_message))) {
       VALIDATE_FAILURE("Invalid PO-ARU in Proof Matrix");
+      DATA.PO.Nested_Ignore_Incarnation = nested_state;
       return 0;
     }
+
+    po_aru = (po_aru_signed_message *)(po_aru + 1);
   }
   
+  DATA.PO.Nested_Ignore_Incarnation = nested_state;
   return 1;
 }
 
@@ -710,6 +1093,7 @@ int32u VAL_Validate_Pre_Prepare(pre_prepare_message *pp, int32u num_bytes)
   int32u expected_size;
   po_aru_signed_message *po_aru;
   int32u i;
+  int32u nested_state = DATA.PO.Nested_Ignore_Incarnation;
 
   Alarm(DEBUG, "VAL_Validate_Pre_Prepare\n");
 
@@ -737,6 +1121,7 @@ int32u VAL_Validate_Pre_Prepare(pre_prepare_message *pp, int32u num_bytes)
     return 0;
   }
 
+  DATA.PO.Nested_Ignore_Incarnation = 1;
   po_aru = (po_aru_signed_message *)(pp+1);
   for (i = 1; i <= pp->num_acks_in_this_message; i++)
   {
@@ -747,10 +1132,14 @@ int32u VAL_Validate_Pre_Prepare(pre_prepare_message *pp, int32u num_bytes)
 
     if (po_aru->header.type != PO_ARU || !VAL_Validate_Message((signed_message *) po_aru, sizeof(po_aru_signed_message))) {
       VALIDATE_FAILURE("Invalid PO-ARU in Pre-Prepare");
+      DATA.PO.Nested_Ignore_Incarnation = nested_state;
       return 0;
     }
+
+    po_aru = (po_aru_signed_message *)(po_aru + 1);
   }
 
+  DATA.PO.Nested_Ignore_Incarnation = nested_state;
   return 1;
 }
 
@@ -910,8 +1299,16 @@ int32u VAL_Validate_RB_Init(signed_message *rb_init, int32u num_bytes)
     return 0;
   }
   
-  if (rb_init->type != REPORT && rb_init->type != PC_SET) {
+  if (rb_init->type != REPORT && rb_init->type != PC_SET && 
+      rb_init->type != RESET_VIEWCHANGE && rb_init->type != RESET_NEWVIEW) 
+  {
     VALIDATE_FAILURE("RB_Init: incorrect payload type (not report or pc set)");
+    return 0;
+  }
+
+  if (!VAL_State_Permits_Message(rb_init)) {
+    Alarm(DEBUG, "RB_Init: payload type %u not allowed for this state %u\n",
+            rb_init->type, DATA.PR.recovery_status[VAR.My_Server_ID]);
     return 0;
   }
 
@@ -935,8 +1332,16 @@ int32u VAL_Validate_RB_Echo(signed_message *rb_echo, int32u num_bytes)
     return 0;
   }
   
-  if (rb_echo->type != REPORT && rb_echo->type != PC_SET) {
+  if (rb_echo->type != REPORT && rb_echo->type != PC_SET &&
+      rb_echo->type != RESET_VIEWCHANGE && rb_echo->type != RESET_NEWVIEW) 
+  {
     VALIDATE_FAILURE("RB_Echo: incorrect payload type (not report or pc set)");
+    return 0;
+  }
+
+  if (!VAL_State_Permits_Message(rb_echo)) {
+    Alarm(DEBUG, "RB_Echo: payload type %u not allowed for this state %u\n",
+            rb_echo->type, DATA.PR.recovery_status[VAR.My_Server_ID]);
     return 0;
   }
 
@@ -960,8 +1365,16 @@ int32u VAL_Validate_RB_Ready(signed_message *rb_ready, int32u num_bytes)
     return 0;
   }
   
-  if (rb_ready->type != REPORT && rb_ready->type != PC_SET) {
+  if (rb_ready->type != REPORT && rb_ready->type != PC_SET &&
+      rb_ready->type != RESET_VIEWCHANGE && rb_ready->type != RESET_NEWVIEW) 
+  {
     VALIDATE_FAILURE("RB_Ready: incorrect payload type (not report or pc set)");
+    return 0;
+  }
+
+  if (!VAL_State_Permits_Message(rb_ready)) {
+    Alarm(DEBUG, "RB_Ready: payload type %u not allowed for this state %u\n",
+            rb_ready->type, DATA.PR.recovery_status[VAR.My_Server_ID]);
     return 0;
   }
 
@@ -1031,6 +1444,8 @@ int32u VAL_Validate_PC_Set(pc_set_message *pc, int32u num_bytes)
   /* Construct the complete_pp from the pp we received */
   complete_pp.seq_num = pp->seq_num;
   complete_pp.view = pp->view;
+  memcpy((byte *)&complete_pp.last_executed, &pp->last_executed, sizeof(pp->last_executed));
+  memcpy((byte *)&complete_pp.proposal_digest, &pp->proposal_digest, DIGEST_SIZE);
   memcpy((byte *)&complete_pp.cum_acks, (byte *)(pp + 1),  
             sizeof(po_aru_signed_message) * pp->num_acks_in_this_message);
 
@@ -1169,14 +1584,12 @@ int32u VAL_Validate_Replay_Commit(replay_commit_message *r_commit, int32u num_by
 
 int32u VAL_Validate_Catchup_Request(catchup_request_message *c_request, int32u num_bytes)
 {
-  if (num_bytes != sizeof(c_request)) {
+  if (num_bytes != sizeof(catchup_request_message)) {
     VALIDATE_FAILURE("Catchup_Request: invalid size");
     return 0;
   }
 
-  Alarm(PRINT, "Invalid type: Catchup_Request\n");
-  return 0;
-  //return 1;
+  return 1;
 }
 
 int32u VAL_Validate_ORD_Certificate(ord_certificate_message *ord_cert, int32u num_bytes)
@@ -1226,6 +1639,8 @@ int32u VAL_Validate_ORD_Certificate(ord_certificate_message *ord_cert, int32u nu
   /* Construct the complete_pp from the pp we received */
   complete_pp.seq_num = pp->seq_num;
   complete_pp.view = pp->view;
+  memcpy((byte *)&complete_pp.last_executed, &pp->last_executed, sizeof(pp->last_executed));
+  memcpy((byte *)&complete_pp.proposal_digest, &pp->proposal_digest, DIGEST_SIZE);
   memcpy((byte *)&complete_pp.cum_acks, (byte *)(pp + 1), 
             sizeof(po_aru_signed_message) * pp->num_acks_in_this_message);
 
@@ -1236,7 +1651,9 @@ int32u VAL_Validate_ORD_Certificate(ord_certificate_message *ord_cert, int32u nu
   count = 0;
 
   /* Next, count the number of valid commits */
-  while (sum_len < num_bytes) {
+  /* PRTODO: added extra check to make sure we have at least sizeof(signed_message) to work with */
+  // while (sum_len < num_bytes) {    // OLD check
+  while (sum_len < num_bytes && (num_bytes - sum_len >= sizeof(signed_message))) {
     mess     = (signed_message *)((char*)mess + msg_size);
     msg_size = UTIL_Message_Size(mess);
 
@@ -1269,7 +1686,7 @@ int32u VAL_Validate_ORD_Certificate(ord_certificate_message *ord_cert, int32u nu
     count++;
   }
 
-  /* Finally, do last sanity check on overall length and number of prepares */
+  /* Finally, do last sanity check on overall length and number of commits */
   if (sum_len != num_bytes) {
     VALIDATE_FAILURE("ORD_Certificate: total bytes in message does not match num_bytes");
     return 0;
@@ -1285,19 +1702,753 @@ int32u VAL_Validate_ORD_Certificate(ord_certificate_message *ord_cert, int32u nu
 
 int32u VAL_Validate_PO_Certificate(po_certificate_message *po_cert, int32u num_bytes)
 {
-  Alarm(PRINT, "Invalid type: PO_Certificate\n");
-  return 0;
-}
+  //DATA.PO.Nested_Ignore_Incarnation = 1;
+  //DATA.PO.Nested_Ignore_Incarnation = 0;
+  signed_message *pr, *pa;
+  int32u sum_len, msg_size, count;
+  po_request_message *pr_specific;
+  po_ack_message *pa_specific;
+  po_ack_part *part;
+  byte pr_digest[DIGEST_SIZE];
+  int32u *incarnation_vector = NULL;
+  int i;
+  int32u nested_state = DATA.PO.Nested_Ignore_Incarnation;
 
-#if 0
-int32u VAL_Validate_Catchup_Reply(catchup_reply_message *c_reply, int32u num_bytes)
-{
-  /* TODO: validate message similar to PC_SET message */
-  /* if (num_bytes != sizeof(c_reply)) {
-    VALIDATE_FAILURE("Replay_Commit: invalid size");
+  if (num_bytes < sizeof(po_certificate_message)) {
+    VALIDATE_FAILURE("PO_Certificate: invalid size");
     return 0;
-  } */
+  }
+
+  sum_len = sizeof(po_certificate_message);
+  
+  /* First, check the po-request, which should appear first */
+  pr       = (signed_message *)(po_cert + 1);
+  msg_size = UTIL_Message_Size(pr);
+
+  if (pr->type != PO_REQUEST) {
+    VALIDATE_FAILURE("PO_Certificate: first message not a po-request");
+    return 0;
+  }
+  if (msg_size > num_bytes - sum_len) {
+    VALIDATE_FAILURE("PO_Certificate: po-request too large");
+    return 0;
+  }
+
+  DATA.PO.Nested_Ignore_Incarnation = 1;
+  if (!VAL_Validate_Message(pr, msg_size)) {
+    VALIDATE_FAILURE("PO_Certificate: po-request did not pass VAL function");
+    DATA.PO.Nested_Ignore_Incarnation = nested_state;
+    return 0;
+  }
+  DATA.PO.Nested_Ignore_Incarnation = nested_state;
+  
+  pr_specific = (po_request_message *)(pr + 1);
+  if (PRE_ORDER_Seq_Compare(pr_specific->seq, po_cert->seq) != 0) {
+    VALIDATE_FAILURE("PO_Certificate: po-request seq_num does not match po_cert seq_num");
+    return 0;
+  }
+
+  /* Make PO-Request digest for comparisons */
+  OPENSSL_RSA_Make_Digest((byte *)pr, msg_size, pr_digest);
+
+  sum_len += msg_size;
+  count = 0;
+  pa = pr; /* This gets advanced in the while loop below */
+
+  /* Next, count the number of valid po-acks */
+  while (sum_len < num_bytes && (num_bytes - sum_len >= sizeof(signed_message))) {
+    pa       = (signed_message *)((char*)pa + msg_size);
+    msg_size = UTIL_Message_Size(pa);
+
+    if (pa->type != PO_ACK) {
+      VALIDATE_FAILURE("PO_Certificate: non-po-ack message present");
+      return 0;
+    }
+    if (msg_size > num_bytes - sum_len) {
+      VALIDATE_FAILURE("PO_Certificate: po-ack too large");
+      return 0;
+    }
+    DATA.PO.Nested_Ignore_Incarnation = 1;
+    if (!VAL_Validate_Message(pa, msg_size)) {
+      VALIDATE_FAILURE("PO_Certificate: po-ack did not pass VAL function");
+      DATA.PO.Nested_Ignore_Incarnation = nested_state;
+      return 0;
+    }
+    DATA.PO.Nested_Ignore_Incarnation = nested_state;
+
+    pa_specific = (po_ack_message *)(pa + 1);
+    part = (po_ack_part *)(pa_specific + 1);
+    /* Need to make sure all preinstall vectors match, so grab the first one
+     * and we'll compare all the rest to that one */
+    if (count == 0) {
+        incarnation_vector = pa_specific->preinstalled_incarnations;
+    } else {
+        if (memcmp(pa_specific->preinstalled_incarnations, incarnation_vector,
+                   sizeof(int32u) * NUM_SERVERS) != 0) {
+            VALIDATE_FAILURE("PO_Certificate: incarnation vector mismatch");
+            return 0;
+        }
+    }
+
+    for (i = 0; i < pa_specific->num_ack_parts; i++)
+    {
+        if (part[i].originator == pr->machine_id && 
+            PRE_ORDER_Seq_Compare(part[i].seq, pr_specific->seq) == 0)
+        {
+            if (!OPENSSL_RSA_Digests_Equal(part[i].digest, pr_digest)) {
+                VALIDATE_FAILURE("PO_Certificate: po-ack digest does not match po-request");
+                return 0;
+            }
+            break; /* We found a part that matches the po-request */
+        }
+    }
+    if (i == pa_specific->num_ack_parts) {
+        VALIDATE_FAILURE("PO_Certificate: po-ack does not contain part matching po-request");
+        return 0;
+    }
+
+    sum_len += msg_size;
+    count++;
+  }
+
+  /* Finally, do last sanity check on overall length and number of acks */
+  if (sum_len != num_bytes) {
+    VALIDATE_FAILURE("PO_Certificate: total bytes in message does not match num_bytes");
+    return 0;
+  }
+  if (count != 2*VAR.F + VAR.K + 1) {
+    VALIDATE_FAILURE("PO_Certificate: not 2f+k+1 po-ack messages inside the cert");
+    Alarm(PRINT, "VAL_PO_Certificate: count = %d, needed %d\n", count, 2*VAR.F + VAR.K + 1);
+    return 0;
+  }
 
   return 1;
 }
-#endif
+
+int32u VAL_Validate_Jump(jump_message *jump, int32u num_bytes)
+{
+  signed_message *oc, *rc;
+  int32u sum_len, msg_size;
+  int32u nested_state = DATA.PO.Nested_Ignore_Incarnation;
+
+  /* Validate size */
+  if (num_bytes < sizeof(jump_message)) {
+    VALIDATE_FAILURE("Jump: message too small");
+    return 0;
+  }
+  sum_len = sizeof(jump_message);
+
+  /* Validate ordinal certificate if needed (i.e. if seq > 0) */
+  if (jump->seq_num > 0) {
+    oc = (signed_message *)(jump + 1);
+    msg_size = UTIL_Message_Size(oc);
+
+    if (oc->type != ORD_CERT) {
+      VALIDATE_FAILURE("Jump: first message not ord cert");
+      return 0;
+    }
+    if (msg_size > num_bytes - sum_len) {
+      VALIDATE_FAILURE("Jump: ord cert too large");
+      return 0;
+    }
+    DATA.PO.Nested_Ignore_Incarnation = 1;
+    if (!VAL_Validate_Message(oc, msg_size)) {
+      VALIDATE_FAILURE("Jump: ord cert did not validate");
+      DATA.PO.Nested_Ignore_Incarnation = nested_state;
+      return 0;
+    }
+    DATA.PO.Nested_Ignore_Incarnation = nested_state;
+    sum_len += msg_size;
+  }
+
+  /* Validate reset certificate */
+  rc = (signed_message *)((char*)jump + sum_len);
+  msg_size = UTIL_Message_Size(rc);
+
+  if (rc->type != RESET_CERT) {
+    VALIDATE_FAILURE("Jump: type mismatch; expecting reset cert");
+    return 0;
+  }
+  if (msg_size > num_bytes - sum_len) {
+    VALIDATE_FAILURE("Jump: reset cert too large");
+    return 0;
+  }
+  if (!VAL_Validate_Message(rc, msg_size)) {
+    VALIDATE_FAILURE("Jump: reset cert did not validate");
+    return 0;
+  }
+  sum_len += msg_size;
+
+  /* Sanity check total length */
+  if (sum_len != num_bytes) {
+    VALIDATE_FAILURE("Jump: total length does not match");
+    return 0;
+  }
+
+  return 1;
+}
+
+int32u VAL_Validate_New_Incarnation(new_incarnation_message *new_inc, int32u num_bytes)
+{
+  if (num_bytes != sizeof(new_incarnation_message)) {
+    VALIDATE_FAILURE("New_Incarnation: incorrect size");
+    Alarm(PRINT, "New_Incarnation: (got %u, should be %u)\n",
+          num_bytes, sizeof(new_incarnation_message));
+    return 0;
+  }
+  return 1;
+}
+
+int32u VAL_Validate_Incarnation_Ack(incarnation_ack_message *inc_ack, int32u num_bytes)
+{
+  if (num_bytes != sizeof(incarnation_ack_message)) {
+    VALIDATE_FAILURE("Incarnation_Ack: incorrect size");
+    Alarm(PRINT, "Incarnation_Ack: (got %u, should be %u)\n",
+          num_bytes, sizeof(incarnation_ack_message));
+    return 0;
+  }
+  return 1;
+}
+
+int32u VAL_Validate_Incarnation_Cert(incarnation_cert_message *inc_cert, int32u num_bytes, int32u machine_id, int32u incarnation)
+{
+  signed_message *ni, *ia;
+  incarnation_ack_message *ia_specific;
+  int32u msg_size, sum_len, count;
+  byte ni_digest[DIGEST_SIZE];
+  int32u nested_state = DATA.PO.Nested_Ignore_Incarnation;
+
+  /* Validate size (note that incarnation_cert_message is currently empty, so
+   * this should never fail */
+  if (num_bytes < sizeof(incarnation_cert_message)) {
+    VALIDATE_FAILURE("Incarnation_Cert: msg too small");
+    return 0;
+  }
+  sum_len = sizeof(incarnation_cert_message);
+
+  /* Check the new incarnation message */
+  ni = (signed_message *)(inc_cert + 1);
+  msg_size = UTIL_Message_Size(ni);
+
+  if (ni->type != NEW_INCARNATION) {
+    VALIDATE_FAILURE("Incarnation_Cert: first message not a new incarnation msg");
+    return 0;
+  }
+  if (msg_size > num_bytes - sum_len) {
+    VALIDATE_FAILURE("Incarnation_Cert: new incarnation msg too large");
+    return 0;
+  }
+
+  DATA.PO.Nested_Ignore_Incarnation = 1;
+  if (!VAL_Validate_Message(ni, msg_size)) {
+    VALIDATE_FAILURE("Incarnation_Cert: new incarnation msg did not pass VAL function");
+    DATA.PO.Nested_Ignore_Incarnation = nested_state;
+    return 0;
+  }
+  DATA.PO.Nested_Ignore_Incarnation = nested_state;
+
+  /* Check against incarnation and machine id on outer signed message of
+   * incarnation cert */
+  if (ni->incarnation != incarnation) {
+    VALIDATE_FAILURE("Incarnation_Cert: new incarnation msg incarnation does not match");
+    Alarm(PRINT, "Outer incarnation %u, inner %u. Outer sender %u, inner %u\n", incarnation, ni->incarnation, machine_id, ni->machine_id);
+    return 0;
+  }
+  if (ni->machine_id != machine_id) {
+    VALIDATE_FAILURE("Incarnation_Cert: new incarnation msg sender does not match");
+    return 0;
+  }
+  
+  /* Make new incarnation digest for comparisons */
+  OPENSSL_RSA_Make_Digest((byte *)ni, msg_size, ni_digest);
+
+  sum_len += msg_size;
+  count = 0;
+
+  /* Next, count the number of valid incarnation acks */
+  while (sum_len < num_bytes && (num_bytes - sum_len >= sizeof(signed_message))) {
+    ia       = (signed_message *)((char*)inc_cert + sum_len);
+    msg_size = UTIL_Message_Size(ia);
+
+    if (ia->type != INCARNATION_ACK) {
+      VALIDATE_FAILURE("Incarnation_Certificate: non-incarnation-ack message present");
+      return 0;
+    }
+    if (msg_size > num_bytes - sum_len) {
+      VALIDATE_FAILURE("Incarnation_Certificate: incarnation-ack too large");
+      return 0;
+    }
+    DATA.PO.Nested_Ignore_Incarnation = 1;
+    if (!VAL_Validate_Message(ia, msg_size)) {
+      VALIDATE_FAILURE("Incarnation_Certificate: incarnation ack did not pass VAL function");
+      DATA.PO.Nested_Ignore_Incarnation = nested_state;
+      return 0;
+    }
+    DATA.PO.Nested_Ignore_Incarnation = nested_state;
+
+    ia_specific = (incarnation_ack_message *)(ia + 1);
+    if (ia_specific->acked_incarnation != incarnation) {
+        VALIDATE_FAILURE("Incarnation_Certificate: acked incarnation does not match");
+        return 0;
+    }
+    if (ia_specific->acked_id != machine_id) {
+        VALIDATE_FAILURE("Incarnation_Certificate: acked id does not match");
+        return 0;
+    }
+    if (!OPENSSL_RSA_Digests_Equal(ia_specific->digest, ni_digest)) {
+        VALIDATE_FAILURE("Incarnation_Certificate: ack digest does not match new incarnation msg");
+        return 0;
+    }
+
+    sum_len += msg_size;
+    count++;
+  }
+
+  /* Finally, do last sanity check on overall length and number of acks */
+  if (sum_len != num_bytes) {
+    VALIDATE_FAILURE("Incarnation_Certificate: total bytes in message does not match num_bytes");
+    return 0;
+  }
+  if (count != 2*VAR.F + VAR.K + 1) {
+    VALIDATE_FAILURE("Incarnation_Certificate: not 2f+k+1 inc-ack messages inside the cert");
+    Alarm(PRINT, "VAL_Inc_Certificate: count = %d, needed %d\n", count, 2*VAR.F + VAR.K + 1);
+    return 0;
+  }
+  return 1;
+}
+
+int32u VAL_Validate_Pending_State(pending_state_message *pend_state, int32u num_bytes)
+{
+  if (num_bytes != sizeof(pending_state_message)) {
+    VALIDATE_FAILURE("Pending_State: incorrect size");
+    Alarm(PRINT, "Pending_State: (got %u, should be %u)\n",
+          num_bytes, sizeof(pending_state_message));
+    return 0;
+  }
+  return 1;
+}
+
+int32u VAL_Validate_Pending_Share(pending_share_message *pend_share, int32u num_bytes)
+{
+  signed_message *mess;
+  int32u msg_size;
+  int32u nested_state = DATA.PO.Nested_Ignore_Incarnation;
+
+  /* Check that size is large enough for pending share header */
+  if (num_bytes < sizeof(pending_share_message)) {
+    VALIDATE_FAILURE("Pending_Share: invalid size");
+    return 0;
+  }
+
+  /* Validate inner message type */
+  if (pend_share->type != PRE_PREPARE && pend_share->type != PO_REQUEST) {
+    VALIDATE_FAILURE("Pending_Share: invalid type");
+    return 0;
+  }
+
+  /* Validate contained message */
+  mess = (signed_message *)(pend_share + 1);
+  msg_size = UTIL_Message_Size(mess);
+
+  if (msg_size > num_bytes - sizeof(pending_share_message)) {
+    VALIDATE_FAILURE("Pending_Share: inner message too large");
+    return 0;
+  }
+
+  /* We won't install the other replicas incarnations until we collect enough
+   * jump messages and pending state/shares from other replicas. Therefore, we
+   * don't know what incarnation everyone else is supposed to have yet, so we
+   * can't validate the incarnation at this time. We should validate the
+   * incarnation/signature before processing the message */
+  DATA.PO.Nested_Ignore_Incarnation = 1;
+  if (!VAL_Validate_Message(mess, msg_size)) {
+    VALIDATE_FAILURE("Pending_Share: inner message did not pass VAL function");
+    DATA.PO.Nested_Ignore_Incarnation = nested_state;
+    return 0;
+  }
+  DATA.PO.Nested_Ignore_Incarnation = nested_state;
+
+  if (mess->type != pend_share->type) {
+    VALIDATE_FAILURE("Pending_Share: type mismatch");
+    return 0;
+  }
+    
+  return 1;
+}
+
+int32u VAL_Validate_Reset_Vote(reset_vote_message *reset_vote, int32u num_bytes)
+{
+  if (num_bytes != sizeof(reset_vote_message)) {
+    VALIDATE_FAILURE("Reset_Vote: incorrect size");
+    Alarm(PRINT, "Reset_Vote: (got %u, should be %u)\n",
+          num_bytes, sizeof(reset_vote_message));
+    return 0;
+  }
+  return 1;
+}
+
+int32u VAL_Validate_Reset_Share(reset_share_message *reset_share, int32u num_bytes)
+{
+  if (num_bytes != sizeof(reset_share_message)) {
+    VALIDATE_FAILURE("Reset_Share: incorrect size");
+    Alarm(PRINT, "Reset_Share: (got %u, should be %u)\n",
+          num_bytes, sizeof(reset_share_message));
+    return 0;
+  }
+  return 1;
+}
+
+int32u VAL_Validate_Reset_Proposal(reset_proposal_message *reset_proposal, int32u num_bytes)
+{
+  signed_message *share;
+  /*reset_share_message *share_specific;*/
+  int32u sum_len, msg_size, count;
+
+  if (num_bytes < sizeof(reset_proposal_message)) {
+    VALIDATE_FAILURE("Reset Proposal: invalid size");
+    return 0;
+  }
+
+  if (reset_proposal->num_shares < 2*VAR.F + VAR.K + 1) {
+    VALIDATE_FAILURE("Reset Proposal: not enough shares");
+    return 0;
+  }
+  if (reset_proposal->num_shares > NUM_SERVERS) {
+    VALIDATE_FAILURE("Reset Proposal: too many shares");
+    return 0;
+  }
+
+  sum_len = sizeof(reset_proposal_message);
+  count = 0;
+
+  while (sum_len < num_bytes && (num_bytes - sum_len >= sizeof(signed_message))) {
+    share = (signed_message *)((char *)reset_proposal + sum_len);
+    msg_size = UTIL_Message_Size(share);
+
+    if (share->type != RESET_SHARE) {
+      VALIDATE_FAILURE("Reset_Proposal: non-reset-share message present");
+      return 0;
+    }
+    if (msg_size > num_bytes - sum_len) {
+      VALIDATE_FAILURE("Reset_Proposal: reset share too large");
+      return 0;
+    }
+    if (!VAL_Validate_Message(share, msg_size)) {
+      VALIDATE_FAILURE("Reset_Proposal: reset share did not pass VAL function");
+      return 0;
+    }
+
+    /* Shares only get created once, so view may not necessarily match */
+    /* share_specific = (reset_share_message *)(share + 1);
+    if (share_specific->view != reset_proposal->view) {
+        VALIDATE_FAILURE("Reset Proposal: share view does not match");
+        return 0;
+    } */
+
+    sum_len += msg_size;
+    count++;
+    if (count == reset_proposal->num_shares) break;
+  }
+  
+  /* Finally, do last sanity check on overall length and number of shares */
+  if (sum_len != num_bytes) {
+    VALIDATE_FAILURE("Reset_Proposal: total bytes in message does not match num_bytes");
+    return 0;
+  }
+  if (count != reset_proposal->num_shares) {
+    VALIDATE_FAILURE("Reset_Proposal: incorrect number of shares");
+    Alarm(PRINT, "Reset_Proposal: count = %d, expected %d\n", count, reset_proposal->num_shares);
+    return 0;
+  }
+
+  return 1;
+}
+
+int32u VAL_Validate_Reset_Prepare(reset_prepare_message *reset_prepare, int32u num_bytes)
+{
+  if (num_bytes != sizeof(reset_prepare_message)) {
+    VALIDATE_FAILURE("Reset_Prepare: incorrect size");
+    Alarm(PRINT, "Reset_Prepare: (got %u, should be %u)\n",
+          num_bytes, sizeof(reset_prepare_message));
+    return 0;
+  }
+  return 1;
+}
+
+int32u VAL_Validate_Reset_Commit(reset_commit_message *reset_commit, int32u num_bytes)
+{
+  if (num_bytes != sizeof(reset_commit_message)) {
+    VALIDATE_FAILURE("Reset_Commit: incorrect size");
+    Alarm(PRINT, "Reset_Commit: (got %u, should be %u)\n",
+          num_bytes, sizeof(reset_commit_message));
+    return 0;
+  }
+  return 1;
+}
+
+int32u VAL_Validate_Reset_NewLeader(reset_newleader_message *reset_nl, int32u num_bytes)
+{
+  if (num_bytes != sizeof(reset_newleader_message)) {
+    VALIDATE_FAILURE("Reset_NewLeader: incorrect size");
+    Alarm(PRINT, "Reset_NewLeader: (got %u, should be %u)\n",
+          num_bytes, sizeof(reset_newleader_message));
+    return 0;
+  }
+  return 1;
+}
+
+int32u VAL_Validate_Reset_NewLeaderProof(reset_newleaderproof_message *reset_nlp, int32u num_bytes)
+{
+  signed_message *nl;
+  /* reset_newleader message *nl_specific; */
+  int32u msg_size, sum_len, count;
+
+  if (num_bytes < sizeof(reset_newleaderproof_message)) {
+    VALIDATE_FAILURE("Reset NewLeaderProof: invalid size");
+    return 0;
+  }
+
+  sum_len = sizeof(reset_newleaderproof_message);
+  count = 0;
+
+  while (sum_len < num_bytes && (num_bytes - sum_len >= sizeof(signed_message))) {
+    nl = (signed_message *)((char *)reset_nlp + sum_len);
+    msg_size = UTIL_Message_Size(nl);
+
+    if (nl->type != RESET_NEWLEADER) {
+      VALIDATE_FAILURE("Reset_NewLeaderProof: non-reset-newleader message present");
+      return 0;
+    }
+    if (msg_size > num_bytes - sum_len) {
+      VALIDATE_FAILURE("Reset_NewLeaderProof: reset newleader msg too large");
+      return 0;
+    }
+    if (!VAL_Validate_Message(nl, msg_size)) {
+      VALIDATE_FAILURE("Reset_NewLeaderProof: reset newleader did not pass VAL function");
+      return 0;
+    }
+
+    /* This is already checked in Process_Reset_NewLeaderProof. Note that we
+     * should also be checking that the newleader messages come from different
+     * replicas... */
+    /*nl_specific = (reset_newleader_message *)(nl + 1);
+    if (nl_specific->new_view != reset_nlp->new_view) {
+        VALIDATE_FAILURE("Reset_NewLeaderProof: newleader view does not match");
+        return 0;
+    }*/
+
+    sum_len += msg_size;
+    count++;
+    if (count == 2*VAR.F + VAR.K + 1) break;
+  }
+  
+  /* Finally, do last sanity check on overall length and number of shares */
+  if (sum_len != num_bytes) {
+    VALIDATE_FAILURE("Reset_NewLeaderProof: total bytes in message does not match num_bytes");
+    return 0;
+  }
+  if (count != 2*VAR.F + VAR.K + 1) {
+    VALIDATE_FAILURE("Reset_NewLeaderProof: incorrect number of newleader msgs");
+    return 0;
+  }
+
+  return 1;
+}
+
+int32u VAL_Validate_Reset_ViewChange(reset_viewchange_message *reset_viewchange, int32u num_bytes)
+{
+  signed_message *rprop, *rprep;
+  reset_proposal_message *rprop_specific;
+  reset_prepare_message *rprep_specific;
+  int32u msg_size, sum_len, count;
+  byte rprop_digest[DIGEST_SIZE];
+
+  /* Validate size */
+  if (num_bytes < sizeof(reset_viewchange_message)) {
+    VALIDATE_FAILURE("Reset_ViewChange: msg too small");
+    return 0;
+  }
+  sum_len = sizeof(reset_viewchange_message);
+
+  /* If the reset_viewchange does not contain a proposal, validation is easy */
+  if (!reset_viewchange->contains_proposal) {
+    if (num_bytes != sum_len) {
+      VALIDATE_FAILURE("Reset_ViewChange: incorrect size for message not containing proposal");
+      return 0;
+    } else {
+      return 1;
+    }
+  }
+
+  /* Otherwise, need to validate the reset proposal cert (reset proposal + 2f+k
+   * reset_prepares) */
+  rprop = (signed_message *)(reset_viewchange + 1);
+  msg_size = UTIL_Message_Size(rprop);
+
+  if (rprop->type != RESET_PROPOSAL) {
+    VALIDATE_FAILURE("Reset_ViewChange: first message not a reset proposal");
+    return 0;
+  }
+  if (msg_size > num_bytes - sum_len) {
+    VALIDATE_FAILURE("Reset_ViewChange: reset proposal too large");
+    return 0;
+  }
+  if (!VAL_Validate_Message(rprop, msg_size)) {
+    VALIDATE_FAILURE("Reset_ViewChange: reset proposal did not pass VAL function");
+    return 0;
+  }
+  rprop_specific = (reset_proposal_message *)(rprop + 1);
+
+  /* Make reset proposal digest for comparisons: Note that prepares and commits
+   * only digest over content of reset proposal, NOT the full signed message */
+  OPENSSL_RSA_Make_Digest((byte *)rprop_specific, rprop->len, rprop_digest);
+
+  sum_len += msg_size;
+  count = 0;
+
+  /* Next, count the number of valid reset prepares */
+  while (sum_len < num_bytes && (num_bytes - sum_len >= sizeof(signed_message))) {
+    rprep    = (signed_message *)((char*)reset_viewchange + sum_len);
+    msg_size = UTIL_Message_Size(rprep);
+
+    if (rprep->type != RESET_PREPARE) {
+      VALIDATE_FAILURE("Reset_ViewChange: non-reset_prepare message present");
+      return 0;
+    }
+    if (msg_size > num_bytes - sum_len) {
+      VALIDATE_FAILURE("Reset_ViewChange: reset prepare too large");
+      return 0;
+    }
+    if (!VAL_Validate_Message(rprep, msg_size)) {
+      VALIDATE_FAILURE("Reset_ViewChange: reset prepare did not pass VAL function");
+      return 0;
+    }
+
+    rprep_specific = (reset_prepare_message *)(rprep + 1);
+    if (rprep_specific->view != rprop_specific->view) {
+        VALIDATE_FAILURE("Reset_ViewChange: prepare view does not match");
+        return 0;
+    }
+    if (!OPENSSL_RSA_Digests_Equal(rprep_specific->digest, rprop_digest)) {
+        VALIDATE_FAILURE("Reset_ViewChange: prepare digest does not match proposal");
+        return 0;
+    }
+
+    sum_len += msg_size;
+    count++;
+    if (count == 2*VAR.F + VAR.K) break;
+  }
+
+  /* Finally, do last sanity check on overall length and number of prepares */
+  if (sum_len != num_bytes) {
+    VALIDATE_FAILURE("Reset_ViewChange: total bytes in message does not match num_bytes");
+    return 0;
+  }
+  if (count != 2*VAR.F + VAR.K) {
+    VALIDATE_FAILURE("Reset_ViewChange: not 2f+k reset prepare messages inside the cert");
+    Alarm(PRINT, "VAL_Reset_ViewChange: count = %d, needed %d\n", count, 2*VAR.F + VAR.K);
+    return 0;
+  }
+
+  return 1;
+}
+
+int32u VAL_Validate_Reset_NewView(reset_newview_message *reset_newview, int32u num_bytes)
+{
+  if (num_bytes != sizeof(reset_newview_message)) {
+    VALIDATE_FAILURE("Reset_NewView: incorrect size");
+    Alarm(PRINT, "Reset_NewView: (got %u, should be %u)\n",
+          num_bytes, sizeof(reset_newview_message));
+    return 0;
+  }
+  return 1;
+}
+
+int32u VAL_Validate_Reset_Certificate(reset_certificate_message *reset_cert, int32u num_bytes)
+{
+  signed_message *rprop, *rcom;
+  reset_proposal_message *rprop_specific;
+  reset_commit_message *rcom_specific;
+  int32u msg_size, sum_len, count;
+  byte rprop_digest[DIGEST_SIZE];
+
+  /* Validate size */
+  if (num_bytes < sizeof(reset_certificate_message)) {
+    VALIDATE_FAILURE("Reset_Cert: msg too small");
+    return 0;
+  }
+  sum_len = sizeof(reset_certificate_message);
+
+  /* Need to validate the reset proposal cert (reset proposal + 2f+k+1
+   * reset_commits) */
+  rprop = (signed_message *)(reset_cert + 1);
+  msg_size = UTIL_Message_Size(rprop);
+
+  if (rprop->type != RESET_PROPOSAL) {
+    VALIDATE_FAILURE("Reset_Cert: first message not a reset proposal");
+    return 0;
+  }
+  if (msg_size > num_bytes - sum_len) {
+    VALIDATE_FAILURE("Reset_Cert: reset proposal too large");
+    return 0;
+  }
+  if (!VAL_Validate_Message(rprop, msg_size)) {
+    VALIDATE_FAILURE("Reset_Cert: reset proposal did not pass VAL function");
+    return 0;
+  }
+  rprop_specific = (reset_proposal_message *)(rprop + 1);
+
+  /* Make reset proposal digest for comparisons: Note that prepares and commits
+   * only digest over content of reset proposal, NOT the full signed message */
+  OPENSSL_RSA_Make_Digest((byte *)rprop_specific, rprop->len, rprop_digest);
+
+  sum_len += msg_size;
+  count = 0;
+
+  /* Next, count the number of valid reset commits */
+  while (sum_len < num_bytes && (num_bytes - sum_len >= sizeof(signed_message))) {
+    rcom    = (signed_message *)((char*)reset_cert + sum_len);
+    msg_size = UTIL_Message_Size(rcom);
+
+    if (rcom->type != RESET_COMMIT) {
+      VALIDATE_FAILURE("Reset_Cert: non-reset_commit message present");
+      return 0;
+    }
+    if (msg_size > num_bytes - sum_len) {
+      VALIDATE_FAILURE("Reset_Cert: reset commit too large");
+      return 0;
+    }
+    if (!VAL_Validate_Message(rcom, msg_size)) {
+      VALIDATE_FAILURE("Reset_Cert: reset commit did not pass VAL function");
+      return 0;
+    }
+
+    rcom_specific = (reset_commit_message *)(rcom + 1);
+    if (rcom_specific->view != rprop_specific->view) {
+        VALIDATE_FAILURE("Reset_Cert: commit view does not match");
+        return 0;
+    }
+    if (!OPENSSL_RSA_Digests_Equal(rcom_specific->digest, rprop_digest)) {
+        VALIDATE_FAILURE("Reset_Cert: commit digest does not match proposal");
+        return 0;
+    }
+
+    sum_len += msg_size;
+    count++;
+    if (count == 2*VAR.F + VAR.K + 1) break;
+  }
+
+  /* Finally, do last sanity check on overall length and number of commits */
+  if (count != 2*VAR.F + VAR.K + 1) {
+    VALIDATE_FAILURE("Reset_Cert: not 2f+k+1 reset commit messages inside the cert");
+    Alarm(PRINT, "VAL_Reset_Cert: count = %d, needed %d\n", count, 2*VAR.F + VAR.K);
+    return 0;
+  }
+  if (sum_len != num_bytes) {
+    VALIDATE_FAILURE("Reset_Cert: total bytes in message does not match num_bytes");
+    Alarm(PRINT, "sum_len == %u, num_bytes == %u\n", sum_len, num_bytes);
+    return 0;
+  }
+
+  return 1;
+}

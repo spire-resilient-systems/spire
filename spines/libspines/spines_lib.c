@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -142,7 +143,7 @@ static void	Flip_udp_hdr( udp_header *udp_hdr )
 static void Set_large_socket_buffers(int s)
 {
     int i, on, ret;
-    sockopt_len_t onlen;
+    socklen_t onlen;
 
     for(i = 64; i <= 256; i += 8) {
 	    on = 1024*i;
@@ -233,7 +234,7 @@ int spines_init(const struct sockaddr *serv_addr)
         /* Check room for length of "data" suffix and NULL byte */
         s_len = sizeof(Spines_Addr.unix_addr.sun_path) - strlen(SPINES_UNIX_DATA_SUFFIX) - 1;
         ret = snprintf(Spines_Addr.unix_addr.sun_path, s_len, "%s%hu", 
-                        SPINES_UNIX_SOCKET_PATH, DEFAULT_SPINES_PORT);
+                        SPINES_UNIX_SOCKET_PATH, (unsigned short) DEFAULT_SPINES_PORT);
         if (ret > s_len) {
             Alarm(PRINT, "spines_init ERROR: Unix domain path name too long (len = %d), must be"
                             " less than %u bytes\n", ret, s_len);
@@ -438,6 +439,13 @@ int  spines_socket(int domain, int type, int protocol,
     { 
         Alarm(PRINT, "spines_socket(): Invalid Link Protocol: %d.\r\nPlease use Intrusion-Tolerant "
                     "Link protocol with Intrusion-Tolerant Dissemination methods\r\n", link_prot);
+        spines_set_errno(SP_ERROR_INPUT_ERR);
+        return(-1);
+    }
+    if ((route_prot == SOURCE_BASED_ROUTING && link_prot != UDP_LINKS 
+         && link_prot != SOFT_REALTIME_LINKS))
+    {
+        Alarm(PRINT, "spines_socket(): Invalid Link Protocol: %d.\r\n Source-based routing currently only supports UDP or Realtime links\r\n", link_prot);
         spines_set_errno(SP_ERROR_INPUT_ERR);
         return(-1);
     }

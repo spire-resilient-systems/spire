@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *  	
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -599,7 +599,7 @@ void Send_Update(int dummy, void *dummyp)
     time_stamp++; 
     //update_specific->server_id   = send_to_server;
     update_specific->server_id   = My_Client_ID;
-    update_specific->incarnation = my_incarnation;
+    update->incarnation          = my_incarnation;
     update_specific->seq_num     = time_stamp; 
     update_specific->address     = NET.My_Address;
     update_specific->port        = NET.Client_Port;

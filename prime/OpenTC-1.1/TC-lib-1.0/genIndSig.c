@@ -169,6 +169,7 @@ int TC_Check_Proof(TC_IND *tcind, BIGNUM*_x,TC_IND_SIG* sign, int signum) {
   EVP_DigestUpdate(&ctx,calcTemp4->d,(calcTemp4->top)*sizeof(BN_ULONG));
   EVP_DigestUpdate(&ctx,calcTemp6->d,(calcTemp6->top)*sizeof(BN_ULONG));
   EVP_DigestFinal(&ctx,tempc,&hLength);
+  EVP_MD_CTX_cleanup(&ctx);
   
   BN_bin2bn(tempc,hLength,calcTemp);
 
@@ -324,6 +325,7 @@ int genIndSig(TC_IND *tcind,BIGNUM *_x,TC_IND_SIG* sign, int genproof) {
     EVP_DigestUpdate(&ctx,vp->d,(vp->top)*sizeof(BN_ULONG));
     EVP_DigestUpdate(&ctx,xp->d,(xp->top)*sizeof(BN_ULONG));
     EVP_DigestFinal(&ctx,tempc,&hLength); 
+    EVP_MD_CTX_cleanup(&ctx);
 
     BN_bin2bn(tempc,hLength,sign->proof_c);
 

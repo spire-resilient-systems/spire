@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -66,6 +67,7 @@ static int  Group_Address;
 static int  Realtime;
 static int  report_latency_stats;
 static int  verbose_mode;
+static int  Sender_Bind_Flag;
 
 static void Usage(int argc, char *argv[]);
 int max_rcv_buff(int sk);
@@ -232,9 +234,11 @@ int main( int argc, char *argv[] )
         name.sin_addr.s_addr = INADDR_ANY;
     name.sin_port = htons(sendPort);
     
-    if(bind(sk, (struct sockaddr *)&name, sizeof(name) ) < 0) {
-      perror("err: bind");
-      exit(1);
+    if (Sender_Bind_Flag) {
+        if(bind(sk, (struct sockaddr *)&name, sizeof(name) ) < 0) {
+          perror("err: bind");
+          exit(1);
+        }
     }
     if (Realtime) {
       /* Realtime here means, if I can't send, drop it, and
@@ -678,11 +682,14 @@ static  void    Usage(int argc, char *argv[])
   Realtime              = 0;
   report_latency_stats  = 0;
   verbose_mode          = 0;
+  Sender_Bind_Flag      = 1;
   
   while( --argc > 0 ) {
     argv++;
     
-    if( !strncmp( *argv, "-d", 2 ) ){
+    if( !strncmp( *argv, "-nb", 3 ) ){
+      Sender_Bind_Flag = 0;
+    }else if( !strncmp( *argv, "-d", 2 ) ){
       sscanf(argv[1], "%d", (int*)&sendPort );
       argc--; argv++;
     } else if( !strncmp( *argv, "-m", 2 ) ){
@@ -740,7 +747,8 @@ static  void    Usage(int argc, char *argv[])
 	      "\t[-v              ] : print verbose\r\n"
 	      "\t[-q              ] : report latency stats (required tight clock sync)\r\n"
 	      "\t[-s              ] : sender flooder\n"
-	      "\t[-F              ] : forwarder only\n");
+	      "\t[-F              ] : forwarder only\n"
+	      "\t[-nb             ] : don't have sender try to bind\n");
       exit( 0 );
     }
   }

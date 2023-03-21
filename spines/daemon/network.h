@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -44,6 +45,24 @@
 #include "link_state.h"
 
 #define CONNECTED_LEG_THRESHOLD 5
+#define NET_UPDATE_THRESHOLD     0.1
+#define NET_UPDATE_THRESHOLD_ABS 3
+
+/* Thresholds for detecting a problem for PROBLEM_ROUTE type routing */
+#define LATENCY_PROB_THRESH     1.25 /* 25% latency increase relative to base cost = problem */
+#define LATENCY_NO_PROB_THRESH  1.15
+#define LATENCY_ABS_PROB_THRESH 5.0  /* Don't consider it a problem unless
+                                        latency is at least 5ms above base case
+                                        (prevent minor fluctuations from having
+                                        a large effect for edges with small
+                                        absolute latencies */
+#define LATENCY_ABS_NO_PROB_THRESH 3.0
+#define LOSS_PROB_THRESH           0.05 /* 5% loss = problem */
+#define LOSS_NO_PROB_THRESH        0.01
+
+/* this is how often we will refill the leaky-bucket */
+#define LEG_BUCKET_FILL_USEC    500         /* How often to refill the leaky bucket (in microsec) */
+static const sp_time leg_bucket_to = {0, LEG_BUCKET_FILL_USEC};
 
 struct Node_d;
 struct Edge_d;
@@ -102,11 +121,28 @@ typedef struct Network_Leg_d
   int16              connect_cnter;            /* hello counter used to establish connection */
   sp_time            last_connected;           /* TS of most recent time this leg was connected */
 
+  /* Rate limit variables */
+  int64              bucket_bytes;             /* Bytes currently available in the leaky bucket */
+  sp_time            bucket_last_filled;       /* Time the leaky bucket was last filled */
+  stdcarr            bucket_buf;               /* Buffer containing packets waiting to be sent (i.e. bucket was empty when they arrived) */
+
 #ifdef SPINES_WIRELESS
   struct Wireless_Data_d w_data;
 #endif
 
 } Network_Leg;
+
+#undef  ext
+#ifndef ext_network
+#define ext extern
+#else
+#define ext
+#endif
+
+/* Rate limiting variables: Limit maximum rate allowed per network leg */
+ext int32 Leg_Rate_Limit_kbps;
+ext int32 Leg_Bucket_Cap;
+ext int32 Leg_Max_Buffered;
 
 void Init_Network(void);
 void Init_My_Node(void);

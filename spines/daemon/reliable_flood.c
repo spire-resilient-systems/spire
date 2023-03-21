@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -2296,6 +2297,8 @@ int Reliable_Flood_Send_E2E (Node *next_hop, int ngbr_index, int mode)
                                 sign_len, Rel_Signature_Len);
                 crypto_fail = 1;
             }
+
+            EVP_MD_CTX_cleanup(&md_ctx);
         }
     }
     
@@ -2963,7 +2966,7 @@ int Reliable_Flood_Verify(sys_scatter *scat, int32u src_id, unsigned char type)
     ret = EVP_VerifyUpdate(&md_ctx, (unsigned char*)&phdr->type, sizeof(phdr->type));
     if (ret != 1) {
         Alarm(PRINT, "RF_Verify: VerifyUpdate failed. p_hdr->type = %d\r\n", phdr->type);
-        return ret;
+        goto cr_cleanup;
     }
 
     if (type == REL_FLOOD_DATA) {
@@ -2977,7 +2980,7 @@ int Reliable_Flood_Verify(sys_scatter *scat, int32u src_id, unsigned char type)
                 
             if (ret != 1) {
                 Alarm(PRINT, "RF_Verify: VerifyUpdate failed on Data message.\r\n");
-                return ret;
+                goto cr_cleanup;
             }
         }
     }
@@ -2987,7 +2990,7 @@ int Reliable_Flood_Verify(sys_scatter *scat, int32u src_id, unsigned char type)
                         sizeof(rel_flood_e2e_ack));
         if (ret != 1) {
             Alarm(PRINT, "RF_Verify: VerifyUpdate failed on E2E message.\r\n");
-            return ret;
+            goto cr_cleanup;
         }
     }
     else if (type == STATUS_CHANGE) {
@@ -2996,7 +2999,7 @@ int Reliable_Flood_Verify(sys_scatter *scat, int32u src_id, unsigned char type)
                         sizeof(status_change));
         if (ret != 1) {
             Alarm(PRINT, "RF_Verify: VerifyUpdate failed on Status Change.\r\n");
-            return ret;
+            goto cr_cleanup;
         }
     }
     else
@@ -3009,8 +3012,13 @@ int Reliable_Flood_Verify(sys_scatter *scat, int32u src_id, unsigned char type)
                         Rel_Signature_Len, Pub_Keys[src_id]);
     if (ret != 1) {
         Alarm(PRINT, "RF_Verify: VerifyFinal failed. Type = %d\r\n", type);
-        return ret;
+        goto cr_cleanup;
     }
+
+    cr_cleanup:
+        EVP_MD_CTX_cleanup(&md_ctx);
+        if (ret != 1) return ret;
+
     hdr->ttl = temp_ttl;
 
     return 1;
@@ -3131,19 +3139,19 @@ void Reliable_Flood_Restamp( void )
                         }
                     }
                     if (error == 1)
-                        continue;
+                        goto cr_cleanup;
 
                     ret = EVP_SignFinal(&md_ctx, sign_ptr, &sign_len, Priv_Key);
                     if (ret != 1) {
                         Alarm(PRINT, "Reliable_Flood_Restamp: SignFinal failed\r\n");
                         error = 1;
-                        continue;
+                        goto cr_cleanup;
                     }
                     if (sign_len != Rel_Signature_Len) {
                         Alarm(PRINT, "Reliable_Flood_Restamp: sign_len (%d) != Key_Len (%d)\r\n",
                                         sign_len, Rel_Signature_Len);
                         error = 1;
-                        continue;
+                        goto cr_cleanup;
                     }
 
                     /* Update the length for the new signature */
@@ -3156,6 +3164,10 @@ void Reliable_Flood_Restamp( void )
                             path[k] = temp_path[k];
                         }
                     }
+
+                    cr_cleanup:
+                        EVP_MD_CTX_cleanup(&md_ctx);
+                        if (error) continue;
                 }
 
                 /* mark to be resent */
@@ -3853,6 +3865,8 @@ int Send_Status_Change (Node *next_hop, int ngbr_index, int mode)
                                 sign_len, Rel_Signature_Len);
                 crypto_fail = 1;
             }
+
+            EVP_MD_CTX_cleanup(&md_ctx);
         }
     }
 

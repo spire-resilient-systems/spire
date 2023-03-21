@@ -24,10 +24,13 @@
  *   Amy Babay            babay@cs.jhu.edu
  *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
- * Major Contributor:
+ * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
  *
- * Copyright (c) 2017 Johns Hopkins University.
+ * Contributors:
+ *   Samuel Beckley       Contributions to HMIs
+ *
+ * Copyright (c) 2018 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -100,6 +103,7 @@ int master_ready = 0;
 int inject_ready = 0;
 
 /* Local Functions */
+void ITRC_Reset_Master_Data_Structures(int startup);
 //int ITRC_Valid_ORD_ID(ordinal o);
 void ITRC_Insert_TC_ID(tc_share_msg* tcm, int32u sender, int32u flag);
 int ITRC_TC_Ready_Deliver(signed_message **to_deliver);
@@ -204,8 +208,8 @@ void *ITRC_Client(void *data)
 
     /* Setup Keys. For TC, only Public here for verification of TC Signed Messages */
     OPENSSL_RSA_Init();
-    OPENSSL_RSA_Read_Keys(Prime_Client_ID, RSA_CLIENT);
-    TC_Read_Public_Key();
+    OPENSSL_RSA_Read_Keys(Prime_Client_ID, RSA_CLIENT, itrcd->prime_keys_dir);
+    TC_Read_Public_Key(itrcd->sm_keys_dir);
    
     /* Setup the spines timeout frequency - if disconnected, will try to reconnect
      *  this often */
@@ -314,11 +318,11 @@ void *ITRC_Client(void *data)
                 mess->machine_id = Prime_Client_ID;
                 mess->len = sizeof(signed_update_message) - sizeof(signed_message);
                 mess->type = UPDATE;
+                mess->incarnation = ps->incarnation;
                 up = (update_message *)(mess + 1);
                 up->server_id = Prime_Client_ID;
-                up->seq = *ps;
-                //up->seq.incarnation = My_Incarnation;
-                //up->seq.seq_num = *seq_no;
+                up->seq_num = ps->seq_num;
+                //up->seq = *ps;
                 memcpy((unsigned char*)(up + 1), buff, nBytes);
                 /* printf("Sending Update: [%u, %u]\n", up->seq.incarnation, 
                             up->seq.seq_num); */
@@ -600,6 +604,72 @@ void *ITRC_Prime_Inject(void *data)
     return NULL;
 }
 
+void ITRC_Reset_Master_Data_Structures(int startup)
+{
+    int32u i;
+    stdit it;
+    tc_node *t_ptr, *t_del;
+    st_node *s_ptr, *s_del;
+    signed_message *mess;
+
+    /* Cleanup any leftover in the TC queue, then reset to init values */
+    if (!startup) {
+        t_ptr = &tcq_pending.head;
+        while (t_ptr->next != NULL) {
+            t_del = t_ptr->next;
+            t_ptr->next = t_del->next;
+            tcq_pending.size--;
+            free(t_del);
+        } 
+    }
+    memset(&tcq_pending, 0, sizeof(tc_queue));
+    tcq_pending.tail = &tcq_pending.head;
+   
+    /* Cleanup any leftover in the ST queue, then reset to init values */
+    if (!startup) {
+        s_ptr = &stq_pending.head;
+        while (s_ptr->next != NULL) {
+            s_del = s_ptr->next;
+            s_ptr->next = s_del->next;
+            stq_pending.size--;
+            free(s_del);
+        }
+    }
+    memset(&stq_pending, 0, sizeof(st_queue));
+    stq_pending.tail = &stq_pending.head;
+
+    /* Cleanup any leftover in the ord_queue, then destruct and reconstruct. Here, the
+     * values stored are just copies of ordinal information, so the memory does not 
+     * need to be free'd (like with the pending updates below) */
+    if (!startup) {
+        stddll_clear(&ord_queue);
+        stddll_destruct(&ord_queue);
+    }
+    stddll_construct(&ord_queue, sizeof(ordinal));
+
+    /* Cleanup any leftover in the pending_updates, then destruct and reconstruct */ 
+    if (!startup) {
+        for (stddll_begin(&pending_updates, &it); !stddll_is_end(&pending_updates, &it); stdit_next(&it)) {
+            mess = *(signed_message **)stdit_val(&it);
+            free(mess);
+        }
+        stddll_clear(&pending_updates);
+        stddll_destruct(&pending_updates);
+    }
+    stddll_construct(&pending_updates, sizeof(signed_message*));
+
+    memset(&applied_ord, 0, sizeof(ordinal));
+    memset(&recvd_ord, 0, sizeof(ordinal));
+    collecting_signal = 0;
+    completed_transfer = 0;
+    print_target = PRINT_PROGRESS;
+
+    /* Initialize SCADA State (latest updates) */
+    for (i = 0; i <= MAX_EMU_RTU + NUM_HMI; i++) {
+        memset(&up_hist[i], 0, sizeof(update_history));
+    }
+}
+
 /* Intrusion Tolerant Reliable Channel Master (SCADA Master) Implementation */
 void *ITRC_Master(void *data) 
 {
@@ -662,9 +732,9 @@ void *ITRC_Master(void *data)
 
     /* Read Keys */
     OPENSSL_RSA_Init();
-    OPENSSL_RSA_Read_Keys(My_ID, RSA_SERVER);
-    TC_Read_Public_Key();
-    TC_Read_Partial_Key(My_ID, 1); /* only "1" site */
+    OPENSSL_RSA_Read_Keys(My_ID, RSA_SERVER, itrcd->prime_keys_dir);
+    TC_Read_Public_Key(itrcd->sm_keys_dir);
+    TC_Read_Partial_Key(My_ID, 1, itrcd->sm_keys_dir); /* only "1" site */
 
     spines_timeout.tv_sec  = SPINES_CONNECT_SEC;
     spines_timeout.tv_usec = SPINES_CONNECT_USEC;
@@ -728,26 +798,8 @@ void *ITRC_Master(void *data)
     }
     FD_SET(prime_sock, &mask);
 
-    /* Initialize Data structures */
-    memset(&tcq_pending, 0, sizeof(tc_queue));
-    tcq_pending.tail = &tcq_pending.head;
-    
-    memset(&stq_pending, 0, sizeof(st_queue));
-    stq_pending.tail = &stq_pending.head;
-
-    stddll_construct(&ord_queue, sizeof(ordinal));
-    stddll_construct(&pending_updates, sizeof(signed_message*)), 
-    memset(&applied_ord, 0, sizeof(ordinal));
-    memset(&recvd_ord, 0, sizeof(ordinal));
-    collecting_signal = 0;
-    completed_transfer = 0;
+    ITRC_Reset_Master_Data_Structures(1);
     recvd_first_ordinal = 0;
-    print_target = PRINT_PROGRESS;
-
-    /* Initialize SCADA State (latest updates) */
-    for (i = 0; i <= MAX_EMU_RTU + NUM_HMI; i++) {
-        memset(&up_hist[i], 0, sizeof(update_history));
-    }
 
     /* Keys are read, connections are established -- wake up the Prime injector */
     pthread_mutex_lock(&wait_mutex);
@@ -780,18 +832,48 @@ void *ITRC_Master(void *data)
                 res = (client_response_message *)(mess + 1);
                 scada_mess = (signed_message *)(res + 1);
 
+                // REMOVE THIS - just for checking
+                //continue;
+
                 //printf("Prime [%d]: %d of %d\n", res->ord_num, res->event_idx, res->event_tot);
 
                 /* Check for valid message type */
-                if (!ITRC_Valid_Type(scada_mess, FROM_PRIME)) {
+                /* We don't validate messages from Prime at this level, since
+                 * even if the content of the message is invalid (and we don't
+                 * want to apply it), we still want to advance our received
+                 * Prime ordinal correctly. Instead, we'll do this in
+                 * Process_Prime_Ordinal and treat it as no-op if it turns out
+                 * to be invalid. Note that we should be checking that the
+                 * signed_message and client_response headers are valid before
+                 * getting to this point though. */
+                /*if (!ITRC_Valid_Type(scada_mess, FROM_PRIME)) {
                     printf("ITRC_Master: Invalid message from Prime, type = %d\n", scada_mess->type);
                     continue;
-                }
+                }*/
                 
                 /* Grab the ordinal information */
                 ord_save.ord_num   = res->ord_num;
                 ord_save.event_idx = res->event_idx;
                 ord_save.event_tot = res->event_tot;
+
+                /* Check if we received a SYSTEM RESET message from Prime, which occurs on
+                 * the initial startup or when system assumptions are violated */
+                if (scada_mess->type == PRIME_SYSTEM_RESET) {
+                    assert(ord_save.ord_num == 0);
+
+                    printf("Processed PRIME_SYSTEM_RESET @ ITRC\n");
+                    
+                    /* Reset data structures */
+                    ITRC_Reset_Master_Data_Structures(0);
+
+                    /* Send the SYSTEM RESET message to the Scada Master */
+                    scada_mess = PKT_Construct_Signed_Message(0);
+                    scada_mess->machine_id = My_ID;
+                    scada_mess->len = 0;
+                    scada_mess->type = SYSTEM_RESET;
+                    IPC_Send(ns.ipc_s, (void *)scada_mess, sizeof(signed_message), ns.ipc_remote);
+                    continue;
+                }
 
                 /* If this is the first ordinal you get from Prime and its further ahead than
                  * you were expecting, request a state transfer */
@@ -846,7 +928,7 @@ void *ITRC_Master(void *data)
                 nBytes = IPC_Recv(ns.ipc_s, buff, MAX_LEN);
                 scada_mess = (signed_message *)buff;
                 //seq_no = (int32u *)(scada_mess + 1);
-
+                
                 if (!ITRC_Valid_Type(scada_mess, FROM_SM_MAIN)) {
                     printf("ITRC_Master: invalid type %d from SM_MAIN\n", scada_mess->type);
                     continue;
@@ -876,8 +958,8 @@ void *ITRC_Master(void *data)
                     st_mess = (state_xfer_msg *)(scada_mess + 1);
                     st_mess->ord = ord_save;
 
-                    /* printf("  POP ord: [%u, %u of %u] for ST\n", ord_save.ord_num, ord_save.event_idx, 
-                          ord_save.event_tot); */
+                    /* printf("  POP ord: [%u, %u of %u] for ST to %u\n", ord_save.ord_num, ord_save.event_idx, 
+                          ord_save.event_tot, st_mess->target); */
 
                     /* Sign State Xfer Message */ 
                     OPENSSL_RSA_Sign( ((byte*)scada_mess) + SIGNATURE_SIZE,
@@ -954,7 +1036,7 @@ void *ITRC_Master(void *data)
             }
 
             /* Incoming Spines Internal Message - TC Crypto shares or State Xfer */
-            if (ns.sp_int_s >=0 && FD_ISSET(ns.sp_int_s, &tmask)) {
+            if (ns.sp_int_s >= 0 && FD_ISSET(ns.sp_int_s, &tmask)) {
                 nBytes = spines_recvfrom(ns.sp_int_s, buff, MAX_LEN, 0, NULL, 0);
                 if (nBytes <= 0) {
                     printf("Error in spines_recvfrom: nBytes = %d, dropping!\n", nBytes);
@@ -1003,6 +1085,9 @@ void *ITRC_Master(void *data)
                     st_mess = (state_xfer_msg *)(mess + 1);
 
                     /* Try to insert the ST state from this replica */
+                    printf("Recv STATE_XFER message from %d about [%u:%u/%u]\n", 
+                            mess->machine_id, st_mess->ord.ord_num, st_mess->ord.event_idx, 
+                            st_mess->ord.event_tot);
                     if (ITRC_Insert_ST_ID(st_mess, mess->machine_id)) {
                         ITRC_Apply_State_Transfer(st_mess->ord, ns);
                     }
@@ -1045,16 +1130,9 @@ void *ITRC_Master(void *data)
         else {
             t = NULL;
             if (ns.sp_int_s == -1) {
-                // If I am a Control Center, connect to internal network as send/recv
-                if (Type == CC_TYPE) {
-                    ns.sp_int_s = Spines_Sock(itrcd->spines_int_addr, itrcd->spines_int_port,
-                                    SPINES_PRIORITY, SM_INT_BASE_PORT + My_ID);
-                }
-                // If I am a Data center, just connect to internal network as send
-                else {
-                    ns.sp_int_s = Spines_SendOnly_Sock(itrcd->spines_int_addr, itrcd->spines_int_port,
-                                    SPINES_PRIORITY);
-                }
+                // All replicas connect to internal network as send/recv
+                ns.sp_int_s = Spines_Sock(itrcd->spines_int_addr, itrcd->spines_int_port,
+                                SPINES_PRIORITY, SM_INT_BASE_PORT + My_ID);
                 if (ns.sp_int_s < 0) {
                     printf("ITRC_Master: Unable to connect to internal Spines, trying again soon\n");
                     spines_timeout.tv_sec  = SPINES_CONNECT_SEC;
@@ -1091,7 +1169,7 @@ void *ITRC_Master(void *data)
 void ITRC_Process_Prime_Ordinal(ordinal o, signed_message *mess, net_sock *ns)
 {
     int nBytes;
-    char duplicate;
+    char duplicate, valid_content;
     int32u *idx;
     seq_pair *ps;
     client_response_message *res;
@@ -1118,17 +1196,26 @@ void ITRC_Process_Prime_Ordinal(ordinal o, signed_message *mess, net_sock *ns)
      * transfer later) */
     if (!ITRC_Ord_Consec(recvd_ord, o) && 
         !(scada_mess->type == PRIME_STATE_TRANSFER && scada_mess->machine_id == (int32u) My_ID)) {
-        printf("ITRC_Master: Gap in prime ordinal (had %u, %u/%u, "
+        printf("ITRC_Process_Prime_Ordinal: Gap in prime ordinal (had %u, %u/%u, "
                "just recvd %u, %u/%u)\n", recvd_ord.ord_num,
                 recvd_ord.event_idx, recvd_ord.event_tot,
                 o.ord_num, o.event_idx, o.event_tot);
         return;
     }
 
+    /* Validate the content of the message -- if it is not valid, we will treat
+     * it as a no-op */
+    valid_content = 1;
+    if (!ITRC_Valid_Type(scada_mess, FROM_PRIME)) {
+        printf("ITRC_Process_Prime_Ordinal: Invalid message from Prime, type = %d\n", scada_mess->type);
+        valid_content = 0;
+    }
+
     /* First, if this is a real SCADA client message, see if its a duplicate */    
     duplicate = 0;
-    if (scada_mess->type == HMI_COMMAND || scada_mess->type == RTU_DATA ||
-         scada_mess->type == BENCHMARK)
+    if (valid_content && (scada_mess->type == HMI_COMMAND ||
+                          scada_mess->type == RTU_DATA ||
+                          scada_mess->type == BENCHMARK))
     {
         ps = (seq_pair *)(scada_mess + 1);
         idx = (int32u *)(ps + 1);
@@ -1138,12 +1225,22 @@ void ITRC_Process_Prime_Ordinal(ordinal o, signed_message *mess, net_sock *ns)
                     progress[*idx].incarnation, progress[*idx].seq_num); */
             duplicate = 1;
         }
+        // SAM EMS
+        if (scada_mess->type == RTU_DATA) {
+            rtu_data_msg *rtud = (rtu_data_msg *)(scada_mess + 1);
+            if (rtud->scen_type == EMS) {
+                /*printf("SM ITRC has received EMS update: [%d,%d]\n", */
+                            /*rtud->seq.incarnation, rtud->seq.seq_num);*/
+                //duplicate = 1;
+            }
+        }
     }
 
-    /* Treat PRIME_NO_OP, PRIME_STATE_TRANSFER, PRIME_NEW_INCARNATION, and duplicate client
+    /* Treat PRIME_NO_OP, PRIME_STATE_TRANSFER, PRIME_SYSTEM_RESET, and duplicate client
      *  messages as NO_OPs that don't do a real TC - just skip over them */
-    if (scada_mess->type == PRIME_NO_OP || scada_mess->type == PRIME_STATE_TRANSFER ||
-        scada_mess->type == PRIME_NEW_INCARNATION || duplicate == 1) 
+    if (!valid_content || scada_mess->type == PRIME_NO_OP ||
+        scada_mess->type == PRIME_STATE_TRANSFER ||
+        scada_mess->type == PRIME_SYSTEM_RESET || duplicate == 1) 
     {
         /* Create empty slot in the TC queue for both no_op and state xfer */
         // TODO: Figure out how to make DC keep history
@@ -1179,7 +1276,7 @@ void ITRC_Process_Prime_Ordinal(ordinal o, signed_message *mess, net_sock *ns)
             
             /* Just to be safe, zero out my own local state in my version of the msg */
             //memset(st_specific->up_hist, 0, sizeof(st_specific->up_hist));
-            
+           
             memset(&st_dummy_msg, 0, sizeof(state_xfer_msg));
             st_dummy_msg.ord = o;
             if (ITRC_Insert_ST_ID(&st_dummy_msg, My_ID)) {
@@ -1208,7 +1305,7 @@ void ITRC_Process_Prime_Ordinal(ordinal o, signed_message *mess, net_sock *ns)
 
     /* These are messages that were dummy TC instances, so we are done here, don't need
      *  to give anything to the SM */
-    if (scada_mess->type == PRIME_NO_OP || scada_mess->type == PRIME_NEW_INCARNATION ||
+    if (!valid_content || scada_mess->type == PRIME_NO_OP || scada_mess->type == PRIME_SYSTEM_RESET ||
             (scada_mess->type == PRIME_STATE_TRANSFER && scada_mess->machine_id == (int32u)My_ID) ||
             duplicate == 1) 
     {
@@ -1358,7 +1455,7 @@ void ITRC_Insert_TC_ID(tc_share_msg *tcm, int32u sender, int32u flag)
         ptr->tcf = PKT_Construct_TC_Final_Msg(tcm->ord, ptr);
         if (ptr->tcf != NULL) {
             /* SIGN TC Final Message */
-            OPENSSL_RSA_Sign( ((byte*)ptr->tcf) + SIGNATURE_SIZE,
+             OPENSSL_RSA_Sign( ((byte*)ptr->tcf) + SIGNATURE_SIZE,
                     sizeof(signed_message) + ptr->tcf->len - SIGNATURE_SIZE,
                     (byte*)ptr->tcf);
         }
@@ -1701,7 +1798,7 @@ int ITRC_Valid_Type(signed_message *mess, int32u stage)
             switch(mess->type) {
                 case PRIME_NO_OP:
                 case PRIME_STATE_TRANSFER:
-                case PRIME_NEW_INCARNATION:
+                case PRIME_SYSTEM_RESET:
                 case HMI_COMMAND:
                 case RTU_DATA:
                 case BENCHMARK:
@@ -1753,8 +1850,32 @@ int ITRC_Valid_Type(signed_message *mess, int32u stage)
 
 int ITRC_Validate_Message(signed_message *mess)
 {
+    rtu_data_msg *rtu_mess;
+    ems_fields *ems_data;
+
     switch (mess->type) {
         case RTU_DATA:
+            // TODO: Validate message should take in received bytes so we can
+            // check length
+            // rtu_bytes = recvd_bytes - sizeof(signed_message);
+            // if (rtu_bytes < sizeof(rtu_data_msg)) return 0;
+            rtu_mess = (rtu_data_msg *)(mess + 1);
+            if (rtu_mess->rtu_id >= NUM_RTU || rtu_mess->seq.seq_num == 0)
+                return 0;
+
+            switch (rtu_mess->scen_type) {
+                case JHU:
+                case PNNL:
+                    break;
+                case EMS:
+                    ems_data = (ems_fields *)&rtu_mess->data;
+                    if (ems_data->id >= EMS_NUM_GENERATORS) return 0;
+                    break;
+                default:
+                    return 0;
+            }
+            break;
+
         case RTU_FEEDBACK:
         case HMI_UPDATE:
         case HMI_COMMAND:
@@ -1782,10 +1903,10 @@ int ITRC_Validate_Message(signed_message *mess)
             }
             break;
         
-        case PRIME_NEW_INCARNATION:
-            //printf("  PRIME_NEW_INCARNATION\n");
-            if (mess->machine_id > NUM_SM) {
-                printf("Prime Incarnation from non-Prime replica (instead from %u)\n",
+        case PRIME_SYSTEM_RESET:
+            printf("  PRIME_SYSTEM_RESET\n");
+            if (mess->machine_id != (int32u)My_ID) {
+                printf("Prime System Reset not from my own Prime (instead from %u)\n",
                             mess->machine_id);
                 return 0;
             }

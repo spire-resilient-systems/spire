@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -148,7 +149,7 @@ void Prot_process_scat(sys_scatter *scat, int total_bytes, Interface *local_inte
     if (mode == CONTROL_LINK) {
 
       /* DEFAULT_DEBUG */
-      Alarm(DEBUG, "\n\nprocess_hello*: size: %d\n", total_bytes);
+      Alarm(DEBUG, "\n\nprocess_hello*: size: %d, seq_no: %d\n", total_bytes, pack_hdr->seq_no);
 
       total_hello_pkts++;
       total_hello_bytes += total_bytes;
@@ -180,7 +181,7 @@ void Prot_process_scat(sys_scatter *scat, int total_bytes, Interface *local_inte
           return;
         }
 
-        Check_Link_Loss(leg, pack_hdr->seq_no);
+        Check_Link_Loss(leg, pack_hdr->seq_no, mode);
     }
 
     switch (mode) {
@@ -416,6 +417,7 @@ int16u Dissemination_Header_Size(int dissemination)
             break;
 
         case SOURCE_BASED_ROUTING:
+            size += sizeof(sb_header);
             size += MultiPath_Bitmask_Size;
             break;
 
@@ -443,7 +445,7 @@ int16u Link_Header_Size(int mode)
             break;
         
         case REALTIME_UDP_LINK:
-            size += sizeof(int32);
+            size += sizeof(rt_seq_type);
             break;
         
         case INTRUSION_TOL_LINK:

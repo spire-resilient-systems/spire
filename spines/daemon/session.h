@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -86,7 +87,7 @@
 #define SES_CLIENT_OFF      2
 #define SES_CLIENT_ORPHAN   3
 
-#define MAX_BUFF_SESS     500
+#define MAX_BUFF_SESS    9000
 #define MAX_PKT_SEQ     10000
 
 /*#define MAX_SPINES_MSG 1400 */ /* (packet_body ) 1456 - ( (udp_header) 28 + (rel_ses_pkt_add) 8 + (reliable_ses_tail) 12 + (reliable_tail) 8 ) = 1456 - 56 */

@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -78,7 +79,6 @@ static const sp_time zero_timeout        = {     0,    0};
 static const sp_time flood_timeout       = {     0,    0};
 static const sp_time short_timeout       = {     0,    5000};
 static const sp_time wireless_timeout    = {     0,    15000};
-static const sp_time kr_timeout          = {     0,    20000};
 static const sp_time state_resend_time   = { 30000,    0};
 static const sp_time resend_call_timeout = {  3000,    0}; 
 static const sp_time resend_fast_timeout = {     1,    0};

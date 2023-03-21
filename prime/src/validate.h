@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -48,16 +48,20 @@
 #include "arch.h"
 #include "data_structs.h"
 
-#define VAL_TYPE_INVALID       1
-#define VAL_SIG_TYPE_SERVER    2
-#define VAL_SIG_TYPE_SITE      3
-#define VAL_SIG_TYPE_CLIENT    4
-#define VAL_SIG_TYPE_UNSIGNED  5
-#define VAL_SIG_TYPE_MERKLE    6
+#define VAL_TYPE_INVALID        1
+#define VAL_SIG_TYPE_SERVER     2
+#define VAL_SIG_TYPE_SITE       3
+#define VAL_SIG_TYPE_CLIENT     4
+#define VAL_SIG_TYPE_UNSIGNED   5
+#define VAL_SIG_TYPE_MERKLE     6
+#define VAL_SIG_TYPE_TPM_SERVER 7
+#define VAL_SIG_TYPE_TPM_MERKLE 8
 
 /* Validation Functions */
 
 /* Public */
-int32u VAL_Validate_Message( signed_message *message, int32u num_bytes ); 
+int32u VAL_State_Permits_Message( signed_message *mess );
+int32u VAL_Validate_Message( signed_message *message, int32u num_bytes );
+int32u VAL_Signature_Type( signed_message *mess );
 
 #endif 

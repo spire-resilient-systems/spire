@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -31,6 +32,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #ifdef ARCH_PC_WIN95
 #include <winsock2.h>
@@ -74,7 +76,7 @@ extern stdhash   Neighbors;
 extern int       Security;
 extern int       Unicast_Only;
 
-/* Local constatnts */
+/* Local constants */
 
 static const sp_time zero_timeout  = {     0,    0};
 
@@ -104,10 +106,11 @@ void Process_RT_UDP_data_packet(Link *lk, sys_scatter *scat,
     udp_header     *hdr;
     char           *buff;
     Realtime_Data *rt_data;
-    int32          seq_no;
+    rt_seq_type    seq_no;
     int32          diff;
     sp_time        now;
-    int            i, routing;
+    rt_seq_type    i;
+    int            routing;
 
     if (scat->num_elements != 2) {
         Alarm(PRINT, "Process_RT_UDP_data_packet: Dropping packet because "
@@ -139,10 +142,10 @@ void Process_RT_UDP_data_packet(Link *lk, sys_scatter *scat,
     } */
   
     rt_data = (Realtime_Data*) lk->prot_data;
-    seq_no  = *(int*)(buff+data_len);
+    seq_no  = *(rt_seq_type*)(buff+data_len);
 
     if(!Same_endian(type)) {
-	seq_no = Flip_int32(seq_no);
+	seq_no = Flip_int64(seq_no);
     }
 
     if(seq_no < rt_data->recv_tail) {
@@ -162,10 +165,10 @@ void Process_RT_UDP_data_packet(Link *lk, sys_scatter *scat,
     while(rt_data->recv_tail < rt_data->recv_head) {
 	i = rt_data->recv_tail;
 	while((rt_data->recv_window[i%MAX_HISTORY].flags == EMPTY_CELL)&&
-	      (i<(int)rt_data->recv_head)) {
+	      (i < rt_data->recv_head)) {
 	    i++;
 	}
-	if(i == (int)rt_data->recv_head) {
+	if(i == rt_data->recv_head) {
 	    /* No packets since the last tail. Keep it there as we wait for them */
 	    break;
 	}
@@ -192,13 +195,13 @@ void Process_RT_UDP_data_packet(Link *lk, sys_scatter *scat,
 	    rt_data->recv_window[rt_data->recv_tail%MAX_HISTORY].flags = EMPTY_CELL;
 	    rt_data->recv_tail++;
 	}
-	for(i=rt_data->recv_head; i<(int)seq_no; i++) {
+	for(i = rt_data->recv_head; i < seq_no; i++) {
 	    rt_data->recv_window[i%MAX_HISTORY].flags = EMPTY_CELL;
 	    /* Add lost packet to the retransm. request */
 	    
 	    if(rt_data->num_nacks*sizeof(int32) + 2*sizeof(int32)< 
 	       sizeof(packet_body) - sizeof(udp_header)) {
-		*(int*)(rt_data->nack_buff+rt_data->num_nacks*sizeof(int32)) = i;
+		*(rt_seq_type*)(rt_data->nack_buff+rt_data->num_nacks*sizeof(rt_seq_type)) = i;
 		rt_data->num_nacks++;
 	    }
 	}
@@ -211,7 +214,7 @@ void Process_RT_UDP_data_packet(Link *lk, sys_scatter *scat,
     rt_data->recv_window[seq_no%MAX_HISTORY].flags = RECVD_CELL;
     rt_data->recv_window[seq_no%MAX_HISTORY].timestamp = now;
     
-    Alarm(DEBUG, "recv_tail: %d; diff: %d\n", rt_data->recv_tail, 
+    Alarm(DEBUG, "recv_tail: %llu; diff: %d\n", rt_data->recv_tail, 
 	  rt_data->recv_head - rt_data->recv_tail);
    
     /* REG ROUTING HACK */
@@ -261,6 +264,7 @@ int Forward_RT_UDP_Data(Node *next_hop, sys_scatter *scat)
     Realtime_Data *rt_data;
     History_Cell *h_cell;
     int ret, diff, routing;
+    int16u dh_size, lh_size;
     sp_time now;
     
     /* if (scat->num_elements != 2) {
@@ -299,15 +303,18 @@ int Forward_RT_UDP_Data(Node *next_hop, sys_scatter *scat)
     
     /* Drop the last packet if there is no more room in the window */
     if(rt_data->head - rt_data->tail >= MAX_HISTORY){
+        assert(rt_data->head - rt_data->tail == MAX_HISTORY); /* AB: shouldn't it be impossible to get > MAX_HISTORY? */
 	dec_ref_cnt(rt_data->window[rt_data->tail%MAX_HISTORY].buff);
 	rt_data->window[rt_data->tail%MAX_HISTORY].buff = NULL;
 	rt_data->tail++;
-	Alarm(DEBUG, "Forward_RT_UDP_Data: History window limit reached\n");
+	Alarm(DEBUG, "Forward_RT_UDP_Data: History window limit reached (tail %d, head %d)\n", rt_data->tail, rt_data->head);
     }
 
     hdr = (packet_header*) scat->elements[0].buf;
     uhdr = (udp_header *) scat->elements[1].buf;
     routing = (uhdr->routing << ROUTING_BITS_SHIFT);
+    dh_size = Dissemination_Header_Size(routing);
+    lh_size = sizeof(rt_seq_type);
 
     hdr->type             = REALTIME_DATA_TYPE;
     hdr->type             = Set_endian(hdr->type);
@@ -315,19 +322,30 @@ int Forward_RT_UDP_Data(Node *next_hop, sys_scatter *scat)
     hdr->sender_id        = My_Address;
     hdr->ctrl_link_id     = lk->leg->ctrl_link_id;
     hdr->data_len         = scat->elements[1].len;
-    hdr->ack_len          = sizeof(int32) + Dissemination_Header_Size(routing);
-    hdr->seq_no           = Set_Loss_SeqNo(lk->leg);
+    hdr->ack_len          = lh_size + dh_size;
+    hdr->seq_no           = Set_Loss_SeqNo(lk->leg, REALTIME_UDP_LINK);
 
     /* Set the sequence number of the packet */
-    *(int*)(scat->elements[1].buf + scat->elements[1].len) = rt_data->head;
+    *(rt_seq_type*)(scat->elements[1].buf + scat->elements[1].len) = rt_data->head;
 
     /* Save the packet in the window */
     rt_data->window[rt_data->head%MAX_HISTORY].buff = scat->elements[1].buf;
     inc_ref_cnt(scat->elements[1].buf);
-    rt_data->window[rt_data->head%MAX_HISTORY].len = scat->elements[1].len;
+    /* AB: adding sizeof(int32) to len is a fix to work with source-based routing */
+    /* rt_data->window[rt_data->head%MAX_HISTORY].len = scat->elements[1].len; */
+    rt_data->window[rt_data->head%MAX_HISTORY].len = scat->elements[1].len + lh_size;
     rt_data->window[rt_data->head%MAX_HISTORY].timestamp = now;
+    /* AB: modifications to work with source-based dissemination: copy
+     * dissemination bitmask into the buffer that we are storing, so that we
+     * can use the dissemination bitmask for retransmissions too */
+    if (scat->num_elements > 2)
+    {
+        assert(hdr->data_len + lh_size + dh_size < sizeof(packet_body));
+        memcpy(scat->elements[1].buf + hdr->data_len + lh_size, scat->elements[2].buf, dh_size);
+        rt_data->window[rt_data->head%MAX_HISTORY].len += dh_size;
+    }
   
-    scat->elements[1].len += sizeof(int32);
+    scat->elements[1].len += lh_size;
 
     /* Advance the head of the window */
     rt_data->head++;
@@ -340,12 +358,12 @@ int Forward_RT_UDP_Data(Node *next_hop, sys_scatter *scat)
       ret = Link_Send(lk, scat);
 
       if(ret < 0) {
-        scat->elements[1].len -= sizeof(int32);
+        scat->elements[1].len -= lh_size;
 	    return BUFF_DROP;
       }
     }
 
-    scat->elements[1].len -= sizeof(int32);
+    scat->elements[1].len -= lh_size;
     return BUFF_EMPTY;
 }
 
@@ -452,7 +470,7 @@ void Send_RT_Nack(int linkid, void* dummy)
     scat.num_elements    = 2;			  
     scat.elements[0].len = sizeof(packet_header);
     scat.elements[0].buf = (char *)(&hdr);
-    scat.elements[1].len = rt_data->num_nacks*sizeof(int32);
+    scat.elements[1].len = rt_data->num_nacks*sizeof(rt_seq_type);
     scat.elements[1].buf = rt_data->nack_buff;
 	
     hdr.type             = REALTIME_NACK_TYPE;
@@ -461,8 +479,8 @@ void Send_RT_Nack(int linkid, void* dummy)
     hdr.sender_id        = My_Address;
     hdr.ctrl_link_id     = lk->leg->ctrl_link_id;
     hdr.data_len         = 0; 
-    hdr.ack_len          = rt_data->num_nacks*sizeof(int32);
-    hdr.seq_no           = Set_Loss_SeqNo(lk->leg);
+    hdr.ack_len          = rt_data->num_nacks*sizeof(rt_seq_type);
+    hdr.seq_no           = Set_Loss_SeqNo(lk->leg, REALTIME_UDP_LINK);
     
     rt_data->num_nacks = 0;
     
@@ -494,12 +512,13 @@ void Send_RT_Retransm(int linkid, void* dummy)
 {
     Link *lk;
     packet_header hdr;
+    udp_header *uhdr;
     sys_scatter scat;
     Realtime_Data *rt_data;
     History_Cell *h_cell;
-    int diff, i, ret;
+    int diff, i, ret, routing;
     sp_time now;
-    int32u seq_no;
+    rt_seq_type seq_no;
     char *buff;
     int16u buf_len;
    
@@ -533,7 +552,7 @@ void Send_RT_Retransm(int linkid, void* dummy)
     /* Resend the packets here... */
 
     for(i=0; i < rt_data->num_retransm; i++) {
-	seq_no = *(int*)(rt_data->retransm_buff+i*sizeof(int32));
+	seq_no = *(rt_seq_type*)(rt_data->retransm_buff+i*sizeof(rt_seq_type));
 	if(seq_no >= rt_data->head) {
 	    Alarm(DEBUG, "Request RT retransm for a message that wasn't sent\n");
 	    continue;
@@ -553,20 +572,27 @@ void Send_RT_Retransm(int linkid, void* dummy)
 	    scat.num_elements = 2;
 	    scat.elements[0].len = sizeof(packet_header);
 	    scat.elements[0].buf = (char *) &hdr;
-	    scat.elements[1].len = buf_len+sizeof(int32);
+            /* AB: changed so that the buffer we store already includes the
+             * extra int32 for the sequence number (plus dissemination header
+             * size) */
+            /*scat.elements[1].len = buf_len+sizeof(int32);*/
+	    scat.elements[1].len = buf_len;
 	    scat.elements[1].buf = buff;
+
+            uhdr = (udp_header*) scat.elements[1].buf;
+            routing = (uhdr->routing << ROUTING_BITS_SHIFT);
 	    
 	    hdr.type    = REALTIME_DATA_TYPE;
 	    hdr.type    = Set_endian(hdr.type);
 
 	    hdr.sender_id    = My_Address;
 	    hdr.ctrl_link_id = lk->leg->ctrl_link_id;
-	    hdr.data_len     = buf_len;
-	    hdr.ack_len      = sizeof(int32);
-	    hdr.seq_no       = Set_Loss_SeqNo(lk->leg);
+	    hdr.ack_len      = sizeof(rt_seq_type) + Dissemination_Header_Size(routing);
+	    hdr.data_len     = buf_len - hdr.ack_len;
+	    hdr.seq_no       = Set_Loss_SeqNo(lk->leg, REALTIME_UDP_LINK);
 
 	    /* Set the sequence number of the packet */
-	    *(int*)(buff+buf_len) = seq_no;
+	    *(rt_seq_type*)(buff+hdr.data_len) = seq_no;
     
 	    if(network_flag == 1) {
 	      ret = Link_Send(lk, &scat);
@@ -596,8 +622,8 @@ void Send_RT_Retransm(int linkid, void* dummy)
 /* Arguments                                               */
 /*                                                         */
 /* sender:    IP of the sender                             */
-/* scat:      sys_scatter cointaining the ACK              */
-/* type:      type of the packet, cointaining endianess    */
+/* scat:      sys_scatter containing the ACK               */
+/* type:      type of the packet, containing endianess     */
 /* mode:      mode of the link                             */
 /*                                                         */
 /*                                                         */
@@ -613,7 +639,7 @@ void Process_RT_nack_packet(Link *lk, sys_scatter *scat, int32u type, int mode)
     char *buff;
     packet_header *phdr;
     Realtime_Data *rt_data;
-    int32 *tmp;
+    rt_seq_type *tmp;
     int i;
 
     if (scat->num_elements != 2) {
@@ -632,19 +658,19 @@ void Process_RT_nack_packet(Link *lk, sys_scatter *scat, int32u type, int mode)
       dec_ref_cnt(rt_data->retransm_buff);
     }
 
-    tmp = (int32*)scat->elements[1].buf;
+    tmp = (rt_seq_type*)scat->elements[1].buf;
 	
     if (!Same_endian(type)) {
 
-      for (i = 0; i < ack_len / sizeof(int32); ++i) {
-	*tmp = Flip_int32(*tmp);
+      for (i = 0; i < ack_len / sizeof(rt_seq_type); ++i) {
+	*tmp = Flip_int64(*tmp);
 	tmp++;
       }
     }
 
     rt_data->retransm_buff = scat->elements[1].buf;
     inc_ref_cnt(scat->elements[1].buf);
-    rt_data->num_retransm = ack_len / sizeof(int32);
+    rt_data->num_retransm = ack_len / sizeof(rt_seq_type);
 
     E_queue(Send_RT_Retransm, (int)lk->link_id, NULL, zero_timeout);
 }

@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -51,13 +51,15 @@
 #include "utility.h"
 #include "pre_order.h"
 #include "order.h"
+#include "validate.h"
+#include "proactive_recovery.h"
 
 extern server_data_struct DATA;
 extern server_variables   VAR;
 extern network_variables  NET;
 extern benchmark_struct   BENCH;
 
-void SIG_Make_Batch(int dummy, void *dummyp);
+//void SIG_Make_Batch(int trigger, void *dummyp);
 void SIG_Finish_Pending_Messages(byte *signature);
 
 void SIG_Initialize_Data_Structure()
@@ -69,17 +71,39 @@ void SIG_Initialize_Data_Structure()
    * (in the hopes of reading more messages and aggregating. This is
    * currently set to a zero timeout -- poll to read as many as we can
    * (up to threshold), then make the signature on the batch.*/
-  DATA.SIG.sig_time.sec  = SIG_SEC;
-  DATA.SIG.sig_time.usec = SIG_USEC;
+  //DATA.SIG.sig_time.sec  = SIG_SEC;
+  //DATA.SIG.sig_time.usec = SIG_USEC;
 					
+  DATA.SIG.sig_min_time.sec  = SIG_MIN_SEC;
+  DATA.SIG.sig_min_time.usec = SIG_MIN_USEC;
+
+  DATA.SIG.sig_max_time.sec  = SIG_MAX_SEC;
+  DATA.SIG.sig_max_time.usec = SIG_MAX_USEC;
+
   DATA.SIG.num_consecutive_messages_read = 0;
+}
+
+void SIG_Upon_Reset()
+{
+  UTIL_DLL_Clear(&DATA.SIG.pending_messages_dll);
 }
 
 void SIG_Add_To_Pending_Messages(signed_message *m, int32u dest_bits,
 				 int32u timeliness)
 {
-  sp_time t;
+  //sp_time t;
 
+  /* Apply the message first, then enqueue it to be signed and sent later.
+   * This assumes that Process() will not require a valid signature from ourselves,
+   * which is normally check in VALIDATE (which we will not do for ourselves) */
+  //if (dest_bits == BROADCAST)
+  //  PROCESS_Message(m);
+
+  if(UTIL_DLL_Is_Empty(&DATA.SIG.pending_messages_dll)) {
+    UTIL_Stopwatch_Start(&DATA.SIG.max_batch_sw);
+    E_queue(SIG_Make_Batch, BATCH_MAX_TRIGGER, NULL, DATA.SIG.sig_max_time);
+  }
+    
   UTIL_DLL_Add_Data(&DATA.SIG.pending_messages_dll, m);
   UTIL_DLL_Set_Last_Extra(&DATA.SIG.pending_messages_dll, DEST, dest_bits);
   UTIL_DLL_Set_Last_Extra(&DATA.SIG.pending_messages_dll, TIMELINESS,
@@ -88,21 +112,79 @@ void SIG_Add_To_Pending_Messages(signed_message *m, int32u dest_bits,
   if(DATA.SIG.pending_messages_dll.length == SIG_THRESHOLD)
     SIG_Make_Batch(0, NULL);
   else {
-    if (DATA.VIEW.view_change_done == 0) {
+    /* UTIL_Stopwatch_Stop(&DATA.SIG.pb_batch_sw);
+    if (DATA.SIG.pb_count > 0 && 
+        UTIL_Stopwatch_Elapsed(&DATA.SIG.pb_batch_sw) >= DATA.SIG.sig_min_time.usec/1000000.0)
+    {
+        //Alarm(PRINT, "PB even though %f s elapse\n", UTIL_Stopwatch_Elapsed(&DATA.SIG.pb_batch_sw));
+    } */
+    if (DATA.SIG.pb_count < 100)
+        UTIL_Stopwatch_Start(&DATA.SIG.pb_batch_sw[DATA.SIG.pb_count]);
+    E_queue(SIG_Make_Batch, BATCH_PUSHBACK_TRIGGER, NULL, DATA.SIG.sig_min_time);
+    DATA.SIG.pb_count++;
+
+    /* if (DATA.VIEW.view_change_done == 0) {
         t = DATA.SIG.sig_time;
         t.usec /= 4;
         E_queue(SIG_Make_Batch, 0, NULL, t);
     }
     else
-        E_queue(SIG_Make_Batch, 0, NULL, DATA.SIG.sig_time);
+        E_queue(SIG_Make_Batch, 0, NULL, DATA.SIG.sig_time); */
   }
 }
 
-void SIG_Make_Batch(int dummy, void *dummyp)
+void SIG_Make_Batch(int trigger, void *dummyp)
 {
+  int ret;
   byte signature[SIGNATURE_SIZE];
   byte *proot = NULL;
-  
+  //int32u i;
+  //signed_message *mess;
+  //sp_time elap;
+ 
+  /* Find out how this function was called (from pushback timeout, max timeout,
+   * or threshold number of messages reached), and dequeue the other sources 
+   * so that they do not incorrectly trigger later */
+  if (trigger == BATCH_PUSHBACK_TRIGGER) {
+    ret = E_dequeue(SIG_Make_Batch, BATCH_MAX_TRIGGER, NULL);
+    if (ret != 0)
+        Alarm(PRINT, "Batch Error: Failure to Dequeue MAX\n");
+  } else if (trigger == BATCH_MAX_TRIGGER) {
+    /* if (DATA.SIG.pending_messages_dll.length <= DATA.SIG.sig_max_time.usec / 1000) {
+        UTIL_Stopwatch_Stop(&DATA.SIG.max_batch_sw);
+        Alarm(PRINT, "MAX timeout %f s, %u M, %u C\n",
+                UTIL_Stopwatch_Elapsed(&DATA.SIG.max_batch_sw),
+                DATA.SIG.pending_messages_dll.length,
+                DATA.SIG.pb_count);
+        elap = E_add_time(DATA.SIG.max_batch_sw.start, DATA.SIG.sig_max_time);
+        printf("   max elap @ %lu.%lu\n", elap.sec, elap.usec); 
+        elap = E_add_time(DATA.SIG.pb_batch_sw[DATA.SIG.pb_count-1].start, DATA.SIG.sig_min_time);
+        printf("   last pb elap @ %lu.%lu\n", elap.sec, elap.usec);
+        UTIL_DLL_Set_Begin(&DATA.SIG.pending_messages_dll);
+        i = 0;
+        while ((mess = (signed_message *)UTIL_DLL_Get_Signed_Message(&DATA.SIG.pending_messages_dll)) != NULL) {
+            if (i < 100) {
+                printf("      [%u]:[%lu.%lu]  %s\n", i, DATA.SIG.pb_batch_sw[i].start.sec,
+                    DATA.SIG.pb_batch_sw[i].start.usec, UTIL_Type_To_String(mess->type));
+            }
+            UTIL_DLL_Next(&DATA.SIG.pending_messages_dll);
+            i++;
+        }
+    } */
+    ret = E_dequeue(SIG_Make_Batch, BATCH_PUSHBACK_TRIGGER, NULL);
+    if (ret != 0)
+        Alarm(PRINT, "Batch Error: Failure to Dequeue PUSHBACK\n");
+  } else {
+    Alarm(PRINT, "Make_Batch. Threshold reached\n");
+    ret = E_dequeue(SIG_Make_Batch, BATCH_MAX_TRIGGER, NULL);
+    if (ret != 0)
+        Alarm(PRINT, "Thresh Error: Failure to Dequeue MAX\n");
+    ret = E_dequeue(SIG_Make_Batch, BATCH_PUSHBACK_TRIGGER, NULL);
+    if (ret != 0)
+        Alarm(PRINT, "Thresh Error: Failure to Dequeue PUSHBACK\n");
+  }
+  DATA.SIG.pb_count = 0;
+
   /* If there's nothing to do, we're done. */
   if(UTIL_DLL_Is_Empty(&DATA.SIG.pending_messages_dll))
     return;
@@ -151,7 +233,7 @@ void SIG_Finish_Pending_Messages(byte *signature)
   signed_message *mess;
   dll_struct *list;
   dll_struct original_list;
-  int32u sn, i, dest_bits, timeliness;
+  int32u sn, i, dest_bits, timeliness, sig_type;
 
   list = &DATA.SIG.pending_messages_dll;
   sn   = list->length;
@@ -205,65 +287,73 @@ void SIG_Finish_Pending_Messages(byte *signature)
 
       /* Apply the message and then dispatch it, just as we would a local
        * message that we constructed, unless it's a RECON message. */
-      //if(mess->type != RECON) {
-      if (dest_bits == BROADCAST) {
+      //if(mess->type != RECON) { }
+      if (dest_bits == BROADCAST || UTIL_Bitmap_Is_Set(&dest_bits, VAR.My_Server_ID)) {
 	    PROCESS_Message(mess);
       }
-      
-      /* If we're throttling outgoing messages, add it to the appropriate
-       * queue based on timeliness. Otherwise, send immediately to the 
-       * appropriate destination. */
+ 
+      sig_type = VAL_Signature_Type(mess);
+      if (DATA.PR.recovery_status[VAR.My_Server_ID] == PR_NORMAL || 
+            sig_type == VAL_SIG_TYPE_TPM_SERVER || sig_type == VAL_SIG_TYPE_TPM_MERKLE)
+      {
+          /* If we're throttling outgoing messages, add it to the appropriate
+           * queue based on timeliness. Otherwise, send immediately to the 
+           * appropriate destination. */
 #if THROTTLE_OUTGOING_MESSAGES
-      NET_Add_To_Pending_Messages(mess, dest_bits, timeliness);
+          NET_Add_To_Pending_Messages(mess, dest_bits, timeliness);
 #else
   #if 0
-      /* Send the proof matrix to the leader, send recon messages to only
-       * those that need it.  Everything else broadcast. */
-      if(mess->type == PROOF_MATRIX || mess->type == RECON) {
-	for(i = 1; i <= NUM_SERVERS; i++) {
-	  if(UTIL_Bitmap_Is_Set(&dest_bits, i))
-	    UTIL_Send_To_Server(mess, i);
-	}
-      }
-      /* Delay attack: leader only sends Pre-Prepare to server 2 */
-      else if(DELAY_ATTACK && UTIL_I_Am_Leader() && mess->type == PRE_PREPARE)
-	UTIL_Send_To_Server(mess, 2);
-      
-      /* Recon attack: Faulty servers don't send to top f correct servers */
-      else if (UTIL_I_Am_Faulty() && mess->type == PO_REQUEST) {
-	for(i = 1; i <= NUM_SERVERS; i++) {
-	  if( (i <= (2*NUM_F + NUM_K + 1)) && (i != VAR.My_Server_ID) )
-	    UTIL_Send_To_Server(mess, i);
-	}
-      }
-      else
-	UTIL_Broadcast(mess);
+          /* Send the proof matrix to the leader, send recon messages to only
+           * those that need it.  Everything else broadcast. */
+          if(mess->type == PROOF_MATRIX || mess->type == RECON) {
+        for(i = 1; i <= NUM_SERVERS; i++) {
+          if(UTIL_Bitmap_Is_Set(&dest_bits, i))
+            UTIL_Send_To_Server(mess, i);
+        }
+          }
+          /* Delay attack: leader only sends Pre-Prepare to server 2 */
+          else if(DELAY_ATTACK && UTIL_I_Am_Leader() && mess->type == PRE_PREPARE)
+        UTIL_Send_To_Server(mess, 2);
+          
+          /* Recon attack: Faulty servers don't send to top f correct servers */
+          else if (UTIL_I_Am_Faulty() && mess->type == PO_REQUEST) {
+        for(i = 1; i <= NUM_SERVERS; i++) {
+          if( (i <= (2*NUM_F + NUM_K + 1)) && (i != VAR.My_Server_ID) )
+            UTIL_Send_To_Server(mess, i);
+        }
+          }
+          else
+        UTIL_Broadcast(mess);
   #endif
-      /* Delay attack: leader only sends Pre-Prepare to server 2 */
-      if(DELAY_ATTACK && UTIL_I_Am_Leader() && mess->type == PRE_PREPARE)
-	    UTIL_Send_To_Server(mess, 2);
-      
-      /* Recon attack: Faulty servers don't send to top f correct servers */
-      else if (UTIL_I_Am_Faulty() && mess->type == PO_REQUEST) {
-	    for(i = 1; i <= NUM_SERVERS; i++) {
-	      if( (i <= (2*NUM_F + NUM_K + 1)) && (i != VAR.My_Server_ID) )
-	        UTIL_Send_To_Server(mess, i);
-	    }
-      }
-      /* Send non-broadcast messages to specific server that needs it,
-       * e.g., proof matrix and recon messages. */
-      else if (dest_bits != BROADCAST) {
-	    for(i = 1; i <= NUM_SERVERS; i++) {
-	      if(UTIL_Bitmap_Is_Set(&dest_bits, i))
-	        UTIL_Send_To_Server(mess, i);
-	    }
-      }
-      /* Otherwise, its a broadcast message */
-      else {
-        //if (mess->type != REPLAY_COMMIT)
-	      UTIL_Broadcast(mess);
-      }
+          /* Delay attack: leader only sends Pre-Prepare to server 2 */
+          if(DELAY_ATTACK && UTIL_I_Am_Leader() && mess->type == PRE_PREPARE)
+            UTIL_Send_To_Server(mess, 2);
+          
+          /* Recon attack: Faulty servers don't send to top f correct servers */
+          else if (UTIL_I_Am_Faulty() && mess->type == PO_REQUEST) {
+            for(i = 1; i <= NUM_SERVERS; i++) {
+              if( (i <= (2*NUM_F + NUM_K + 1)) && (i != VAR.My_Server_ID) )
+                UTIL_Send_To_Server(mess, i);
+            }
+          }
+          /* Send non-broadcast messages to specific server that needs it,
+           * e.g., proof matrix and recon messages. */
+          else if (dest_bits != BROADCAST) {
+            for(i = 1; i <= NUM_SERVERS; i++) {
+              if(UTIL_Bitmap_Is_Set(&dest_bits, i) && i != VAR.My_Server_ID)
+                UTIL_Send_To_Server(mess, i);
+            }
+          }
+          /* Otherwise, its a broadcast message */
+          else {
+            //if (mess->type != REPLAY_COMMIT)
+              UTIL_Broadcast(mess);
+          }
 #endif
+      }
+      else {
+        Alarm(DEBUG, "RECOVERING: Not sending %s\n", UTIL_Type_To_String(mess->type));
+      }
     } 
     
     /* Always pop */

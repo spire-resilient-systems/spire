@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -77,9 +77,9 @@ void ERASURE_Initialize_Decoding(int32u message_len, int32u message_packets,
 
 void ERASURE_Set_Encoded_Part(erasure_part *part)
 {
-  int32u *start_of_part;
+  /*int32u *start_of_part;
 
-  start_of_part = (int32u *)(part+1);
+  start_of_part = (int32u *)(part+1);*/
 
   /* Call Set_Encoded_Part() function of EC library to copy the encoded
    * part into the library's buffer before a decoding is done. */

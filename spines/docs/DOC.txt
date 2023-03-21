@@ -26,7 +26,7 @@ communication.
 
 A client can communicate with a daemon via TCP, UDP, or IPC (Inter-Process
 Communication). IPC uses unix socket domains (not available on Windows-based
-architectures), and was just recently added to Spines with version 5.1. 
+architectures), and was added to Spines in version 5.1.
 
 For IPC communication, the Spines daemon binds to two file paths, one for the
 control channel and one for the data channel. The control channel binds to the
@@ -43,13 +43,13 @@ daemon. The application can use that socket to bind, listen, connect, send and
 receive, using Spines library calls (e.g. spines_send() is the equivalent to
 the regular send() call, spines_recv() is equivalent to recv(), etc.).
 
-When connecting to a daemon using spines_socket(), the client specifies
-several options (as part of the protocol parameter) to specify the type of
-connection. For example, the client can specify the type of link protocol
-used to send its messages between daemons in the Spines network, the type of
-dissemination semantics, and the type of session semantics to apply to its
-messages (currently, this last option only applies to intrusion-tolerant
-reliable communication). Full details of these options can be found in the
+When connecting to a daemon using spines_socket(), the client specifies several
+options (as part of the protocol parameter) to specify the type of connection.
+For example, the client can specify the type of link protocol used to send its
+messages between daemons in the Spines network, the type of dissemination
+semantics to use, and the type of session semantics to apply to its messages
+(currently, this last option only applies to intrusion-tolerant reliable
+communication). Full details of these options can be found in the
 spines_socket() specification.
 
 Each application can be uniquely identified in the topology by the pair of
@@ -92,7 +92,7 @@ services. In addition, kernel-routing services are available in Spines to
 support anypath and multipath routing based on group membership.
 
 Documentation about the new intrusion tolerance capabilities added in version
-5.0 (and refined in version 5.1) can be found in DOC_Intrusion_Tolerance.txt.
+5.0 (and refined in versions 5.1 and 5.2) can be found in DOC_Intrusion_Tolerance.txt.
 
 The current version of Spines was tested to run on Linux X86 computers. 
 
@@ -108,8 +108,9 @@ NAME
 SYNOPSIS 
 
      spines [-p spines_port] [-l logical_id] [-I local_address] [[-a destination]*]
-            [[-d discovery_address]*] [-w Route_Weight] [-sf] [-m] [-x time_to_live]
-            [-U] [-W] [-k level] [-lf log_file] [-ud unix_domain_path] [-c config_file]
+            [[-d discovery_address]*] [-w Route_Type] [-tf] [-sf] [-m] [-x time_to_live]
+            [-U] [-W] [-k level] [-lf log_file] [-ud unix_domain_path] [-pc]
+            [-rl <rate (kbps)>] [-c config_file]
 
 
 DESCRIPTION 
@@ -148,10 +149,10 @@ OPTIONS
           allow Spines routers that can hear each other to interconnect.
           A node can specify up to 10 different discovery addresses.
 
-    -w Route_Weight
+    -w Route_Type
           Sets the route metric for shortest path computation.
-          Route_Weight can be [distance, latency, loss, explat], with
-          default, distance.
+          Route_Weight can be [distance, latency, loss, explat, problem],
+          with default distance.
 
           distance: every link has an equal cost of 1. The routing
           minimizes the number of hops on each path.
@@ -168,6 +169,24 @@ OPTIONS
           attempted to be recovered only once. The routing maximizes
           end-to-end delivery ratio within a time constraint for
           packet delay.
+
+          problem: the absolute value of the cost of each link equals
+          the expected latency of packets on that link (same as
+          explat), but the sign of the cost indicates whether the link
+          is currently considered "problematic". A link is classified
+          as problematic (negative weight) if its loss rate exceeds a
+          defined threshold, or if its latency exceeds the "base case"
+          latency specified in the configuration file by a defined
+          threshold. Otherwise, the link is classified as normal
+          (positive weight). This route type must be used if routing
+          based on dissemination graphs with targeted redundancy (see
+          spines_socket below) is desired.
+
+    -tf 
+          Turn on TCP fairness. Prior to version 5.3 of Spines, TCP
+          fairness was always enforced. As of Spines 5.3, TCP fairness
+          is turned off by default, but per-link rate limiting is
+          enforced (see -rl option below)
 
     -sf
           Stream based fairness for reliable links. Makes a reliable
@@ -227,6 +246,18 @@ OPTIONS
           is listed (the port will NOT be appended in this custom-defined case).
           Additionally, the user can specify a custom unix_domain_path using
           the configuration file.
+
+    -pc
+          Print cost statistics periodically. When this option is
+          turned on, the Spines daemon tracks how many packets it
+          sends for each client (based on destination daemon and port)
+          and prints that information periodically.
+
+    -rl rate_limit (in Kbps)
+          Limit the sending rate on each link to specified rate_limit.
+          The default is 500,000 Kbps. Use a rate_limit of -1 to turn
+          off rate limiting. (To get default behavior prior to Spines
+          5.3, use -rl -1 and -tf).
 
     -c configuration_file_name
           Name of the configuration file to read from. The default configuration
@@ -345,6 +376,15 @@ DESCRIPTION
        Dissemination Protocols:
        MIN_WEIGHT_ROUTING:
                    Stateless routing protocol based on link-state routing
+
+       SOURCE_BASED_ROUTING:
+                   Source-based routing protocol. Each packet is
+                   stamped with a bitmask specifying the links it
+                   should be sent over (its dissemination graph) when
+                   it is created at its source. Supported routing
+                   schemes are: flooding, k node-disjoint paths, and
+                   targeted-redundancy dissemination graphs (see
+                   spines_setsockopt below).
 
        IT_PRIORITY_ROUTING:
                    Stateful intrusion-tolerant routing protocol based on
@@ -757,10 +797,20 @@ DESCRIPTION
            neighbors.
 
        SPINES_DISJOINT_PATHS
-           Sets the number of node-disjoint paths to use for all future
-           messages using either IT_PRIORITY_ROUTING or
-           IT_RELIABLE_ROUTING. Spines currently supports values between
-           0 and 5 (inclusive), where 0 represents flooding on the overlay.
+           Sets the number of node-disjoint paths to use for all
+           future messages using SOURCE_BASED_ROUTING,
+           IT_PRIORITY_ROUTING, or IT_RELIABLE_ROUTING. Spines
+           currently supports values between 0 and 6 (inclusive). A
+           value of 0 represents flooding on the overlay, values 1-5
+           (inclusive) represent 1 to 5 node-disjoint paths, and 6
+           represents dissemination graphs with targeted redundancy.
+
+           The dissemination-graph scheme uses two disjoint paths in
+           the normal case, but if problems are detected (using
+           "problem" type routing) at a source or destination, the
+           protocol switches to a dissemination graph that adds
+           targeted redundancy around the problematic source and/or
+           destination.
 
        Spines multicast address space is from 224.0.0.0 to 239.255.255.255
        (Class D address). Spines anycast address space is from 240.0.0.0 to

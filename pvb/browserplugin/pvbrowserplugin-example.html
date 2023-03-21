@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!DOCTYPE html
+    PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "DTD/xhtml1-strict.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml" xml:lang="en" lang="en">
+<head>
+  <title>Scripting pvbrowser</title>
+  <link href="classic.css" rel="stylesheet" type="text/css" />
+</head>
+<body>
+<p>This example demonstrates the combination of Javascript and a pvbrowser plugin.</p>
+
+<p>Linux installation:</p> 
+<pre>
+# for 64 bit system
+cp /opt/pvb/browserplugin/libpvbrowser.so /usr/lib64/browser-plugins/ 
+# for 32 bit system
+cp /opt/pvb/browserplugin/libpvbrowser.so /usr/lib/browser-plugins/
+</pre>
+
+<p>Windows installation:<p>
+<pre>
+cd "c:\program files\mozilla firefox\plugins"
+copy "%PVBDIR%\win-mingw\bin\*.dll"
+</pre>
+
+  <!-- <object id="pvbrowserObject" TYPE=pvbrowser/pv WIDTH=800 HEIGHT=520 url="pv://pvbrowser.org:5050"> -->
+  <object id="pvbrowserObject" TYPE="pvbrowser/pv" WIDTH="100%" HEIGHT="600">
+    <p>
+      You do not have the pvbrowser plugin loaded. 
+      Please 
+      <a href="http://pvbrowser.de/pvbrowser/index.php?menu=6&topic=6">download the plugin</a> 
+      and copy it to the browser plugin directory
+    </p>
+  </object>
+
+  <script language=JavaScript>
+  var pvbrowserObject = document.getElementById('pvbrowserObject');
+      pvbrowserObject.slotEditToolStatus(0,1,0);
+      pvbrowserObject.slotUrl('pv://pvbrowser.org:5050');
+  </script>
+
+  <!-- Special hookup code required for Internet Explorer -->
+  <!--[if IE]>
+  <script language=JScript>
+  function pvbrowserObject::slotUrl(url) { pvbrowserObject.slotUrl(url) }
+  </script>
+  <![endif]-->
+
+</body>
+</html>

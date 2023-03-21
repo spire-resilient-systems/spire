@@ -47,8 +47,6 @@ typedef struct namelist_d {
     int *namelist_start_adr;
     int *namelist_datasize;
 } namelist;
-
-
 // global values
 static int        use_socket;       // 0 or 1
 static int        debug;            // 0 or 1
@@ -56,7 +54,7 @@ static int        cycletime;        // milliseconds
 static int        n_poll_slave;     // poll always
 static int        poll_slave_counter[256];
 static int        protocol;
-int               *n_c_per_rtu; 
+int               *n_c_per_rtu;
 int               num_rtu;
 rlModbus          **mod_array;
 rlSocket          **sock_array;
@@ -64,20 +62,67 @@ namelist          *namelist_arr;
 int               ipc_sock;
 int               seq_num;
 rtu_data_msg      *subs;
-itrc_data         itrc_main, itrc_thread;
+itrc_data         itrc_main;
 struct timeval    Poll_Period;
 
+// TODO remove
+//int counter = 0;
+//int global_val = 0;
+
 //Will write info to SM
-int Write_To_SM(int idx) 
+int Write_To_SM(int idx)
 {
     int ret, nBytes;
     signed_message *mess;
+
+    // TODO: test variables below
+   // ems_fields *ems;
+   // char buf[MAX_LEN], data[4];
+   // int function, adr, buflen, slave;
+
+   // if(subs[idx].scen_type == EMS)
+   // {
+   //     ems = (ems_fields *)subs[idx].data;
+   //     printf("Status: %d\n Max: %d\n Current: %d\n Target: %d\n", ems->status,
+   //                                                                 ems->max_generation,
+   //                                                                 ems->curr_generation,
+   //                                                                 ems->target_generation);
+   // }
+
+   // counter++;
+   // if (counter == 10) {
+   //     global_val += counter;
+   //     counter = 0;
+   //
+   //     adr = 0;
+   //     slave = 0;
+
+   //     // Sending binary value (0/1)
+   //     /* function     = rlModbus::ForceSingleCoil;
+   //     data[0] = adr/256; data[1] = adr & 0x0ff;
+   //     data[2] = 0; data[3] = 0;
+   //     if(global_val != 0) data[2] = 0x0ff;
+   //     global_val = (global_val + 1) % 2;
+   //     buflen =  4; */
+
+   //     // May want to change the target_generation here
+   //     function     = rlModbus::PresetSingleRegister;
+   //     data[0] = adr/256; data[1] = adr & 0x0ff;
+   //     data[2] = global_val/256; data[3] = global_val & 0x0ff;
+   //     buflen = 4;
+
+   //     if(debug) printf("modbus_write: slave=%d function=%d data[0]=%d\n", slave, function, data[0]);
+   //     ret = mod_array[0]->write(slave, function, (const unsigned char *) data, buflen);
+   //     if(ret < 0) perror("Write ERROR to RTU");
+   //     ret = mod_array[0]->response( &slave, &function, (unsigned char *) buf);
+   //     if(ret < 0) perror("Response ERROR from RTU");
+   // }
 
     if (debug) printf("Writing to SM\n");
     if (debug) printf("______________\n");
 
     mess = PKT_Construct_RTU_Data_Msg(&subs[idx]);
-    //mess = PKT_Construct_RTU_Data_Msg(subs[idx].seq, subs[idx].rtu_id, 
+    //mess = PKT_Construct_RTU_Data_Msg(subs[idx].seq, subs[idx].rtu_id,
     //                    n_c_per_rtu[idx] - 1, subs[idx].sw_status, subs[idx].tx_status);
     nBytes = sizeof(signed_message) + mess->len;
     subs[idx].seq.seq_num++;
@@ -89,7 +134,7 @@ int Write_To_SM(int idx)
 void Process_SM_Msg()
 {
     char buf[MAX_LEN], data[4];
-    int i, ret, val, function, adr, buflen; 
+    int i, ret, val, function, adr, buflen;
     int which_mod, slave;
     signed_message *mess;
     rtu_feedback_msg *feed;
@@ -100,6 +145,7 @@ void Process_SM_Msg()
     slave = (int)feed->rtu;
     adr = (int)feed->offset;
     val = feed->val;
+    printf("Slave: %d, Value: %d, Adr: %d\n\n", slave, val, adr);
 
     if(feed->type == TRANSFORMER || feed->type == BREAKER) {
         function     = rlModbus::ForceSingleCoil;
@@ -107,8 +153,14 @@ void Process_SM_Msg()
         data[2] = 0; data[3] = 0;
         if(val != 0) data[2] = 0x0ff;
         buflen = 4;
-    }  
+    }
     else if(feed->type == SWITCH) {
+        function     = rlModbus::PresetSingleRegister;
+        data[0] = adr/256; data[1] = adr & 0x0ff;
+        data[2] = val/256; data[3] = val & 0x0ff;
+        buflen = 4;
+    }
+    else if(feed->type == EMS_TARGET_SET) {
         function     = rlModbus::PresetSingleRegister;
         data[0] = adr/256; data[1] = adr & 0x0ff;
         data[2] = val/256; data[3] = val & 0x0ff;
@@ -139,6 +191,8 @@ void Process_SM_Msg()
     if(ret < 0) perror("Write ERROR to RTU");
     ret = mod_array[which_mod]->response( &slave, &function, (unsigned char *) buf);
     if(ret < 0) perror("Response ERROR from RTU");
+    if (debug) printf("modbusResponse (TO WRITE): ret=%d slave=%d function=%d data=%02x %02x %02x %02x\n",
+                                    ret, slave, function, data[0], data[1], data[2], data[3]);
     //rlsleep(10); // sleep so reading can work in parallel even if we are sending a lot of data
 }
 
@@ -157,7 +211,7 @@ static void init(int ac, char **av)
 
     Init_SM_Replicas();
 
-    for(i=0; i<256; i++) 
+    for(i=0; i<256; i++)
         poll_slave_counter[i] = 0;
 
     sscanf(av[1], "%d", &tmp_id);
@@ -204,10 +258,10 @@ static void init(int ac, char **av)
         if (strcmp(prot_str, "modbus") == 0)
             num_rtu++;
     }
- 
+
     printf("Done Finding number of RTU's\n");
     // Setup default values for global variables
-    use_socket       = 1;  
+    use_socket       = 1;
     debug            = 1;
     cycletime        = 1000;        // milliseconds
     n_poll_slave     = 1;           // poll always
@@ -264,6 +318,10 @@ static void init(int ac, char **av)
                 printf("PNNL scenario!\n");
                 subs[i].scen_type = PNNL;
             }
+            else if (strcmp(scen_str, "EMS") == 0) {
+                printf("EMS scenario!\n");
+                subs[i].scen_type = EMS;
+            }
             else {
                 printf("Invalid scenario specified: %s\n", scen_str);
                 exit(EXIT_FAILURE);
@@ -278,9 +336,9 @@ static void init(int ac, char **av)
             mod_array[i]->registerSocket(sock_array[i]);
             printf("Connecting socket\n");
             sock_array[i]->connect();
-            if(sock_array[i]->isConnected()) 
+            if(sock_array[i]->isConnected())
                 printf("success connecting to %s:%d\n", ip, port);
-            else                        
+            else
                 printf("WARNING: could not connect to %s:%d\n", ip, port);
 
             cJSON * cycles = cJSON_GetObjectItem(rtu, "CYCLES");
@@ -294,7 +352,7 @@ static void init(int ac, char **av)
                 }
                 cptr++;
                 sscanf(text,"%d", &namelist_arr[i].namelist_count[j]);
-                if(debug) printf("CYCLE%d=%s count=%d name=%s\n", j+1, text, 
+                if(debug) printf("CYCLE%d=%s count=%d name=%s\n", j+1, text,
                                  namelist_arr[i].namelist_count[j], cptr);
                 if(strlen(cptr) >= sizeof(var)-1) {
                     printf("%s too long. exit\n", cptr);
@@ -308,7 +366,7 @@ static void init(int ac, char **av)
                 }
                 *cptr2 = '\0';
                 cptr2++;
-                sscanf(cptr2,"%d,%d", &namelist_arr[i].namelist_slave[j], 
+                sscanf(cptr2,"%d,%d", &namelist_arr[i].namelist_slave[j],
                                       &namelist_arr[i].namelist_start_adr[j]);
                 if     (strcmp(var,"coilStatus"       ) == 0) {
                     namelist_arr[i].namelist_function[j] = rlModbus::ReadCoilStatus;
@@ -320,11 +378,11 @@ static void init(int ac, char **av)
                 }
                 else if(strcmp(var,"holdingRegisters" ) == 0) {
                     namelist_arr[i].namelist_function[j] = rlModbus::ReadHoldingRegisters;
-                    namelist_arr[i].namelist_datasize[j] = 16; // bit 
+                    namelist_arr[i].namelist_datasize[j] = 16; // bit
                 }
                 else if(strcmp(var,"inputRegisters"   ) == 0) {
                     namelist_arr[i].namelist_function[j] = rlModbus::ReadInputRegisters;
-                    namelist_arr[i].namelist_datasize[j] = 16; // bit 
+                    namelist_arr[i].namelist_datasize[j] = 16; // bit
                 }
                 else {
                     printf("%s(slave,start_adr) not implemented !\n", var);
@@ -341,7 +399,7 @@ static void init(int ac, char **av)
             i++;
         }
     }
- 
+
     // Delete cJSON stuff
     cJSON_Delete(root);
 
@@ -352,6 +410,8 @@ static void init(int ac, char **av)
 
     // Setup IPC for the RTU Proxy main thread
     memset(&itrc_main, 0, sizeof(itrc_data));
+    sprintf(itrc_main.prime_keys_dir, "%s", (char *)PROXY_PRIME_KEYS);
+    sprintf(itrc_main.sm_keys_dir, "%s", (char *)PROXY_SM_KEYS);
     sprintf(itrc_main.ipc_local, "%s%s%d", (char *)RTU_IPC_MAIN, "modbus", My_ID);
     sprintf(itrc_main.ipc_remote, "%s%s%d", (char *)RTU_IPC_ITRC, "modbus", My_ID);
     ipc_sock = IPC_DGram_Sock(itrc_main.ipc_local);
@@ -363,55 +423,63 @@ static void init(int ac, char **av)
         printf("Invalid Num_RTU: %d, must be betwteen 1 and 10\n", num_emu_rtu);
         exit(EXIT_FAILURE);
     }
-    poll_freq = 1000000 / num_emu_rtu;
+    poll_freq = (cycletime * 1000) / num_emu_rtu;
     Poll_Period.tv_sec  = poll_freq / 1000000;
     Poll_Period.tv_usec = poll_freq % 1000000;
     printf("Poll_sec = %lu, Poll_usec = %lu\n", Poll_Period.tv_sec, Poll_Period.tv_usec);
 }
 
 // i = which modbus object to use
-static int modbusCycle(int slave, int function, int start_adr, int num_register, 
+static int modbusCycle(int slave, int function, int start_adr, int num_register,
                         unsigned char *data, int i)
-{   
+{
     int ret;
+    int sent_function;
 
-    if(slave < 0 || slave >= 256) 
+    if(slave < 0 || slave >= 256)
         return -1;
 
     if(poll_slave_counter[slave] > 0) {
-        if (debug) printf("modbusCycle not polling slave %d: poll_slave_counter[%d]=%d\n", 
+        if (debug) printf("modbusCycle not polling slave %d: poll_slave_counter[%d]=%d\n",
                             slave, slave, poll_slave_counter[slave]);
         poll_slave_counter[slave] -= 1;
-        if( poll_slave_counter[slave] != 0) 
+        if( poll_slave_counter[slave] != 0)
             return -1;
     }
 
-    if (debug) printf("modbusRequest: slave=%d function=%d start_adr=%d num_register=%d\n", 
+    if (debug) printf("modbusRequest: slave=%d function=%d start_adr=%d num_register=%d\n",
                                    slave, function, start_adr, num_register);
     ret = mod_array[i]->request(slave, function, start_adr, num_register);
+    sent_function = function;
+
     if (ret >= 0) ret = mod_array[i]->response(&slave, &function, data);
-    if (ret < 0)
-        poll_slave_counter[slave] = n_poll_slave;
+    /* if (ret < 0)
+        poll_slave_counter[slave] = n_poll_slave; */
     if (debug) printf("modbusResponse: ret=%d slave=%d function=%d data=%02x %02x %02x %02x\n",
                                     ret, slave, function, data[0], data[1], data[2], data[3]);
+
+    if (function != sent_function)
+        ret = -1;
+
     return ret;
 }
 
 // Poll RTU for info
 static int readModbus(int i, int j)
 {
-    unsigned char data[512]; 
+    unsigned char data[512];
     int           i1, ind, ret, itr;
     unsigned int  val = 0, k, tmp;
     jhu_fields *jhf;
     pnnl_fields *pf;
-    unsigned char *c_arr;
-    int32u *s_arr;
+    ems_fields *ef;
+    unsigned char *c_arr = NULL;
+    int32u *s_arr = NULL;
 
-    ret = modbusCycle(namelist_arr[i].namelist_slave[j], 
-                        namelist_arr[i].namelist_function[j], 
-                        namelist_arr[i].namelist_start_adr[j], 
-                        namelist_arr[i].namelist_count[j], 
+    ret = modbusCycle(namelist_arr[i].namelist_slave[j],
+                        namelist_arr[i].namelist_function[j],
+                        namelist_arr[i].namelist_start_adr[j],
+                        namelist_arr[i].namelist_count[j],
                         data, i);
 
     if(ret < 0) {
@@ -419,7 +487,7 @@ static int readModbus(int i, int j)
         return ret;
     }
 
-    
+
     // write the RTU status on the JHU struct
     if (subs[i].scen_type == JHU) {
         ind = 0;
@@ -452,18 +520,24 @@ static int readModbus(int i, int j)
         pf = (pnnl_fields *)(subs[i].data);
         if (namelist_arr[i].namelist_function[j] == rlModbus::ReadCoilStatus) {
             c_arr = pf->breaker_write;
-        }   
+        }
         else if (namelist_arr[i].namelist_function[j] == rlModbus::ReadInputStatus) {
             c_arr = pf->breaker_read;
-        }   
+        }
         //else if (namelist_arr[i].namelist_function[j] == rlModbus::ReadInputRegisters) {
         else if (namelist_arr[i].namelist_function[j] == rlModbus::ReadHoldingRegisters) {
             s_arr= pf->point;
-        }   
+        }
 
         ind = 0;
         itr = 0;
-        for (i1 = 0; i1 < namelist_arr[i].namelist_count[j]; ) { 
+        for (i1 = 0; i1 < namelist_arr[i].namelist_count[j]; ) {
+
+            // In this case, each byte of data actually contains
+            // up to 8 different binary values that were read from
+            // the PLC. We read in a whole byte at a time from data[ind],
+            // and then extract each individual bit and store that as
+            // its own separate byte
             if (namelist_arr[i].namelist_datasize[j] == 1) {
                 val = data[ind];
                 ind += 1;
@@ -476,15 +550,20 @@ static int readModbus(int i, int j)
 
                 for (k = 0; k < tmp; k++) {
                     c_arr[itr] = (val >> k) & (0x00000001);
-                    printf("\tc_arr[%d] = %d\n", itr, c_arr[itr]);
+                    if (debug) printf("\tc_arr[%d] = %d\n", itr, c_arr[itr]);
                     itr++;
-                }   
-            }   
+                }
+            }
+
+            // Here, each 16-bit number is stored such that
+            // data[0] is upper 8 bits and data[1] is lower. In this
+            // scenario, we are concatenating two 16-bits together,
+            // which looks like:  M2 M1 M4 M3
             else if (namelist_arr[i].namelist_datasize[j] == 16) {
                 val = (data[ind] << 8)    + data[ind+1] +
                       (data[ind+2] << 24) + (data[ind+3] << 16);
                 s_arr[itr] = val;
-                printf("s_arr[%d] = %d\n", itr, s_arr[itr]);
+                if (debug) printf("s_arr[%d] = %d\n", itr, s_arr[itr]);
                 ind += 4;
                 i1  += 2;
                 itr++;
@@ -493,9 +572,27 @@ static int readModbus(int i, int j)
                 printf("ERROR: unknown datasize\n");
                 return -1;
             }
-        } 
+        }
     }
-    
+
+    if (subs[i].scen_type == EMS) {
+        ef = (ems_fields *)(subs[i].data);
+
+        if (namelist_arr[i].namelist_function[j] == rlModbus::ReadCoilStatus) {
+            ef->status = data[0];
+        }
+        else if (namelist_arr[i].namelist_function[j] == rlModbus::ReadInputRegisters) {
+            ef->max_generation = (data[0] << 8) + data[1];
+            ef->curr_generation = (data[2] << 8) + data[3];
+            ef->id = (data[4] << 8) + data[5];
+        }
+        else if (namelist_arr[i].namelist_function[j] == rlModbus::ReadHoldingRegisters) {
+            ef->target_generation = (data[0] << 8) + data[1];
+
+        }
+
+    }
+
     return 0;
 }
 
@@ -520,7 +617,7 @@ int main(int argc,char *argv[])
         period.tv_sec = period.tv_usec / 1000000;
         period.tv_usec = period.tv_usec % 1000000;
     }*/
-    
+
     // Setup the FD_SET for use in select
     FD_ZERO(&mask);
     FD_SET(ipc_sock, &mask);
@@ -536,7 +633,7 @@ int main(int argc,char *argv[])
         if (compTime(now, topoll) >= 0) {
             timeout.tv_sec = 0;
             timeout.tv_usec = 0;
-        } 
+        }
         else {
             timeout = diffTime(topoll, now);
         }
@@ -548,14 +645,14 @@ int main(int argc,char *argv[])
             if(FD_ISSET(ipc_sock, &tmask)) {
                 Process_SM_Msg();
             }
-        } 
+        }
         else {
             gettimeofday(&topoll, NULL);
             topoll = addTime(topoll, Poll_Period);
 
             //Poll all cycles for each RTU
             for(i = 0; i < num_rtu; i++) {
-                //gettimeofday(&poll_time, NULL); 
+                //gettimeofday(&poll_time, NULL);
                 readerr = 0;
                 for(j = 0; j < n_c_per_rtu[i]; j++) {
                     if (readModbus(i,j) < 0)
@@ -563,7 +660,7 @@ int main(int argc,char *argv[])
                 }
                 //gettimeofday(&now, NULL);
                 //printf("poll took %lu microseconds\n", diffTime(now, poll_time).tv_usec);
-          
+
                 //Send info over to scada master
                 if (!readerr) Write_To_SM(i);
             }

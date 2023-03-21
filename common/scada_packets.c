@@ -24,10 +24,13 @@
  *   Amy Babay            babay@cs.jhu.edu
  *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
- * Major Contributor:
+ * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
  *
- * Copyright (c) 2017 Johns Hopkins University.
+ * Contributors:
+ *   Samuel Beckley       Contributions to HMIs
+ *
+ * Copyright (c) 2018 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -49,10 +52,6 @@ signed_message *PKT_Construct_Signed_Message(int size) {
   
     mess = (signed_message *)malloc(sizeof(signed_message) + size);
     memset(mess, 0, sizeof(signed_message) + size);
-
-    mess->mt_num   = 0;
-    mess->mt_index = 0; 
-    mess->site_id  = 0;
 
     return mess;
 }

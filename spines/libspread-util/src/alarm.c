@@ -697,7 +697,7 @@ static void Threaded_Alarm_Exit(void)
       }
     }
 
-    fprintf(stdout, "Exit caused by Alarm(EXIT)\n");
+    fprintf(stdout, "Exit caused by Threaded Alarm(EXIT)\n");
     abort();
     exit(0);
   }

@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -95,25 +96,27 @@
 /* Type macros */
 #define		Is_reliable(t)       (((t) & RELIABLE_TYPE) != 0)
 
-#define     Is_hello_type(t)     (((t) & HELLO_MASK) != 0)
-#define		Is_hello(t)          (((t) & HELLO_MASK) == HELLO_TYPE)
-#define		Is_hello_req(t)      (((t) & HELLO_MASK) == HELLO_REQ_TYPE)
-#define		Is_hello_ping(t)     (((t) & HELLO_MASK) == HELLO_PING_TYPE)
-#define		Is_hello_discnct(t)  (((t) & HELLO_MASK) == HELLO_DISCNCT_TYPE)
-#define		Is_hello_close(t)    (((t) & HELLO_MASK) == HELLO_CLOSE_TYPE)
+#define    Is_hello_type(t)     (((t) & HELLO_MASK) != 0)
+#define    Is_hello(t)          (((t) & HELLO_MASK) == HELLO_TYPE)
+#define    Is_hello_req(t)      (((t) & HELLO_MASK) == HELLO_REQ_TYPE)
+#define    Is_hello_ping(t)     (((t) & HELLO_MASK) == HELLO_PING_TYPE)
+#define    Is_hello_discnct(t)  (((t) & HELLO_MASK) == HELLO_DISCNCT_TYPE)
+#define    Is_hello_close(t)    (((t) & HELLO_MASK) == HELLO_CLOSE_TYPE)
 
-#define		Is_link_state(t)     (((t) & ROUTE_MASK) == LINK_STATE_TYPE)
-#define		Is_group_state(t)    (((t) & ROUTE_MASK) == GROUP_STATE_TYPE)
+#define    Is_link_state(t)     (((t) & ROUTE_MASK) == LINK_STATE_TYPE)
+#define    Is_group_state(t)    (((t) & ROUTE_MASK) == GROUP_STATE_TYPE)
 
-#define		Is_udp_data(t)       (((t) & DATA_MASK) == UDP_DATA_TYPE)
-#define		Is_rel_udp_data(t)   (((t) & DATA_MASK) == REL_UDP_DATA_TYPE)
-#define		Is_realtime_data(t)  (((t) & DATA_MASK) == REALTIME_DATA_TYPE)
-#define		Is_realtime_nack(t)  (((t) & DATA_MASK) == REALTIME_NACK_TYPE)
-#define		Is_link_ack(t)       (((t) & DATA_MASK) == LINK_ACK_TYPE)
-#define     Is_intru_tol_data(t) (((t) & DATA_MASK) == INTRU_TOL_DATA_TYPE)
-#define     Is_intru_tol_ack(t)  (((t) & DATA_MASK) == INTRU_TOL_ACK_TYPE)
-#define     Is_intru_tol_ping(t) (((t) & DATA_MASK) == INTRU_TOL_PING_TYPE)
-#define     Is_diffie_hellman(t) (((t) & DATA_MASK) == DIFFIE_HELLMAN_TYPE)
+#define    Is_udp_data(t)       (((t) & DATA_MASK) == UDP_DATA_TYPE)
+#define    Is_rel_udp_data(t)   (((t) & DATA_MASK) == REL_UDP_DATA_TYPE)
+#define    Is_realtime_data(t)  (((t) & DATA_MASK) == REALTIME_DATA_TYPE)
+#define    Is_realtime_nack(t)  (((t) & DATA_MASK) == REALTIME_NACK_TYPE)
+#define    Is_link_ack(t)       (((t) & DATA_MASK) == LINK_ACK_TYPE)
+#define    Is_intru_tol_data(t) (((t) & DATA_MASK) == INTRU_TOL_DATA_TYPE)
+#define    Is_intru_tol_ack(t)  (((t) & DATA_MASK) == INTRU_TOL_ACK_TYPE)
+#define    Is_intru_tol_ping(t) (((t) & DATA_MASK) == INTRU_TOL_PING_TYPE)
+#define    Is_diffie_hellman(t) (((t) & DATA_MASK) == DIFFIE_HELLMAN_TYPE)
+
+#define    Is_data_type(t)      (Is_udp_data(t) || Is_rel_udp_data(t) || Is_realtime_data(t))
 
 #define     SPINES_TTL_MAX  255
 
@@ -183,6 +186,13 @@ typedef	struct	dummy_udp_pkt_header {
     unsigned char     routing;
     /* ### int16u - DO WE NEED PADDING? */
 } udp_header;
+
+typedef struct dummy_sb_header {
+    int32u            source_incarnation;
+    int32u            source_seq;    /* Used together with source_incarnation
+                                        to identify duplicates for source-based
+                                        routing */
+} sb_header;
 
 typedef struct dummy_rel_udp_pkt_add {
     int32u type;
@@ -296,10 +306,10 @@ typedef	struct	dummy_hello_packet {
 } hello_packet;
 
 typedef	struct	dummy_link_state_packet {
-    Node_ID 	    source;
-    int16u	    num_edges;
-    int16           src_data; /* Data about the source itself. 
-				 Not used yet */
+    Node_ID    source;
+    int16u     num_edges;
+    int16      src_data; /* Data about the source itself. 
+                            Not used yet */
 } link_state_packet;
 
 typedef	struct	dummy_edge_cell_packet {

@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -73,6 +74,12 @@ typedef struct Node_d
   char               *device_name;       /* device name to reach this node, if Is_Connected_Neighbor() */ 
 
 } Node;
+
+/* AB: added for cost accounting */
+typedef struct Client_ID_d {
+    Node_ID daemon_id;
+    int16u  client_port;
+} Client_ID;
 
 int   Node_ID_cmp(const void *l, const void *r);
 

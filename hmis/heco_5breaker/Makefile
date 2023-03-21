@@ -1,0 +1,120 @@
+ #
+ # Spire.
+ #
+ # The contents of this file are subject to the Spire Open-Source
+ # License, Version 1.0 (the ``License''); you may not use
+ # this file except in compliance with the License.  You may obtain a
+ # copy of the License at:
+ #
+ # http://www.dsn.jhu.edu/spire/LICENSE.txt 
+ #
+ # or in the file ``LICENSE.txt'' found in this distribution.
+ #
+ # Software distributed under the License is distributed on an AS IS basis, 
+ # WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License 
+ # for the specific language governing rights and limitations under the 
+ # License.
+ #
+ # Spire is developed at the Distributed Systems and Networks Lab,
+ # Johns Hopkins University.
+ #
+ # Creators:
+ #   Yair Amir            yairamir@cs.jhu.edu
+ #   Trevor Aron          taron1@cs.jhu.edu
+ #   Amy Babay            babay@cs.jhu.edu
+ #   Thomas Tantillo      tantillo@cs.jhu.edu
+ #
+ # Major Contributors:
+ #   Marco Platania       Contributions to architecture design 
+ #
+ # Contributors:
+ #   Samuel Beckley       Contributions to HMIs 
+ #
+ # Copyright (c) 2018 Johns Hopkins University.
+ # All rights reserved.
+ #
+ # Partial funding for Spire research was provided by the Defense Advanced 
+ # Research Projects Agency (DARPA) and the Department of Defense (DoD).
+ # Spire is not necessarily endorsed by DARPA or the DoD. 
+ #
+ #
+
+CC            = gcc
+CXX           = g++
+CFLAGS        = -m64 -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
+CXXFLAGS      = -m64 -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
+PVB			  = ../../pvb
+PRIME         = ../../prime
+SPINES        = ../../spines
+SPIRE         = ../..
+INCPATH       = -I. -I$(PVB)/pvserver -I$(PRIME)/stdutil/include \
+				-I$(SPINES)/libspines/ -I$(SPIRE)/common -I$(PRIME)/libspread-util/include
+LINK          = g++
+LFLAGS        = -m64 -Wl,-O1
+LIBS          = $(SUBLIBS) $(PVB)/pvserver/libpvsmt.a -lpthread \
+					$(PRIME)/OpenTC-1.1/TC-lib-1.0/.libs/libTC.a \
+					$(SPINES)/libspines/libspines.a $(PRIME)/stdutil/lib/libstdutil.a \
+					$(PRIME)/libspread-util/lib/libspread-util.a -lrt -ldl -lcrypto
+
+SOURCES       = heco_hmi.cpp \
+		mask1.cpp \
+        master_exec.cpp \
+        $(SPIRE)/common/scada_packets.c \
+        $(SPIRE)/common/net_wrapper.c \
+        $(SPIRE)/common/openssl_rsa.c \
+        $(SPIRE)/common/tc_wrapper.c \
+        $(SPIRE)/common/itrc.c \
+		$(SPIRE)/common/key_value.c \
+		$(SPIRE)/config/cJSON.c \
+		$(SPIRE)/config/config_helpers.c 
+OBJECTS       = heco_hmi.o \
+		mask1.o \
+        master_exec.o \
+        $(SPIRE)/common/scada_packets.o \
+        $(SPIRE)/common/net_wrapper.o \
+        $(SPIRE)/common/openssl_rsa.o \
+        $(SPIRE)/common/tc_wrapper.o \
+        $(SPIRE)/common/itrc.o \
+		$(SPIRE)/common/key_value.o \
+		$(SPIRE)/config/cJSON.o \
+		$(SPIRE)/config/config_helpers.o
+TARGET        = heco_hmi
+
+HEADERS       = pvapp.h \
+		$(PVB)/pvserver/processviewserver.h \
+		$(PVB)/pvserver/vmsgl.h \
+		$(PVB)/pvserver/vmsglext.h \
+		$(PVB)/pvserver/wthread.h \
+		master_exec.h \
+		$(SPIRE)/common/net_wrapper.h \
+		$(SPIRE)/common/openssl_rsa.h \
+		$(SPIRE)/common/tc_wrapper.h \
+		$(SPIRE)/common/scada_packets.h \
+		$(SPIRE)/common/def.h \
+        $(SPIRE)/common/itrc.h \
+		$(SPIRE)/common/key_value.h \
+		$(SPIRE)/config/config_helpers.h \
+		$(SPIRE)/config/cJSON.h
+
+.SUFFIXES: .o .c .cpp .cc .cxx .C
+
+.cpp.o:
+	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) $(INCPATH) -o "$@" "$<"
+
+.c.o:
+	$(CC) -c $(CFLAGS) $(CPPFLAGS) $(INCPATH) -o "$@" "$<"
+
+all: $(TARGET)
+
+$(TARGET):  $(OBJECTS)  
+	$(LINK) $(LFLAGS) -o $(TARGET) $(OBJECTS) $(OBJCOMP) $(LIBS)
+
+clean: 
+	rm -rf $(OBJECTS)
+	rm -rf $(TARGET)
+
+heco_hmi.o: heco_hmi.cpp $(HEADERS)
+	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) $(INCPATH) -o heco_hmi.o heco_hmi.cpp
+
+mask1.o: mask1.cpp $(HEADERS)
+	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) $(INCPATH) -o mask1.o mask1.cpp

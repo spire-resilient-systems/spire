@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -251,11 +251,71 @@ int32u UTIL_Get_Timeliness(int32u type)
   case PO_CERT:
     ret = BOUNDED_TRAFFIC_CLASS;
     break;
-   
-  /* case CATCHUP_REPLY:
+
+  case JUMP:
     ret = BOUNDED_TRAFFIC_CLASS;
-    break; */
+    break;
    
+  case NEW_INCARNATION:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case INCARNATION_ACK:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case INCARNATION_CERT:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case PENDING_STATE:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case PENDING_SHARE:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case RESET_VOTE:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case RESET_SHARE:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case RESET_PROPOSAL:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case RESET_PREPARE:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case RESET_COMMIT:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case RESET_NEWLEADER:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case RESET_NEWLEADERPROOF:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case RESET_VIEWCHANGE:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case RESET_NEWVIEW:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+
+  case RESET_CERT:
+    ret = BOUNDED_TRAFFIC_CLASS;
+    break;
+ 
   default:
     Alarm(PRINT, "Assigning unknown message type %d as BOUNDED\n", type);
     ret = BOUNDED_TRAFFIC_CLASS;
@@ -306,7 +366,22 @@ int16u UTIL_Get_Priority(int type)
     case CATCHUP_REQUEST:
     case ORD_CERT:
     case PO_CERT:
-    //case CATCHUP_REPLY:
+    case JUMP:
+    case NEW_INCARNATION:
+    case INCARNATION_ACK:
+    case INCARNATION_CERT:
+    case PENDING_STATE:
+    case PENDING_SHARE:
+    case RESET_VOTE:
+    case RESET_SHARE:
+    case RESET_PROPOSAL:
+    case RESET_PREPARE:
+    case RESET_COMMIT:
+    case RESET_NEWLEADER:
+    case RESET_NEWLEADERPROOF:
+    case RESET_VIEWCHANGE:
+    case RESET_NEWVIEW:
+    case RESET_CERT:
     case UPDATE:
     case CLIENT_RESPONSE:
         prio = 2;
@@ -351,7 +426,7 @@ char *UTIL_Type_To_String(int32u type)
   case PO_ACK:
     ret = "PO_ACK";
     break;
-    
+
   case PO_ARU:
     ret = "PO_ARU";
     break;
@@ -460,9 +535,69 @@ char *UTIL_Type_To_String(int32u type)
     ret = "PO_CERT";
     break;
 
-  /*case CATCHUP_REPLY:
-    ret = "CATCHUP_REPLY";
-    break; */
+  case JUMP:
+    ret = "JUMP";
+    break;
+
+  case NEW_INCARNATION:
+    ret = "NEW_INCARNATION";
+    break;
+
+  case INCARNATION_ACK:
+    ret = "INCARNATION_ACK";
+    break;
+
+  case INCARNATION_CERT:
+    ret = "INCARNATION_CERT";
+    break;
+
+  case PENDING_STATE:
+    ret = "PENDING_STATE";
+    break;
+
+  case PENDING_SHARE:
+    ret = "PENDING_SHARE";
+    break;
+  
+  case RESET_VOTE:
+    ret = "RESET_VOTE";
+    break;
+
+  case RESET_SHARE:
+    ret = "RESET_SHARE";
+    break;
+
+  case RESET_PROPOSAL:
+    ret = "RESET_PROPOSAL";
+    break;
+
+  case RESET_PREPARE:
+    ret = "RESET_PREPARE";
+    break;
+
+  case RESET_COMMIT:
+    ret = "RESET_COMMIT";
+    break;
+
+  case RESET_NEWLEADER:
+    ret = "RESET_NEWLEADER";
+    break;
+  
+  case RESET_NEWLEADERPROOF:
+    ret = "RESET_NEWLEADERPROOF";
+    break;
+
+  case RESET_VIEWCHANGE:
+    ret = "RESET_VIEWCHANGE";
+    break;
+
+  case RESET_NEWVIEW:
+    ret = "RESET_NEWVIEW";
+    break;
+  
+  case RESET_CERT:
+    ret = "RESET_CERT";
+    break;
 
   case UPDATE:
     ret = "UPDATE";
@@ -1109,13 +1244,14 @@ rb_slot* UTIL_Get_RB_Slot_If_Exists(int32u server_id, int32u seq_num)
 
 int32u UTIL_Leader() 
 {
-  int32u rep;
+  return UTIL_Leader_Of_View(DATA.View);
+  /* int32u rep;
 
   rep = DATA.View % NUM_SERVERS;
   if (rep == 0) 
     rep = NUM_SERVERS;
 
-  return rep;
+  return rep; */
 }
 
 
@@ -1125,6 +1261,17 @@ int32u UTIL_I_Am_Leader()
     return 1;
 
   return 0;
+}
+
+int32u UTIL_Leader_Of_View(int32u view) 
+{
+  int32u rep;
+
+  rep = view % NUM_SERVERS;
+  if (rep == 0)
+    rep = NUM_SERVERS;
+
+  return rep;
 }
 
 void UTIL_Bitmap_Set(int32u *bm, int32u i)
@@ -1261,13 +1408,19 @@ void UTIL_Write_Client_Response(signed_message *mess)
   }
 
 #if USE_IPC_CLIENT
+  util_stopwatch ipc_send_time;
+  UTIL_Stopwatch_Start(&ipc_send_time);
   ret = IPC_Send(NET.to_client_sd, mess, size, NET.client_addr.sun_path);
+  UTIL_Stopwatch_Stop(&ipc_send_time);
+  DATA.SIG.ipc_send_agg += UTIL_Stopwatch_Elapsed(&ipc_send_time);
+  //DATA.SIG.ipc_send_msg[DATA.SIG.ipc_count] = UTIL_Stopwatch_Elapsed(&ipc_send_time);
+  //DATA.SIG.ipc_count++;
 #else
   ret = NET_Write(NET.to_client_sd, mess, size);
 #endif
 
   if(ret <= 0) {
-    Alarm(DEBUG, "Respond to Client failed, ret = %d\n", ret);
+    Alarm(PRINT, "Respond to Client failed, ret = %d\n", ret);
     Alarm(DEBUG, "Closing and cleaning up connection to client %d\n", 
 	  machine_id);
 #if !USE_IPC_CLIENT
@@ -1276,6 +1429,15 @@ void UTIL_Write_Client_Response(signed_message *mess)
     NET.from_client_sd = 0;
     NET.to_client_sd = 0;
 #endif
+    if (ret == -1) {
+        if (errno == EWOULDBLOCK)
+            Alarm(PRINT, "  EWOULDBLOCK\n");
+        else if (errno == EAGAIN)
+            Alarm(PRINT, "  EAGAIN\n");
+        else
+            Alarm(PRINT, "  EOTHER\n");
+            
+    }
     /* close(NET.client_sd[machine_id]);
     E_detach_fd(NET.client_sd[machine_id], READ_FD);
     NET.client_sd[machine_id] = 0; */

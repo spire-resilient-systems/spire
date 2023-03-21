@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -85,6 +86,7 @@ extern Link*    Links[];
 extern channel  Ses_UDP_Channel;   /* For udp client connections */
 extern sys_scatter Recv_Pack[];
 extern Route*   All_Routes;
+extern stdskl  Client_Cost_Stats; /* AB: added for cost accounting */
 
 extern stdhash  Monitor_Params;
 extern int      Accept_Monitor;
@@ -137,6 +139,8 @@ extern sp_time  Time_until_Exit;
 extern int      Minimum_Window;
 extern int      Fast_Retransmit;
 extern int      Stream_Fairness;
+extern int      TCP_Fairness;
+extern int      Print_Cost;
 extern int      Unicast_Only;
 extern int      Memory_Limit;
 extern int16    KR_Flags;

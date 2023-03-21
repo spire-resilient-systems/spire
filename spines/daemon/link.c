@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -164,7 +165,7 @@ int16 Create_Link(Network_Leg *leg,
   if (mode == CONTROL_LINK || mode == RELIABLE_UDP_LINK) {  
 
     if ((r_data = (Reliable_Data*) new(RELIABLE_DATA)) == NULL) {
-      Alarm(EXIT, "Create_Link: Cannot allocte reliable_data object\r\n");
+      Alarm(EXIT, "Create_Link: Cannot allocate reliable_data object\r\n");
     }
 
     memset(r_data, 0, sizeof(*r_data));
@@ -196,8 +197,11 @@ int16 Create_Link(Network_Leg *leg,
     r_data->padded = 1;
 
     /* Congestion control */
-
-    r_data->window_size = (float)Minimum_Window; 
+    if (TCP_Fairness) {
+        r_data->window_size = (float)Minimum_Window; 
+    } else {
+        r_data->window_size = MAX_CG_WINDOW;
+    }
     r_data->max_window = MAX_CG_WINDOW;
     r_data->ssthresh = MAX_CG_WINDOW;
       
@@ -235,12 +239,19 @@ int16 Create_Link(Network_Leg *leg,
     c_data->est_tcp_rate         = UNKNOWN;
     c_data->reported_rtt         = UNKNOWN;
     c_data->reported_loss_rate   = UNKNOWN;
+    c_data->reported_ts.sec = 0;
+    c_data->reported_ts.usec = 0;
 
     /* For determining loss_rate */
     c_data->l_data.my_seq_no = PACK_MAX_SEQ;
     c_data->l_data.other_side_tail = 0;
     c_data->l_data.other_side_head = 0;
     c_data->l_data.received_packets = 0;
+    for (i = 0; i < MAX_LINKS_4_EDGE; i++)
+    {
+        c_data->l_data.recvd_seqs[i] = 0;
+        c_data->l_data.my_seqs[i] = PACK_MAX_SEQ;
+    }
 
     for(i=0; i<MAX_REORDER; i++) {
       c_data->l_data.recv_flags[i] = 0;
@@ -252,7 +263,7 @@ int16 Create_Link(Network_Leg *leg,
     }
 
     c_data->l_data.loss_event_idx = 0;	
-    c_data->l_data.loss_rate = UNKNOWN;
+    c_data->l_data.loss_rate = 0;
 
     lk->prot_data = c_data;
 
@@ -263,7 +274,7 @@ int16 Create_Link(Network_Leg *leg,
       for (nd->neighbor_id = 0; nd->neighbor_id != MAX_LINKS / MAX_LINKS_4_EDGE && Neighbor_Nodes[nd->neighbor_id] != NULL; ++nd->neighbor_id);
 
       if (nd->neighbor_id == MAX_LINKS / MAX_LINKS_4_EDGE) {
-	Alarm(EXIT, "Network_Leg_Set_Cost: Too many neighbors!\r\n");
+	Alarm(EXIT, "Create_Link: Too many neighbors!\r\n");
       }
 
       if (nd->neighbor_id + 1 > Num_Neighbors) {
@@ -549,7 +560,7 @@ void Destroy_Link(int16 linkid)
         case RELIABLE_UDP_LINK:
         case REALTIME_UDP_LINK:
         default:
-            Alarm(DEBUG, "Destroying regular link...\r\n");
+            Alarm(DEBUG, "Destroying regular link...%d\r\n", lk->link_type);
             break;
     }
 
@@ -615,6 +626,7 @@ void Destroy_Link(int16 linkid)
 	dispose(r_data);
 
 	if(Link_Sessions_Blocked_On == linkid) {
+            Alarm(DEBUG, "Resuming sessions\n");
 	    Resume_All_Sessions();
 	    Link_Sessions_Blocked_On = -1;
 	}
@@ -702,14 +714,95 @@ Link *Get_Best_Link(Node_ID node_id, int mode)
 
 int Link_Send(Link *lk, sys_scatter *scat)
 {
-  int ret;
+  Network_Leg *leg;
+  Leg_Buf_Cell cell;
+  int total_bytes;
+  int ret = 0;
+  int i;
   /* sp_time diff;
   sp_time delta = {1,0}; */
 
-  ret = DL_send(lk->leg->local_interf->channels[lk->link_type], 
+  /* AB: added for cost accounting */
+  packet_header *hdr;
+  udp_header *uhdr;
+  Client_ID cid;
+  int32 cost_count, *cost_count_ptr;
+  stdit it;
+
+  /* ret = DL_send(lk->leg->local_interf->channels[lk->link_type], 
 		 lk->leg->remote_interf->net_addr,
 		 Port + lk->link_type,
-		 scat);
+		 scat); */
+
+  leg = lk->leg;
+
+  /* Calculate size of this packet */
+  for (i = 0, total_bytes = 0; i < scat->num_elements; i++)
+  {
+    total_bytes += scat->elements[i].len;
+  }
+
+  /* If we don't have space to buffer this packet, drop it */
+  if (Leg_Rate_Limit_kbps >= 0 && stdcarr_size(&leg->bucket_buf) >= Leg_Max_Buffered) {
+    return ret;
+  }
+
+  /* AB: added for cost accounting */
+  if (Print_Cost) {
+    hdr = (packet_header *)scat->elements[0].buf;
+    if (Is_data_type(hdr->type)) {
+      /* Update packet counts for this flow for cost accounting */
+      assert(scat->num_elements > 1);
+      assert(scat->elements[1].len >= sizeof(udp_header));
+      uhdr = (udp_header *)scat->elements[1].buf;
+      cid.daemon_id = uhdr->dest;
+      cid.client_port = uhdr->dest_port;
+      stdskl_find(&Client_Cost_Stats, &it, &cid);
+      if (stdskl_is_end(&Client_Cost_Stats, &it)) {
+          Alarm(DEBUG, "ADDING NEW FLOW! cid.daemon_id %x, cid.client_port %u\n", cid.daemon_id, cid.client_port);
+          cost_count = 1;
+          if (stdskl_insert(&Client_Cost_Stats, &it, &cid, &cost_count, TRUE) != 0) {
+              Alarm(EXIT, "Failed to insert into Client_Cost_Stats\n");
+          }
+      } else {
+          cost_count_ptr = (int32 *)stdskl_it_val(&it);
+          *cost_count_ptr += 1;
+      }
+    }
+  }
+
+  /* If no packets are currently waiting and we have the available bandwidth
+   * (subject to rate limiting), just go ahead and send now */
+  if (Leg_Rate_Limit_kbps < 0 || 
+     (stdcarr_empty(&leg->bucket_buf) && total_bytes <= leg->bucket_bytes))
+  {
+    Alarm(DEBUG, "Link_Send: sending %d bytes directly, %d bytes available\n", total_bytes, leg->bucket_bytes);
+    ret = DL_send(lk->leg->local_interf->channels[lk->link_type], 
+           lk->leg->remote_interf->net_addr,
+           Port + lk->link_type,
+           scat);
+    leg->bucket_bytes -= total_bytes;
+    return ret;
+  }
+
+  /* Otherwise, we add this packet to the end of the queue of waiting packets
+   * and then try to send from the front of the queue if possible */
+  Alarm(DEBUG, "Link_Send: buffering packet, total_bytes = %d, available bytes = %d\n", total_bytes, leg->bucket_bytes);
+  cell.link_type = lk->link_type;
+  cell.scat.num_elements = scat->num_elements;
+  cell.total_bytes = total_bytes;
+  for (i = 0; i < scat->num_elements; i++)
+  {
+    cell.scat.elements[i].len = scat->elements[i].len;
+    cell.scat.elements[i].buf = new_ref_cnt(PACK_BODY_OBJ);
+    if (cell.scat.elements[i].buf == NULL) {
+        Alarm(EXIT, "Link_Send: failed to allocate buffer\n");
+    }
+    memcpy(cell.scat.elements[i].buf, scat->elements[i].buf, scat->elements[i].len);
+  }
+  stdcarr_push_back(&leg->bucket_buf, &cell);
+
+  Leg_Try_Send_Buffered(leg);
 
   /* Suicide_Count += ret; */
   /* if (Suicide_Count > 16000000) {
@@ -724,6 +817,41 @@ int Link_Send(Link *lk, sys_scatter *scat)
   }*/
 
   return ret;
+}
+
+int Leg_Try_Send_Buffered(Network_Leg *leg)
+{
+  Leg_Buf_Cell *cell;
+  stdit it;
+  int ret = 0;
+  int i;
+
+  while (!stdcarr_empty(&leg->bucket_buf))
+  {
+    stdcarr_begin(&leg->bucket_buf, &it);
+    cell = (Leg_Buf_Cell *)stdcarr_it_val(&it);
+
+    /* If we can't send the next packet, stop */
+    if (cell->total_bytes > leg->bucket_bytes)
+        break;
+
+    Alarm(DEBUG, "Leg_Try_Send_Buffered: sending %d bytes from buffer, %d bytes available\n", cell->total_bytes, leg->bucket_bytes);
+    ret = DL_send(leg->local_interf->channels[cell->link_type], 
+           leg->remote_interf->net_addr,
+           Port + cell->link_type,
+           &cell->scat);
+    leg->bucket_bytes -= cell->total_bytes;
+
+    for (i = 0; i < cell->scat.num_elements; i++)
+    {
+        dec_ref_cnt(cell->scat.elements[i].buf);
+    }
+
+    stdcarr_pop_front(&leg->bucket_buf);
+  }
+
+  return ret;
+
 }
 
 /***********************************************************/
@@ -779,97 +907,58 @@ int32 Relative_Position(int32 base, int32 seq) {
 /*                                                         */
 /***********************************************************/
 
-void Check_Link_Loss(Network_Leg *leg, int16u seq_no) 
+void Check_Link_Loss(Network_Leg *leg, int16u seq_no, int link_type) 
 {
   Loss_Data *l_data;
-  int32      head;
-  int32      tail;
-  int32      sum;
-  int32      i;
+  int16u     i;
+  int16     *seq_ptr;
 
-  /* assert(leg->links[CONTROL_LINK] != NULL); */
   /* DT: bug due to race condition? Possibily caused by hello protocol
    *    not finishing in time when IT_Mode is off */
-  if (leg->links[CONTROL_LINK] != NULL)
+  if (leg->links[CONTROL_LINK] == NULL) {
+    Alarm(PRINT, "Check_Link_Loss: control link == NULL...returning\n");
     return;
+  }
 
   l_data = &((Control_Data*) leg->links[CONTROL_LINK]->prot_data)->l_data;
 
   if (seq_no == 0xffff) {  /* special sequence # used by hello pings (hello sent on dead legs) */
-    goto END;              /* ignore */
+    return;              /* ignore */
   }
 
-  tail = l_data->other_side_tail;
-  head = l_data->other_side_head;
-
-  if (Relative_Position(head, seq_no % PACK_MAX_SEQ) >= 0) {
-    l_data->other_side_head = (seq_no + 1) % PACK_MAX_SEQ;
-
-  } else if (Relative_Position(tail, seq_no % PACK_MAX_SEQ) <= 0) {
-    return;                /* ignore; older than our reorder/loss window */
+  /* Ignore intrusion tolerant link since it sets everything to 0 (IT link does
+   * its own monitoring of loss anyway) */
+  if (link_type == INTRUSION_TOL_LINK) {
+    return;
   }
 
-  /* if seq is more than 4 positions ahead of our "ARU" declare a loss event (implies at least one hole at "ARU" + 1) */
+  /* Get the last sequence number received for this link type */
+  seq_ptr = &l_data->recvd_seqs[link_type];
+  Alarm(DEBUG, "Recvd Seq no %d, head %d, type %d\n", seq_no, *seq_ptr, link_type);
 
-  /* TODO: logic isn't great: 
-     1) we can give a TON of weight to a long history of no losses until it is pushed out of LOSS_HISTORY
-     2) once we declare a loss we run all the way up to seq counting any hole as loss (i.e. - no chance for later reorders to fill)
-     3) history can hang around a LONG time
-  */
- 
-  if (Relative_Position(tail, seq_no % PACK_MAX_SEQ) > 4) {  /* LOSS EVENT!!!! */
-
-    /* calculate and record loss stats */
-
-    l_data->loss_interval[l_data->loss_event_idx % LOSS_HISTORY].received_packets = l_data->received_packets;
-
-    for (sum = 0, i = l_data->other_side_tail + 1; i != seq_no % PACK_MAX_SEQ; i = (i + 1) % PACK_MAX_SEQ) {
-
-      if (l_data->recv_flags[i % MAX_REORDER] == 0) {
-	++sum;
-
-      } else {
-	l_data->recv_flags[i % MAX_REORDER] = 0;
-      }
-    }
-	    
-    l_data->loss_interval[l_data->loss_event_idx % LOSS_HISTORY].lost_packets = sum;
-	    
-    Alarm(DEBUG, "LOSS!!! event: %d; received: %d; lost: %d\n", l_data->loss_event_idx,
-	  l_data->loss_interval[l_data->loss_event_idx % LOSS_HISTORY].received_packets,
-	  l_data->loss_interval[l_data->loss_event_idx % LOSS_HISTORY].lost_packets);
-
-    /* reset records for next loss event */
-		
-    l_data->other_side_tail = l_data->other_side_head;
-    ++l_data->loss_event_idx;
-    l_data->received_packets = 0;
-
-    for (i = 0; i < MAX_REORDER; ++i) {
-      l_data->recv_flags[i % MAX_REORDER] = 0;	    
-    }
+  /* Flag for reset connection: just go ahead and accept whatever sequence
+   * number they give me  */
+  if (*seq_ptr == PACK_MAX_SEQ + 1) {
+    Alarm(PRINT, "Reset connection, seq was: %d, now %d, type %d\n", *seq_ptr, seq_no, link_type);
+    *seq_ptr = seq_no;
+    return;
   }
 
-  /* record receipt */
+  if ((seq_no <= *seq_ptr && *seq_ptr - seq_no < PACK_MAX_SEQ - *seq_ptr + seq_no) ||
+      (seq_no > *seq_ptr && PACK_MAX_SEQ - seq_no + *seq_ptr < seq_no - *seq_ptr)) {
+    /* reordered or duplicate packet: we potentially already counted this
+     * packet as lost, may want to consider reducing the loss rate */
+    Alarm(PRINT, "Reordered packet: seq_no %d, head %d, type %d\n", seq_no, *seq_ptr, link_type);
+    return;
+  } 
 
-  if (l_data->recv_flags[seq_no % MAX_REORDER] == 0) {
-    l_data->recv_flags[seq_no % MAX_REORDER] = 1;
-
-    if (l_data->received_packets < PACK_MAX_SEQ / 2) {  /* NOTE: don't let received_packets grow w/o bound -> avoids rollover and keeps weight of clean history more reasonable */
-      ++l_data->received_packets;
-    }
+  for (i = (*seq_ptr + 1) % PACK_MAX_SEQ; i != seq_no; i = (i+1) % PACK_MAX_SEQ) {
+    l_data->loss_rate = (l_data->loss_rate * LOSS_DECAY_FACTOR) + (1.0 - LOSS_DECAY_FACTOR);
   }
+  l_data->loss_rate = (l_data->loss_rate * LOSS_DECAY_FACTOR);
+  Alarm(DEBUG, "Reset loss rate: %lf\n", l_data->loss_rate);
 
-  /* advance tail if possible */
-
-  while(l_data->recv_flags[(l_data->other_side_tail + 1) % MAX_REORDER] == 1 &&
-	(l_data->other_side_tail + 1) % PACK_MAX_SEQ != l_data->other_side_head) {
-    l_data->recv_flags[l_data->other_side_tail % MAX_REORDER] = 0;
-    l_data->other_side_tail = (l_data->other_side_tail + 1) % PACK_MAX_SEQ;
-  }
-
- END:
-  return;
+  *seq_ptr = seq_no;
 }
 
 /***********************************************************/
@@ -888,28 +977,10 @@ void Check_Link_Loss(Network_Leg *leg, int16u seq_no)
 int32 Compute_Loss_Rate(Network_Leg *leg) 
 {
   Loss_Data *l_data;
-  int        total_recvd;
-  int        total_lost;
-  int        i;
-  int        j;
 
   assert(leg->links[CONTROL_LINK] != NULL);
 
   l_data = &((Control_Data*) leg->links[CONTROL_LINK]->prot_data)->l_data;
-
-  total_recvd = l_data->received_packets;
-  total_lost  = 0;
-
-  for (i = 0, j = MIN(LOSS_HISTORY, l_data->loss_event_idx); i < j; ++i) {
-    total_recvd += l_data->loss_interval[i].received_packets;
-    total_lost  += l_data->loss_interval[i].lost_packets;
-  }
-
-  if (total_recvd + total_lost <= 10) {
-    return UNKNOWN;
-  }
-
-  l_data->loss_rate = (float) total_lost / (total_recvd + total_lost);
 
   return (int32) (LOSS_RATE_SCALE * l_data->loss_rate);
 }
@@ -928,17 +999,84 @@ int32 Compute_Loss_Rate(Network_Leg *leg)
 /*                                                         */
 /***********************************************************/
 
-int16u Set_Loss_SeqNo(Network_Leg *leg) 
+int16u Set_Loss_SeqNo(Network_Leg *leg, int link_type) 
 {
   Loss_Data *l_data;
+  int16 *seq_ptr;
 
   assert(leg->links[CONTROL_LINK] != NULL);
 
   l_data = &((Control_Data*) leg->links[CONTROL_LINK]->prot_data)->l_data;
 
-  if (++l_data->my_seq_no >= PACK_MAX_SEQ) {
-    l_data->my_seq_no = 0;
+  seq_ptr = &l_data->my_seqs[link_type];
+
+  *seq_ptr = *seq_ptr + 1;
+  if (*seq_ptr >= PACK_MAX_SEQ) {
+    *seq_ptr = 0;
   }
 
-  return l_data->my_seq_no;
+  Alarm(DEBUG, "Seq no %d, type %d\n", *seq_ptr, link_type);
+  return *seq_ptr;
+}
+
+/***********************************************************/
+/* void Fill_Leg_Bucket(int dummy, void* input_leg)        */
+/*                                                         */
+/* Method that refills the bucket for this leg             */
+/*  at the specified rate and up to the specified          */
+/*  capacity                                               */
+/*                                                         */
+/*                                                         */
+/* Arguments                                               */
+/*                                                         */
+/* dummy:      not used                                    */
+/* input_leg:  network leg                                 */
+/*                                                         */
+/* Return Value                                            */
+/*                                                         */
+/* NONE                                                    */
+/*                                                         */
+/***********************************************************/
+void Fill_Leg_Bucket(int dummy, void* input_leg)
+{
+    sp_time now, delta;
+    unsigned int to_add;
+    Network_Leg *leg;
+
+    UNUSED(dummy);
+    assert(Leg_Rate_Limit_kbps >= 0);
+    
+    leg = (Network_Leg *)input_leg;
+
+    E_queue(Fill_Leg_Bucket, 0, input_leg, leg_bucket_to);
+
+    if (leg == NULL) {
+        Alarm(PRINT, "Fill_Leg_Bucket: trying to look at NULL leg\r\n");
+        return;
+    }
+
+    if (leg->bucket_bytes > Leg_Bucket_Cap)
+        Alarm(EXIT, "Fill_Leg_Bucket(): Bucket grew larger than max capacity\r\n");
+
+    if (leg->bucket_bytes == Leg_Bucket_Cap) {
+        Alarm(DEBUG, "Fill_Leg_Bucket(): bucket was full!!\r\n");
+        return;
+    }
+
+    now = E_get_time();
+    delta = E_sub_time(now, leg->bucket_last_filled);
+    
+    to_add = (Leg_Rate_Limit_kbps / 8000.0) * (delta.sec * 1000000 + delta.usec);
+    leg->bucket_bytes += to_add;
+    leg->bucket_last_filled = now;
+    Alarm(DEBUG, "Fill_Leg_Bucket(): filled bucket to %d bytes, adding %d bytes\r\n", leg->bucket_bytes, to_add);
+
+    if (leg->bucket_bytes > Leg_Bucket_Cap)
+        leg->bucket_bytes = Leg_Bucket_Cap;
+
+    if (!stdcarr_empty(&leg->bucket_buf) && leg->bucket_bytes > 0)
+    {
+        /* try to send any pkts we can */
+        Leg_Try_Send_Buffered(leg);
+    }
 }

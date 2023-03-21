@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -54,6 +54,7 @@
 #include "signature.h"
 #include "recon.h"
 #include "validate.h"
+#include "proactive_recovery.h"
 
 /* Globally Accessible Variables */
 extern server_variables    VAR;
@@ -62,14 +63,18 @@ extern server_data_struct  DATA;
 extern benchmark_struct    BENCH;
 
 /* Local Functions */
-//int32u PRE_ORDER_Proof_ARU (int32u server, po_aru_signed_message *proof);
-void   PRE_ORDER_Periodically(int dummy, void *dummyp);
 void   PRE_ORDER_Create_TAT_Entry(void);
-void   PRE_ORDER_Periodic_Retrans(int d1, void *d2);
 
 void PRE_ORDER_Periodically(int function_num, void *dummyp)
 {
   sp_time t;
+
+  /* Make sure we are done recovering or resetting before calling this function */
+  /* PRTODO: replace with the nice flag status */
+  /* if (DATA.PR.recovery_status[VAR.My_Server_ID] != PR_NORMAL) {
+    Alarm(PRINT, "PRE_ORDER_Periodically: not done with recovery yet, returning!\n");
+    return;
+  } */
 
   /*SIG_Attempt_To_Generate_PO_Messages();*/
 
@@ -131,6 +136,7 @@ void PRE_ORDER_Periodic_Retrans(int d1, void *d2)
     }
   
     /* Retransmit my latest PO_ARU each time */
+    //printf("Construct PO_ARU from retransmissions. ARU = %u\n", DATA.ORD.ARU);
     po_aru = PRE_ORDER_Construct_PO_ARU();
 
     /* Print vector */
@@ -162,34 +168,43 @@ void PRE_ORDER_Process_Update(signed_message *update)
   payload = (signed_message *)(up_specific + 1);
 
   Alarm(DEBUG, "PO_Process_Update: [%d,%d,%d]\n", up_specific->server_id, 
-                    up_specific->incarnation, up_specific->seq_num);
+                    update->incarnation, up_specific->seq_num);
 
-  if (update->machine_id == VAR.My_Server_ID) {
-    if (up_specific->incarnation != 0 || up_specific->seq_num != 0)
-        return;
-
+  //ps.incarnation = update->incarnation;
+  //ps.seq_num = up_specific->seq_num;
+ 
+  if (update->machine_id == VAR.My_Server_ID && payload->type == CLIENT_STATE_TRANSFER
+        && update->incarnation == 0 && up_specific->seq_num == 0) 
+  {
+    Alarm(DEBUG, "Process_Update: Stamping %u incarnation to my message\n", 
+            DATA.PO.intro_client_seq[VAR.My_Server_ID].incarnation);
     ps = DATA.PO.intro_client_seq[VAR.My_Server_ID];
     ps.seq_num++;
-    up_specific->incarnation = ps.incarnation;
+    update->incarnation = ps.incarnation;
     up_specific->seq_num = ps.seq_num;
     UTIL_RSA_Sign_Message(update);
   }
   else {
-    ps.incarnation = up_specific->incarnation;
+    ps.incarnation = update->incarnation;
     ps.seq_num = up_specific->seq_num;
   }
 
   if (PRE_ORDER_Seq_Compare(ps, DATA.PO.intro_client_seq[up_specific->server_id]) <= 0) 
   {
     Alarm(PRINT, "Duplicate client message [%d,%d,%d]\n", up_specific->server_id, 
-            up_specific->incarnation, up_specific->seq_num);
+            update->incarnation, up_specific->seq_num);
     return;
   }
 
   DATA.PO.intro_client_seq[up_specific->server_id] = ps;
 
-  /* Add the update to the outgoing po_request list  */
-  UTIL_DLL_Add_Data(&DATA.PO.po_request_dll, update);
+  /* Add the update to the outgoing po_request list. Normally, we add updates to the end
+   * of the DLL. But if we are in recovery*/
+  if (update->machine_id == VAR.My_Server_ID && update->monotonic_counter > 0 &&
+        up_specific->seq_num == 1 && DATA.PR.recovery_status[VAR.My_Server_ID] == PR_RECOVERY) 
+    UTIL_DLL_Add_Data_To_Front(&DATA.PO.po_request_dll, update);
+  else 
+    UTIL_DLL_Add_Data(&DATA.PO.po_request_dll, update);
 
   /* Timing PO Duration */
   //DATA.PO.already_timed = 0;
@@ -230,6 +245,14 @@ void PRE_ORDER_Send_PO_Request()
 
     /* Build a new PO_Request */
     po_request = PRE_ORDER_Construct_PO_Request();
+    
+    /* This is the special case where we are recovering but we are not
+     * yet ready to send off our first PO_Request with our TPM-signed update */
+    if (po_request == NULL) {
+        Alarm(PRINT, "Send_PO_Request: first update NOT ready. state=%u\n",
+                DATA.PR.recovery_status[VAR.My_Server_ID]);
+        break;
+    }
 
     /* Broadcast by default.  Only changed if there is a RECON_ATTACK. */
     dest_bits = BROADCAST;
@@ -275,9 +298,9 @@ void PRE_ORDER_Process_PO_Request(signed_message *po_request)
 {
   po_slot *slot;
   po_request_message *po_request_specific;
-  int32u id; //, seq_num;
-  po_seq_pair ps;
-  stdit it;
+  //int32u id; //, seq_num;
+  //po_seq_pair ps;
+  //stdit it;
   
   /* Get the po slot for this message and store the po_request in this slot */
   po_request_specific = (po_request_message*)(po_request+1);
@@ -295,21 +318,32 @@ void PRE_ORDER_Process_PO_Request(signed_message *po_request)
   assert((po_request->machine_id >= 1) &&
      (po_request->machine_id <= NUM_SERVERS));
 
+  /* If this po_request is from an incarnation that is actually higher than
+   * what we've preinstalled for the originating replica, discard it */
+  if (po_request->incarnation > DATA.PR.preinstalled_incarnations[po_request->machine_id]) {
+    Alarm(PRINT, "Discard PO-Request: incarnation %u > preinstalled %u from %u\n",
+            po_request->incarnation, DATA.PR.preinstalled_incarnations[po_request->machine_id], 
+            po_request->machine_id);
+    return;
+  }
+
   /* Special Check: For new incarnation of this machine, we want to 
    * update our own data structures to reflect the incarnation change
    * and be ready to start ACKing po_requests from this new one */
+  #if 0
   ps.incarnation = po_request_specific->seq.incarnation;
   ps.seq_num = 0;
   if (ps.incarnation > DATA.PO.aru[po_request->machine_id].incarnation) {
-    /* printf("  PO_Request from %u with new incarnation = %u, old = %u\n",
+    printf("  PO_Request from %u with new incarnation = %u, old = %u\n",
             po_request->machine_id,
-            ps.incarnation, DATA.PO.aru[po_request->machine_id].incarnation); */
+            ps.incarnation, DATA.PO.aru[po_request->machine_id].incarnation);
     DATA.PO.max_acked[po_request->machine_id] = ps;
     DATA.PO.aru[po_request->machine_id] = ps;
     DATA.PO.cum_aru[po_request->machine_id] = ps;
     /* MAYBE - update my own cum_max_acked, although should be filled in
         by processing my own PO_Ack */
   }
+  #endif
 
   slot = UTIL_Get_PO_Slot(po_request->machine_id, po_request_specific->seq);
 
@@ -331,15 +365,18 @@ void PRE_ORDER_Process_PO_Request(signed_message *po_request)
 
   slot->num_events = po_request_specific->num_events;
 
+  /* Moved to Cum_ARU function */
   /* See if we were missing this PO-Request when it became eligible for
    * local execution.  If so, mark that we have it.  Then, if this means
    * we can execute the next global sequence number, try. */
-  id             = po_request->machine_id;
+  /* id             = po_request->machine_id;
   ps.incarnation = po_request_specific->seq.incarnation;
   ps.seq_num     = po_request_specific->seq.seq_num;
   stdhash_find(&DATA.PO.Pending_Execution[id], &it, &ps);
 
-  if(!stdhash_is_end(&DATA.PO.Pending_Execution[id], &it)) {
+  if(!stdhash_is_end(&DATA.PO.Pending_Execution[id], &it) && 
+       PRE_ORDER_Seq_Compare(DATA.PO.cum_aru[id], ps) >= 0) 
+  {
     ord_slot *o_slot;
 
     o_slot = *((ord_slot **)stdhash_it_val(&it));
@@ -359,10 +396,22 @@ void PRE_ORDER_Process_PO_Request(signed_message *po_request)
     }
 
     Alarm(DEBUG, "Filled hole\n");
-  }
+  } */
 
-  if(!SEND_PO_ACKS_PERIODICALLY)
+  /* If I am recovering, do not send PO_Acks yet since they cannot be useful until my 
+   * incarnation is installed */
+  if (DATA.PR.recovery_status[VAR.My_Server_ID] != PR_NORMAL)
+    return;
+
+  if(!SEND_PO_ACKS_PERIODICALLY) {
+    /* Make sure we are done recovering or resetting before calling this function */
+    /* PRTODO: replace with the nice flag status */
+    /* if (DATA.PR.recovery_status[VAR.My_Server_ID] != PR_NORMAL) {
+        Alarm(PRINT, "PRE_ORDER_Process_Ack: not done with recovery yet, returning!\n");
+        return;
+    } */
     PRE_ORDER_Send_PO_Ack();
+  }
 }
 
 void PRE_ORDER_Send_PO_Ack()
@@ -378,6 +427,9 @@ void PRE_ORDER_Send_PO_Ack()
     if(time < (PO_PERIODICALLY_USEC / 1000000.0) * PO_ACK_PERIOD)
       return;
   }
+  
+  if (DATA.PR.recovery_status[VAR.My_Server_ID] != PR_NORMAL)
+    return;
 
   /*  First make sure our local Pre-Order ARU is up to date. */
   PRE_ORDER_Update_ARU();
@@ -434,52 +486,113 @@ int32u PRE_ORDER_Update_ARU()
 
 void PRE_ORDER_Process_PO_Ack(signed_message *po_ack)
 {
-  po_slot *slot;
   po_ack_message *po_ack_specific;
   po_ack_part *part;
   int32u p;
+
+  /* If this po_ack is from an incarnation that is actually higher than
+   * what we've preinstalled for the sending replica, discard it */
+  if (po_ack->incarnation > DATA.PR.preinstalled_incarnations[po_ack->machine_id]) {
+    Alarm(PRINT, "Discard PO-ACK: incarnation %u > preinstalled %u from %u\n",
+            po_ack->incarnation, DATA.PR.preinstalled_incarnations[po_ack->machine_id], 
+            po_ack->machine_id);
+    return;
+  }
 
   /* Iterate over each ack in the aggregate PO-Ack, and apply it to
    * the correct po slot */
   Alarm(DEBUG, "PO_Ack from %d\n", po_ack->machine_id);
 
   po_ack_specific = (po_ack_message *)(po_ack+1);
-  part            = (po_ack_part *)(po_ack_specific+1);
+  part            = (po_ack_part *)(po_ack_specific + 1);
 
   for (p = 0; p < po_ack_specific->num_ack_parts; p++) {
-
-    /* Mark if I can use this to increase my knowledge of which PO-Requests
-     * from originator it has contiguously received and acknowledged. */
-    if(PRE_ORDER_Seq_Compare(part[p].seq, 
-        DATA.PO.cum_max_acked[po_ack->machine_id][part[p].originator]) > 0)
-    {
-      Alarm(DEBUG, "Updating cum_max_acked[%u][%u] from %u %u to %u %u\n", 
-            po_ack->machine_id, part[p].originator, 
-            DATA.PO.cum_max_acked[po_ack->machine_id][part[p].originator].incarnation, 
-            DATA.PO.cum_max_acked[po_ack->machine_id][part[p].originator].seq_num, 
-            part[p].seq.incarnation, part[p].seq.seq_num);
-      DATA.PO.cum_max_acked[po_ack->machine_id][part[p].originator] = part[p].seq;
-    }
-
-    /* If we've already garbage collected this slot, don't do anything */
-    if(PRE_ORDER_Seq_Compare(part[p].seq, 
-            DATA.PO.white_line[part[p].originator]) <= 0) 
-    {
-      continue;
-    }
-
-    slot = UTIL_Get_PO_Slot(part[p].originator, part[p].seq);
-    if(!slot->ack_received[po_ack->machine_id]) {
-      slot->ack_received[po_ack->machine_id] = 1;
-      memcpy(&slot->ack[po_ack->machine_id], &part[p], sizeof(po_ack_part));
-      Alarm(DEBUG, "Received ack from %u for %u %u for %u\n", po_ack->machine_id, 
-            part[p].seq.incarnation, part[p].seq.seq_num, part[p].originator);
-      PRE_ORDER_Update_Cum_ARU(part[p].originator);
-    }
+    PRE_ORDER_Process_PO_Ack_Part(&part[p], po_ack);
   }
 
   if(!SEND_PO_ARU_PERIODICALLY)
     PRE_ORDER_Send_PO_ARU();
+}
+
+void PRE_ORDER_Process_PO_Ack_Part(po_ack_part *part, signed_message *po_ack)
+{
+    int32u sender, *vector_ptr, use_snapshot;
+    //int32u i;
+    po_ack_message *po_ack_specific;
+    po_slot *slot;
+
+    sender = po_ack->machine_id;
+    po_ack_specific = (po_ack_message *)(po_ack + 1);
+
+    slot = UTIL_Get_PO_Slot_If_Exists(part->originator, part->seq);
+    if (slot == NULL || slot->snapshot == 0) {
+        vector_ptr = DATA.PR.preinstalled_incarnations + 1;
+        use_snapshot = 0;
+    }
+    else {
+        vector_ptr = slot->preinstalled_snapshot + 1;
+        use_snapshot = 1;
+    }
+
+    /* First, check if the preinstalled vector on this ack part matches
+     * my knowledge of the preinstalled incarnations of each of the replicas.
+     * Only accept this message if this check succeeds */
+    if (memcmp(po_ack_specific->preinstalled_incarnations, 
+                vector_ptr,
+                NUM_SERVERS * sizeof(int32u)) != 0) 
+    {
+
+        if(PRE_ORDER_Seq_Compare(part->seq, DATA.PO.white_line[part->originator]) <= 0) 
+            return;
+
+        Alarm(DEBUG, "Process_PO_Ack_Part: mismatch preinstall vector from %u on "
+                "%u:[%u,%u] snap=%u, cum_aru[%u,%u]:\n", 
+                sender, part->originator, part->seq.incarnation,
+                part->seq.seq_num, use_snapshot, 
+                DATA.PO.cum_aru[part->originator].incarnation,
+                DATA.PO.cum_aru[part->originator].seq_num);
+        /* printf("\t\tmine = [");
+        for (i = 0; i < NUM_SERVERS; i++) {
+            printf("%u, ", vector_ptr[i]);
+        }
+        printf("]\n");
+        printf("\t\tackd = [");
+        for (i = 0; i < NUM_SERVERS; i++) {
+            printf("%u, ", po_ack_specific->preinstalled_incarnations[i]);
+        }
+        printf("]\n"); */
+        return;
+    }
+
+    /* Mark if I can use this to increase my knowledge of which PO-Requests
+     * from originator it has contiguously received and acknowledged. */
+    if(PRE_ORDER_Seq_Compare(part->seq, DATA.PO.cum_max_acked[sender][part->originator]) > 0)
+    {
+      Alarm(DEBUG, "Updating cum_max_acked[%u][%u] from %u %u to %u %u\n", 
+            sender, part->originator, 
+            DATA.PO.cum_max_acked[sender][part->originator].incarnation, 
+            DATA.PO.cum_max_acked[sender][part->originator].seq_num, 
+            part->seq.incarnation, part->seq.seq_num);
+      DATA.PO.cum_max_acked[sender][part->originator] = part->seq;
+    }
+
+    /* If we haven't garbage collected this slot yet, we need to store it. Otherwise, skip it */
+    if(PRE_ORDER_Seq_Compare(part->seq, 
+            DATA.PO.white_line[part->originator]) > 0) 
+    {
+        slot = UTIL_Get_PO_Slot(part->originator, part->seq);
+        if(!slot->ack_received[sender]) {
+          slot->ack_received[sender] = 1;
+          slot->ack[sender] = po_ack;
+          inc_ref_cnt(po_ack);
+          slot->ack_part[sender] = part;
+          /* slot->ack[sender] = UTIL_New_Signed_Message();
+          memcpy(slot->ack[sender], ack_part, UTIL_Message_Size(ack_part)); */
+          Alarm(DEBUG, "Received ack from %u for %u %u for %u\n", sender, 
+                part->seq.incarnation, part->seq.seq_num, part->originator);
+          PRE_ORDER_Update_Cum_ARU(part->originator);
+        }
+    }
 }
 
 void PRE_ORDER_Send_PO_ARU()
@@ -499,6 +612,10 @@ void PRE_ORDER_Send_PO_ARU()
   if(DATA.PO.cum_aru_updated == 0)
     return;
 
+  if (DATA.PR.recovery_status[VAR.My_Server_ID] != PR_NORMAL)
+    return;
+
+  //printf("Construct PO_ARU from normal. ARU = %u\n", DATA.ORD.ARU);
   ack = PRE_ORDER_Construct_PO_ARU();
   assert(ack);
 
@@ -526,12 +643,23 @@ void PRE_ORDER_Update_Cum_ARU(int32u server_id)
   int32u s, i, ack_count;
   po_slot *slot;
   po_seq_pair ps;
+  stdit it;
 
   /* Attempt to update the pre order cumulative aru for server_id s */
   s = server_id;
   
-  ps = DATA.PO.cum_aru[s];
+  /* ps = DATA.PO.cum_aru[s];
+  ps.seq_num++; */
+
+  if (DATA.PR.preinstalled_incarnations[s] > DATA.PO.cum_aru[s].incarnation) {
+    ps.incarnation = DATA.PR.preinstalled_incarnations[s];
+    ps.seq_num = 0;
+  }
+  else {
+    ps = DATA.PO.cum_aru[s];
+  }
   ps.seq_num++;
+
   while((slot = UTIL_Get_PO_Slot_If_Exists(s, ps))!= NULL) {
       
     /* Make sure we have the PO Request */
@@ -545,7 +673,7 @@ void PRE_ORDER_Update_Cum_ARU(int32u server_id)
         if (slot->ack_received[i] == 0)
             continue;
     
-        if (!OPENSSL_RSA_Digests_Equal(slot->po_request_digest, slot->ack[i].digest))
+        if (!OPENSSL_RSA_Digests_Equal(slot->po_request_digest, slot->ack_part[i]->digest))
         {
             Alarm(PRINT, "DIGEST ERROR (Update_Cum_ARU: %u %u %u %u)\n", ps.incarnation, 
                         ps.seq_num, i, s);
@@ -561,9 +689,65 @@ void PRE_ORDER_Update_Cum_ARU(int32u server_id)
     }
 
     /* Enough acks found for server s*/
-    DATA.PO.cum_aru[s].seq_num++; 
-    ps.seq_num++;
+
+    /* If there is not already a snapshot, create the preinstalled_incarnation snapshot, 
+     *  which should be coming from my own knowledge */
+    if (slot->snapshot == 0) {
+        for (i = 1; i <= NUM_SERVERS; i++)
+            slot->preinstalled_snapshot[i] = DATA.PR.preinstalled_incarnations[i];
+        slot->snapshot = 1;
+    }
+
+    /* PRTODO: check that there are enough matching preinstalled incarnation vectors */
+    /* slot->po_cert = CATCH_Construct_PO_Certificate(s, slot);
+    UTIL_RSA_Sign_Message(slot->po_cert); */
+
+    /* Use MT Batching for these certs as well */
+    /* cert = CATCH_Construct_PO_Certificate(s, slot);
+    dest_bits = 0;
+    SIG_Add_To_Pending_Messages(cert, dest_bits, UTIL_Get_Timeliness(PO_CERT));
+    dec_ref_cnt(cert); */
+
+    /* This will be signed later if needed by a replica for catchup */
+    slot->po_cert = CATCH_Construct_PO_Certificate(s, slot);
+
+    DATA.PO.cum_aru[s] = ps; 
     DATA.PO.cum_aru_updated = 1;
+
+    /* PRTODO: we *could* add a check here to increase max_acked for this server,
+     * now that the cum_aru covers it. Then, PO Certs could help people that still
+     * need acks - however, this would open us to some potential timing issues,
+     * where some replicas fall behind a little and have to wait for catchup to
+     * pre_order things - not so nice */
+    
+    /* See if we were missing this PO-Request / Cum_ARU when it became eligible for
+     * local execution.  If so, mark that we have it.  Then, if this means
+     * we can execute the next global sequence number, try. */
+    stdhash_find(&DATA.PO.Pending_Execution[s], &it, &ps);
+  
+    if(!stdhash_is_end(&DATA.PO.Pending_Execution[s], &it) && 
+         PRE_ORDER_Seq_Compare(DATA.PO.cum_aru[s], ps) >= 0) 
+    {
+      ord_slot *o_slot;
+  
+      o_slot = *((ord_slot **)stdhash_it_val(&it));
+      dec_ref_cnt(o_slot);
+      stdhash_erase_key(&DATA.PO.Pending_Execution[s], &ps);
+      o_slot->num_remaining_for_execution--;
+  
+      assert(o_slot->num_remaining_for_execution >= 0);
+  
+      Alarm(PRINT, "Filling PO hole: %d %d %d\n", 
+                s, ps.incarnation, ps.seq_num);
+  
+      if(o_slot->num_remaining_for_execution == 0) {
+        sp_time t;
+        t.sec = 0; t.usec = 0;
+        E_queue(ORDER_Attempt_To_Execute_Pending_Commits, 0, 0, t);
+      }
+    }
+
+    ps.seq_num++;
   }
 }
 
@@ -587,6 +771,7 @@ void PRE_ORDER_Process_PO_ARU(signed_message *mess)
    * constitutes the proof */
   Alarm(DEBUG, "PO_ARU from %d\n", mess->machine_id);
 
+  /* Obsolete? */
   /* ESTCP - Potentially need separate storage space and flag for 
    * last stored PO_ARU if you roll a replica with new incarnation
    * back after an ordering/execution - since the rollback is not
@@ -597,11 +782,23 @@ void PRE_ORDER_Process_PO_ARU(signed_message *mess)
   prev = &(DATA.PO.cum_acks[mess->machine_id]);
 
   /* Ignore old PO_ARUs */
-  /* num      = ((po_aru_message*)(mess+1))->num;
-  prev_num = prev->cum_ack.num;
+  if (cur->header.incarnation == prev->header.incarnation && cur->cum_ack.num <= prev->cum_ack.num)
+    return;
 
-  if (num <= prev_num)
-    return;  */
+  if (cur->header.incarnation < DATA.PR.preinstalled_incarnations[mess->machine_id]) {
+    Alarm(DEBUG, "recv'd OLD PO_ARU message for %u. mess = %u < preinstalled = %u, stored = %u\n", 
+            mess->machine_id, cur->header.incarnation, 
+            DATA.PR.preinstalled_incarnations[mess->machine_id], prev->header.incarnation);
+    return;
+  }
+
+  /* Ignore too new PO_ARUs (until you're ready) */
+  if (cur->header.incarnation > DATA.PR.installed_incarnations[mess->machine_id]) {
+    Alarm(PRINT, "recv'd FUTURE PO_ARU message for %u. mess = %u > installed = %u\n", 
+            mess->machine_id, cur->header.incarnation, 
+            DATA.PR.installed_incarnations[mess->machine_id]);
+    return;
+  }
 
   /* Compare this PO_ARU with the last one I have stored. If its a new incarnation,
    * its automatically higher. If its an old incarnation, automatically lower. 
@@ -612,7 +809,7 @@ void PRE_ORDER_Process_PO_ARU(signed_message *mess)
    * could actually be of mine. Then its true the bad replica can block, but
    * only up to that fixed spot ahead in time. */
   lower = higher = 0;
-  if (cur->cum_ack.incarnation < prev->cum_ack.incarnation) {
+  if (cur->header.incarnation < prev->header.incarnation) {
     lower = 1;
   }
   else {
@@ -631,9 +828,9 @@ void PRE_ORDER_Process_PO_ARU(signed_message *mess)
   }
 
   if (higher && lower) {
-    if (cur->cum_ack.incarnation > prev->cum_ack.incarnation) {
-      Alarm(PRINT, "Process_PO_ARU: new incarnation for %u, must catch up\n", 
-                mess->machine_id);
+    if (cur->header.incarnation > prev->header.incarnation) {
+      Alarm(PRINT, "Process_PO_ARU: New incarnation (%u, %u) + lower - was compromised?\n",
+            mess->machine_id, cur->header.incarnation);
     }
     else {
       Alarm(PRINT, "Process_PO_ARU: INCONSISTENT PO_ARU from %d. Blacklist!\n", 
@@ -647,11 +844,13 @@ void PRE_ORDER_Process_PO_ARU(signed_message *mess)
   }
   else if (higher && UTIL_I_Am_Leader()) {
       DATA.ORD.should_send_pp = 1;
+      //printf("  Should Send PP set to 1\n");
   }
-    
+  
+  DATA.PO.new_po_aru = 1;
   memcpy( (void*)( &DATA.PO.cum_acks[mess->machine_id]),
         (void*)mess, sizeof(po_aru_signed_message));
-  
+ 
   /* if (DATA.PO.already_timed == 0) {
     count = 0;
     for (i = 1; i <= NUM_SERVERS; i++) {
@@ -701,15 +900,26 @@ void PRE_ORDER_Send_Proof_Matrix()
       return;
   }
 
-  if (PRE_ORDER_Latest_Proof_Sent() || DATA.VIEW.view_change_done == 0) {
-    /* already sent the latest proof, don't send it again */
+  /* If we haven't received any new PO_ARU vectors since the last time
+   * we sent a Proof Matrix, of if we are currently in a view change,
+   * don't send this Proof Matrix */
+  if (DATA.PO.new_po_aru == 0 || DATA.VIEW.view_change_done == 0) {
     return;
   }
+
+  /* if(PRE_ORDER_Latest_Proof_Sent())
+    return; */
+  /* Check if there are any po_requests that became
+   * eligible for execution (sorting the columns in the matrix).
+   * If so, this returns TRUE and updates max_num_sent_in_proof */
+  if(!PRE_ORDER_Latest_Proof_Updated())
+    return;
 
   PRE_ORDER_Construct_Proof_Matrix(mset, &num_parts);
 
   /* We are definitely sending the proof */
-  PRE_ORDER_Update_Latest_Proof_Sent();
+  //PRE_ORDER_Update_Latest_Proof_Sent();
+  DATA.PO.new_po_aru = 0;
 
   /* Create DLL entry for measuring TAT of this proof matrix */
   PRE_ORDER_Create_TAT_Entry();
@@ -747,6 +957,25 @@ void PRE_ORDER_Send_Proof_Matrix()
   UTIL_Stopwatch_Start(&DATA.PO.proof_matrix_sw);
 }
 
+bool PRE_ORDER_Latest_Proof_Updated() 
+{
+  int32u s, ret;
+  po_seq_pair ps;
+  
+  /* We are sending a proof based on the current local po_arus */
+  ret = FALSE;
+  for (s = 1; s <= NUM_SERVERS; s++) {
+    ps = PRE_ORDER_Proof_ARU(s, DATA.PO.cum_acks+1);
+    if(PRE_ORDER_Seq_Compare(ps, DATA.PO.max_num_sent_in_proof[s]) > 0) {
+      DATA.PO.max_num_sent_in_proof[s] = ps;
+      ret = TRUE;
+    }
+  }
+
+  return ret;
+}
+
+#if 0
 bool PRE_ORDER_Latest_Proof_Sent() 
 {
   int32u s;
@@ -758,13 +987,186 @@ bool PRE_ORDER_Latest_Proof_Sent()
   for (s = 1; s <= NUM_SERVERS; s++) {
     ps = PRE_ORDER_Proof_ARU(s, DATA.PO.cum_acks+1);
     if(PRE_ORDER_Seq_Compare(ps, DATA.PO.max_num_sent_in_proof[s]) > 0) {
+      /* printf("  [%u]  (%u,%u) > (%u,%u)\n", s, ps.incarnation, ps.seq_num,
+                   DATA.PO.max_num_sent_in_proof[s].incarnation, DATA.PO.max_num_sent_in_proof[s].seq_num); */
       return FALSE;
     }
   }
 
   return TRUE;
 }
+#endif
 
+po_seq_pair PRE_ORDER_Proof_ARU(int32u server, po_aru_signed_message *proof) 
+{
+  int32u s, count, quorum, incarn, left, right, curr;
+  po_seq_pair ps, cack[NUM_SERVER_SLOTS];
+
+  /* First, grab each entry in the "column" for this server */
+  for (s = 1; s <= NUM_SERVERS; s++)
+    cack[s] = proof[s-1].cum_ack.ack_for_server[server-1];
+
+  /* Sort the values */
+  qsort( (void*)(cack+1), NUM_SERVERS, sizeof(po_seq_pair), poseqcmp);
+
+  /* Now, start marching through the sorted array, and find out if we
+   * have at least 2f+k+1 matching incarnation values. If so, our job
+   * is to setup a Left and Right endmark, which indicates the range
+   * of entries that we should consider when choosing the `2f+k+1`th 
+   * from the top. */
+  
+  /* Setup initial values */
+  quorum = 0;
+  count  = 0;
+  left   = 1;
+  right  = NUM_SERVERS;
+  curr   = left;
+  incarn = cack[left].incarnation;
+
+  /* Search until we hit the right boundary */
+  while (curr <= right) {
+
+    /* If we have a match, increase the count, and check if we now
+     * have a quorum */
+    if (cack[curr].incarnation == incarn) {
+      count++;
+      if (count >= 2*VAR.F + VAR.K + 1) {
+        quorum = 1;
+      }
+    }
+
+    /* If there was no match, we either switch our working 
+     * incarnation value if we have yet to find a quorum, or
+     * we know that we've reached the end of the quorum
+     * block, so adjust right accordingly */
+    else {
+      if (quorum == 0) {
+        incarn = cack[curr].incarnation;
+        count = 1;
+        left = curr;
+      }
+      else {
+        right = curr - 1;
+      }
+    }
+
+    curr++;
+  }
+
+  /* If we have a quorum, return the correct value.
+   * Otherwise, we will return 0 */
+  if (quorum == 1) 
+  {
+    ps = cack[right - (2*VAR.F + VAR.K)];
+  }
+  else {
+    ps.incarnation = 0;
+    ps.seq_num = 0;
+  }
+
+  return ps;
+}
+
+#if 0
+po_seq_pair PRE_ORDER_Proof_ARU(int32u server, po_aru_signed_message *proof) 
+{
+  int32u s, idx, key, tally, *tally_ptr, quorum;
+  po_seq_pair ps, cack[NUM_SERVER_SLOTS];
+  stdit it;
+
+  /* Proof ARU. Since entries may now span across different incarnations, we
+   * need to find out if we have at least 2f+k+1 entries from the same
+   * incarnation. We use a hash table (populated/emptied each time the 
+   * function is called) to keep a tally of which incarnations are present.
+   * If we get >= 2f+k+1 of any one incarnation, we can sort those and pick
+   * the 2f+k+1 from tne top. Otherwise, we just return what we had 
+   * from earlier as no new information was present */
+
+  for (s = 1; s <= NUM_SERVERS; s++) {
+    /* We are not adding a row (vector's) contribution
+     * if the vector is from a stale incarnation - that is, the vector is from
+     * an incarnation that is older than what we know is installed for that
+     * replica. This would allow us to keep a tigher bound on when the
+     * replica is considered done recovering */
+    if (proof[s-1].header.incarnation < DATA.PR.installed_incarnations[s])
+        continue;
+   
+    ps = proof[s-1].cum_ack.ack_for_server[server-1];
+
+    /* If this is the first time the incarnation is added to the hash table,
+     * create a new entry with tally == 1*/
+    stdhash_find(&DATA.PO.incarnation_tally, &it, &ps.incarnation);
+    if (stdhash_is_end(&DATA.PO.incarnation_tally, &it)) {
+      tally = 1;
+      stdhash_insert(&DATA.PO.incarnation_tally, &it, &ps.incarnation, &tally);
+    }
+    /* Otherwise, grab the entry and increment the tally */
+    else {
+      tally_ptr = (int32u *)stdit_val(&it);
+      (*tally_ptr)++;
+    }
+  }
+
+  /* Now, check if we have at least 2f+k+1 tallies for an incarnation */
+  //printf("Proof_ARU_test:\n"); 
+  quorum = 0;
+  for (stdhash_begin(&DATA.PO.incarnation_tally, &it); 
+      !stdhash_is_end(&DATA.PO.incarnation_tally, &it); stdit_next(&it))
+  {
+    key   = *(int32u *)stdit_key(&it);
+    tally = *(int32u *)stdit_val(&it);
+    //printf("    Proof_ARU: %u  %u\n", key, tally);
+    if (tally >= 2*VAR.F + VAR.K + 1) {
+      quorum = 1;
+      break;
+    }
+  }
+
+  /* if we have a quorum, find the "tally" number of seq_pairs that
+   * match key, and sort them to find the eligible value */
+  if (quorum == 1) {
+    for (s = 1, idx = 1; s <= NUM_SERVERS; s++) {
+      if (proof[s-1].header.incarnation < DATA.PR.installed_incarnations[s])
+        continue;
+      ps = proof[s-1].cum_ack.ack_for_server[server-1];
+      if (ps.incarnation == key) {
+        cack[idx] = ps; 
+        idx++;
+      }  
+    }
+    assert(idx == tally + 1);
+    /* if (idx != tally + 1) {
+        printf("idx = %u, tally+1 = %u\n", idx, tally+1);
+        int32u i;
+        for (i = 1; i <= NUM_SERVERS; i++) {
+            printf("[%u]  po_aru = %u,  installed = %u\n",
+                i, proof[i-1].header.incarnation, DATA.PR.installed_incarnations[i]);
+        }
+    } */
+    qsort( (void*)(cack+1), tally, sizeof(po_seq_pair), poseqcmp);
+    ps = cack[tally - (2*VAR.F + VAR.K)];
+  }
+  else {
+    ps.incarnation = 0;
+    ps.seq_num = 0;
+  }
+
+  /*printf("  PO_Proof_ARU: [ ");
+  for (s = 1; s <= NUM_SERVERS; s++)
+    printf("(%u, %u) ", cack[s].incarnation, cack[s].seq_num);
+  printf("]\n");*/
+
+  /* sort the values */
+  //qsort( (void*)(cack+1), NUM_SERVERS, sizeof(po_seq_pair), poseqcmp);
+
+  /* clear out the hash table for next time */
+  stdhash_clear(&DATA.PO.incarnation_tally);
+
+  return ps;
+}
+#endif
+
+#if 0
 po_seq_pair PRE_ORDER_Proof_ARU(int32u server, po_aru_signed_message *proof) 
 {
   int32u s;
@@ -785,7 +1187,9 @@ po_seq_pair PRE_ORDER_Proof_ARU(int32u server, po_aru_signed_message *proof)
 
   return cack[NUM_F + NUM_K + 1];
 }
+#endif
 
+#if 0
 void PRE_ORDER_Update_Latest_Proof_Sent() 
 {
   int32u s;
@@ -800,6 +1204,7 @@ void PRE_ORDER_Update_Latest_Proof_Sent()
     }
   }
 }
+#endif
 
 void PRE_ORDER_Create_TAT_Entry()
 {
@@ -819,7 +1224,6 @@ void PRE_ORDER_Create_TAT_Entry()
 
 void PRE_ORDER_Process_Proof_Matrix(signed_message *mess)
 {
-
   int32u s;
   po_aru_signed_message *cum_ack;
   proof_matrix_message *pm_specific;
@@ -850,6 +1254,7 @@ void PRE_ORDER_Process_Proof_Matrix(signed_message *mess)
 
 void PRE_ORDER_Garbage_Collect_PO_Slot(int32u server_id, po_seq_pair seq, int erase)
 {
+  int32u i;
   po_slot *slot;
   recon_slot *r_slot;
 
@@ -867,6 +1272,16 @@ void PRE_ORDER_Garbage_Collect_PO_Slot(int32u server_id, po_seq_pair seq, int er
   if (slot->po_request != NULL)
     dec_ref_cnt(slot->po_request);
 
+  /* Clean out the po_ack_parts */
+  for (i = 1; i <= NUM_SERVERS; i++) {
+    if (slot->ack[i] != NULL)
+      dec_ref_cnt(slot->ack[i]);
+  }
+
+  /* Clean out the po_certificate */
+  if (slot->po_cert != NULL)
+    dec_ref_cnt(slot->po_cert);
+
   /* Now remove the slot itself */
   dec_ref_cnt(slot);
   if (erase) {
@@ -882,7 +1297,7 @@ void PRE_ORDER_Garbage_Collect_PO_Slot(int32u server_id, po_seq_pair seq, int er
   
   /* Sanity Check and FIX - Tom & Amy */
   if (PRE_ORDER_Seq_Compare(seq, DATA.PO.cum_aru[server_id]) > 0) {
-    Alarm(DEBUG, "\tSHOULD NOT HAPPEN: White_line %d,%d surpassed cum_aru %d,%d "
+    Alarm(PRINT, "\tSHOULD NOT HAPPEN: White_line %d,%d surpassed cum_aru %d,%d "
                     "for server %d, fixing manually\n",
                     seq.incarnation, seq.seq_num, 
                     DATA.PO.cum_aru[server_id].incarnation,
@@ -921,7 +1336,6 @@ int PRE_ORDER_Seq_Compare(po_seq_pair p1, po_seq_pair p2)
 void PRE_ORDER_Initialize_Data_Structure()
 {
   int32u s, s2;
-  sp_time now;
   po_seq_pair zero_ps;
 
   //DATA.PO.debug_drop = 1;
@@ -929,13 +1343,10 @@ void PRE_ORDER_Initialize_Data_Structure()
   zero_ps.incarnation = 0;
   zero_ps.seq_num = 0;
 
-  /* Grab a new incarnation, and setup our own sequence information */
-  now = E_get_time();
-
-  DATA.PO.po_seq.incarnation = now.sec;
+  DATA.PO.po_seq.incarnation = DATA.PR.new_incarnation_val[VAR.My_Server_ID];
   DATA.PO.po_seq.seq_num  = 0;
 
-  DATA.PO.po_seq_executed.incarnation = now.sec;
+  DATA.PO.po_seq_executed.incarnation = DATA.PR.new_incarnation_val[VAR.My_Server_ID];
   DATA.PO.po_seq_executed.seq_num = 0;
 
   DATA.PO.po_aru_num      = 0;
@@ -945,11 +1356,15 @@ void PRE_ORDER_Initialize_Data_Structure()
     DATA.PO.intro_client_seq[s]  = zero_ps;
     //DATA.PO.exec_client_seq[s]   = zero_ps;
   }
-  DATA.PO.intro_client_seq[VAR.My_Server_ID].incarnation = now.sec;
+  DATA.PO.intro_client_seq[VAR.My_Server_ID].incarnation =  DATA.PR.new_incarnation_val[VAR.My_Server_ID];
+
+  DATA.PO.po_ack_start_server = 0;
+  DATA.PO.po_ack_start_seq = zero_ps;
 
   /* Setup ACK and ARU information */
   for (s = 1; s <= NUM_SERVERS; s++) {
     /* for each server, */
+    DATA.PO.last_executed_po_reqs[s] = zero_ps;
     DATA.PO.max_acked[s]             = zero_ps;
     DATA.PO.aru[s]                   = zero_ps;
     DATA.PO.cum_aru[s]               = zero_ps;
@@ -962,9 +1377,21 @@ void PRE_ORDER_Initialize_Data_Structure()
 
   /* new progress flag */
   DATA.PO.cum_aru_updated = 0;
+  DATA.PO.new_po_aru = 0;
 
-  memset(DATA.PO.cum_acks, (sizeof(po_aru_signed_message ) *
-			    NUM_SERVER_SLOTS), 0);
+  memset(DATA.PO.cum_acks, 0, (sizeof(po_aru_signed_message ) * NUM_SERVER_SLOTS));
+
+  /* DEBUG */
+  /* int32u i, j;
+  po_seq_pair ps = {0, 0};
+  for (i = 1; i <= NUM_SERVERS; i++) {
+      for (j = 0; j < NUM_SERVERS; j++) {
+          if (PRE_ORDER_Seq_Compare(DATA.PO.cum_acks[i].cum_ack.ack_for_server[j], ps) != 0)
+              Alarm(PRINT, "PO_Init: cum_acks[%u].ack[%u] = (%u,%u) != (0,0)\n", i, j,
+                          DATA.PO.cum_acks[i].cum_ack.ack_for_server[j].incarnation,
+                          DATA.PO.cum_acks[i].cum_ack.ack_for_server[j].seq_num);
+      }    
+  } */
   
   /* Construct the local PO History */
   for (s = 1; s <= NUM_SERVERS; s++) {
@@ -975,6 +1402,8 @@ void PRE_ORDER_Initialize_Data_Structure()
     stdhash_construct(&DATA.PO.Recon_History[s], sizeof(po_seq_pair),
 		      sizeof(recon_slot *), NULL, NULL, 0);
   }
+  stdhash_construct(&DATA.PO.incarnation_tally, sizeof(int32u),
+            sizeof(int32u), NULL, NULL, 0);
 
   UTIL_Stopwatch_Start(&DATA.PO.po_request_sw);
   UTIL_Stopwatch_Start(&DATA.PO.po_ack_sw);
@@ -986,9 +1415,53 @@ void PRE_ORDER_Initialize_Data_Structure()
 
   UTIL_DLL_Initialize(&DATA.PO.po_request_dll);
   UTIL_DLL_Initialize(&DATA.PO.proof_matrix_dll);
+  UTIL_DLL_Initialize(&DATA.PO.ack_batch_dll);
+
+  DATA.PO.Nested_Ignore_Incarnation = 0;
 
   /* Start trying to periodically send Pre-Order messages */
-  PRE_ORDER_Periodically(0, NULL);
+  /* PRTODO - move this until after recovery (or reset) is done */
+  // PRE_ORDER_Periodically(0, NULL);
+  // PRE_ORDER_Periodic_Retrans(0, NULL);
+}
 
-  PRE_ORDER_Periodic_Retrans(0, NULL);
+void PRE_ORDER_Upon_Reset()
+{
+    int32u i;
+    stdit it;
+    po_slot *p_slot;
+    ord_slot *o_slot;
+
+    for (i = 1; i <= NUM_SERVERS; i++) {
+
+        /* Clear out any PO_Slots that still remain */
+        stdhash_begin(&DATA.PO.History[i], &it);
+        while (!stdhash_is_end(&DATA.PO.History[i], &it)) {
+           p_slot = *(po_slot**)stdit_val(&it);
+           PRE_ORDER_Garbage_Collect_PO_Slot(i, p_slot->seq, 0);
+           stdhash_erase(&DATA.PO.History[i], &it);
+        }
+        stdhash_destruct(&DATA.PO.History[i]);
+
+        /* Clear out any references to pending ord_slots that remain */
+        stdhash_begin(&DATA.PO.Pending_Execution[i], &it);
+        while(!stdhash_is_end(&DATA.PO.Pending_Execution[i], &it)) {
+            o_slot = *(ord_slot**)stdit_val(&it);
+            dec_ref_cnt(o_slot);
+            stdhash_erase(&DATA.PO.Pending_Execution[i], &it);
+        }
+        stdhash_destruct(&DATA.PO.Pending_Execution[i]);
+
+        /* Note: PO.Recon_History is cleared (but not destroyed) in the GC function */
+        stdhash_destruct(&DATA.PO.Recon_History[i]);
+    }
+
+    /* There is no dynamic data stored in the incarnation_tally hash table (just numbers),
+     * so no need to erase the values - just erase the slots */
+    stdhash_clear(&DATA.PO.incarnation_tally);
+    stdhash_destruct(&DATA.PO.incarnation_tally);
+
+    UTIL_DLL_Clear(&DATA.PO.po_request_dll);
+    UTIL_DLL_Clear(&DATA.PO.proof_matrix_dll);
+    UTIL_DLL_Clear(&DATA.PO.ack_batch_dll);
 }

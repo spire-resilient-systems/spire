@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -76,16 +77,16 @@ extern int16u      *Neighbor_IDs[];
 
 static const sp_time zero_timeout   = {     0,    0};
 /* Default Values */
-/*static       sp_time cnt_timeout    = {     0,    75000};
-             sp_time hello_timeout  = {     0,    75000};*/
+static       sp_time cnt_timeout    = {     0,    75000};
+             sp_time hello_timeout  = {     0,    75000};
 /* For simulating Internet rerouting */
-static       sp_time cnt_timeout    = {     0,    999999};
-             sp_time hello_timeout  = {     0,    999999};
+/*static       sp_time cnt_timeout    = {     0,    999999};
+             sp_time hello_timeout  = {     0,    999999};*/
 static       sp_time ad_timeout     = {     6,    0};
 
 int          hello_cnt_start        = (int) (0.5 + 0.7 * DEAD_LINK_CNT); 
-/* int          stable_delay_flag      = 1; */ /* DT */
-int          stable_delay_flag      = 0;
+int          stable_delay_flag      = 1;
+/*int          stable_delay_flag      = 0;*/
 double       stable_timeout         = 0.0;
 
 void Flip_hello_pkt( hello_packet *hello_pkt )
@@ -372,7 +373,7 @@ void Net_Send_Hello(int16 linkid, int mode)
   hdr.ctrl_link_id     = link->leg->ctrl_link_id;
   hdr.data_len         = sizeof(hello_packet);
   hdr.ack_len          = 0;
-  hdr.seq_no           = Set_Loss_SeqNo(link->leg);
+  hdr.seq_no           = Set_Loss_SeqNo(link->leg, CONTROL_LINK);
 
   pkt.seq_no           = c_data->hello_seq++;
   pkt.my_time_sec      = (int32) now.sec;
@@ -441,7 +442,8 @@ void Net_Send_Hello_Ping(channel chan, Network_Address addr)
 /*                                                         */
 /***********************************************************/
 
-void Process_hello_packet(Link *lk, packet_header *pack_hdr, char *buf, int remaining_bytes, int32u type)
+void Process_hello_packet(Link *lk, packet_header *pack_hdr, char *buf,
+                          int remaining_bytes, int32u type)
 {
   Control_Data *c_data      = (Control_Data*) lk->prot_data;
   Network_Leg  *leg         = lk->leg;
@@ -453,10 +455,13 @@ void Process_hello_packet(Link *lk, packet_header *pack_hdr, char *buf, int rema
   int32         rtt_int;
   stdit         it;
   Edge_Key      key;
+  Loss_Data     *l_data;
+  int           i;
 
   if (remaining_bytes != sizeof(hello_packet))
   {
-    Alarmp(SPLOG_WARNING, PRINT, "Process_hello_packet: Wrong # of bytes for hello: %d\n", remaining_bytes);
+    Alarmp(SPLOG_WARNING, PRINT, "Process_hello_packet: Wrong # of bytes for "
+                                 "hello: %d\n", remaining_bytes);
     return;
   }
 
@@ -465,7 +470,6 @@ void Process_hello_packet(Link *lk, packet_header *pack_hdr, char *buf, int rema
   }
 
   /* Check if other side crashed and came back up before I disconnected it */
-
   if (pack_hdr->ctrl_link_id != leg->other_side_ctrl_link_id) {  /* packet's ctrl link id doesn't match what we expected */
 
     if (leg->other_side_ctrl_link_id == 0) {                     /* other side initalizing his session link id */
@@ -473,8 +477,14 @@ void Process_hello_packet(Link *lk, packet_header *pack_hdr, char *buf, int rema
       Alarm(DEBUG, "Process_hello_packet: sender ("IPF") initializing ctrl id to 0x%x!\n", 
 	    IP(leg->remote_interf->net_addr), pack_hdr->ctrl_link_id);
 
+      /* Reset loss detection sequence numbers when the link resets */
       leg->other_side_ctrl_link_id = pack_hdr->ctrl_link_id;
-      
+      l_data = &((Control_Data*) leg->links[CONTROL_LINK]->prot_data)->l_data;
+      for (i = 0; i < MAX_LINKS_4_EDGE; i++)
+      {
+        l_data->recvd_seqs[i] = PACK_MAX_SEQ + 1;
+      }
+      l_data->recvd_seqs[CONTROL_LINK] = pack_hdr->seq_no;
     } else {                                                     /* other side previously set his session link id */ 
       Alarm(DEBUG, "Process_hello_packet: sender's ("IPF") ctrl id 0x%x doesn't match expected ctrl id 0x%x! Dropping!\n", 
 	    IP(leg->remote_interf->net_addr), pack_hdr->ctrl_link_id, leg->other_side_ctrl_link_id);
@@ -484,13 +494,10 @@ void Process_hello_packet(Link *lk, packet_header *pack_hdr, char *buf, int rema
     }
   }
 
-  /* Dano Debugging */
-  /* Alarm(PRINT, "Process_hello_packet from "IPF"\n", IP(leg->remote_interf->net_addr)); */
-
-  Check_Link_Loss(leg, pack_hdr->seq_no);
+  /* Check for loss */
+  Check_Link_Loss(leg, pack_hdr->seq_no, CONTROL_LINK);
 
   /* Make sure that this is not an old hello that took too long to get here */
-
   if (c_data->other_side_hello_seq > pkt->seq_no + 3) { 
     return;
   }
@@ -499,7 +506,6 @@ void Process_hello_packet(Link *lk, packet_header *pack_hdr, char *buf, int rema
 
   /* compute round trip time + clock offset */
   /* TODO: inspect this code a bit closer to understand it (i.e. - how does diff_time work?) */
-
   {
     sp_time remote, my_diff;
 
@@ -536,7 +542,7 @@ void Process_hello_packet(Link *lk, packet_header *pack_hdr, char *buf, int rema
       c_data->rtt = 1.0;
     }
 
-    update_cost     = 1;
+    /*update_cost     = 1;*/
     lk->r_data->rtt = c_data->rtt;
   }
 
@@ -544,10 +550,10 @@ void Process_hello_packet(Link *lk, packet_header *pack_hdr, char *buf, int rema
 
   if (pkt->loss_rate != UNKNOWN) {
     c_data->est_loss_rate = (float) pkt->loss_rate / LOSS_RATE_SCALE;
-    update_cost           = 1;
+    /*update_cost           = 1;*/
   }
 
-  /* Alarm(PRINT, "Process_hello_packet: edge(" IPF " -> " IPF "); leg(" IPF " -> " IPF "); est_loss = %f, rtt = %f\r\n", 
+  /*Alarm(PRINT, "Process_hello_packet: edge(" IPF " -> " IPF "); leg(" IPF " -> " IPF "); est_loss = %f, rtt = %f\r\n", 
      IP(edge->src_id), IP(edge->dst_id), IP(leg->local_interf->iid), IP(leg->remote_interf->iid), c_data->est_loss_rate, c_data->rtt);*/
 
   /* reset any hello escalation */
@@ -564,12 +570,16 @@ void Process_hello_packet(Link *lk, packet_header *pack_hdr, char *buf, int rema
 
   if (leg->status == CONNECTED_LEG) {
 
-    /* see if we need to update the leg cost */
- 
-    if (Route_Weight == DISTANCE_ROUTE) {
-      update_cost = 0;
+    /* See if we need to update the leg cost: We set update_cost to 0 by
+     * default. If we're using something other than DISTANCE_ROUTE, check
+     * whether this update should trigger a cost update */
 
-    } else {
+    if (Route_Weight == PROBLEM_ROUTE) {
+        /* Always try to update cost for problem type routing -- logic for
+         * checking whether there is a real change is in
+         * Network_Leg_Update_Cost */
+        update_cost = 1;
+    } else if (Route_Weight != DISTANCE_ROUTE) {
 
       /* TODO: this randomization is a bit weird: we should
 	 probably randomly pick once and schedule a callback for
@@ -598,11 +608,12 @@ void Process_hello_packet(Link *lk, packet_header *pack_hdr, char *buf, int rema
 	if (Route_Weight == LATENCY_ROUTE || Route_Weight == AVERAGE_ROUTE) {
 
 	  update_cost = (c_data->reported_rtt == UNKNOWN || 
-			 (fabs(c_data->reported_rtt - c_data->rtt) > 0.15 * c_data->reported_rtt &&
+			 (fabs(c_data->reported_rtt - c_data->rtt) > NET_UPDATE_THRESHOLD * c_data->reported_rtt &&
 			  fabs(c_data->reported_rtt - c_data->rtt) >= 2));  /* 1 ms accuracy one-way*/
 	}
 
-	if (Route_Weight == LOSSRATE_ROUTE || Route_Weight == AVERAGE_ROUTE) {
+	if (update_cost == 0 &&
+            (Route_Weight == LOSSRATE_ROUTE || Route_Weight == AVERAGE_ROUTE)) {
 
 	  float diff = c_data->reported_loss_rate - c_data->est_loss_rate;
 
@@ -610,14 +621,16 @@ void Process_hello_packet(Link *lk, packet_header *pack_hdr, char *buf, int rema
 	    diff = -diff;
 	  }
 
-	  update_cost = (diff > 0.15 * c_data->reported_loss_rate);
+	  update_cost = (diff > NET_UPDATE_THRESHOLD * c_data->reported_loss_rate);
 	}
+
       }
     }
 
     if (update_cost && Network_Leg_Update_Cost(leg) > 0) {
       c_data->reported_rtt       = c_data->rtt;
       c_data->reported_loss_rate = c_data->est_loss_rate;
+      c_data->reported_ts        = now;
     }
 
   } else if (leg->status == NOT_YET_CONNECTED_LEG) {
@@ -629,6 +642,7 @@ void Process_hello_packet(Link *lk, packet_header *pack_hdr, char *buf, int rema
       Network_Leg_Set_Cost(leg, Network_Leg_Initial_Cost(leg));
       c_data->reported_rtt       = c_data->rtt;
       c_data->reported_loss_rate = c_data->est_loss_rate;
+      c_data->reported_ts        = now;
 
       Create_Link(leg, UDP_LINK);
       Create_Link(leg, RELIABLE_UDP_LINK);

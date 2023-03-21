@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -29,10 +30,15 @@
  *
  */
 
+#define ext_network
+#include "network.h"
+#undef  ext_network
+
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
 #include <math.h>
+#include <float.h>
 
 #ifndef ARCH_PC_WIN95
 #  include <netdb.h>
@@ -56,7 +62,6 @@
 #include "net_types.h"
 #include "node.h"
 #include "link.h"
-#include "network.h"
 #include "reliable_datagram.h"
 #include "state_flood.h"
 #include "link_state.h"
@@ -69,6 +74,7 @@
 #include "priority_flood.h"
 #include "reliable_flood.h"
 #include "multipath.h"
+#include "dissem_graphs.h"
 
 #ifndef ARCH_PC_WIN95
 #  include "kernel_routing.h"
@@ -76,6 +82,8 @@
 #endif
 
 #include "spines.h"
+
+#define MAX_LATENCY 300
 
 extern char Config_File_Found;
 
@@ -99,8 +107,12 @@ typedef struct Delayed_Packet_d
 static stdhash Delay_Queue;
 static int32u  Delay_Index;
 
-static const sp_time short_timeout = {0, 50000};  /* 50 milliseconds */
 static const sp_time zero_timeout  = {0, 0};
+
+/* After a problem is detected, do not allow it to be resolved for at least 30 seconds */
+static const sp_time Problem_Route_Stable_Time = {30, 0};
+
+float Expected_Latency(float rtt, float loss_rate);
 
 void Flip_pack_hdr(packet_header *pack_hdr)
 {
@@ -161,6 +173,16 @@ void Init_Network(void)
   total_group_state_pkts = 0;
   total_group_state_bytes = 0;
 
+  /* Rate limit variable init (Leg_Rate_Limit_kpbs set in spine.c based on
+   * commandline params) */
+  if (Leg_Rate_Limit_kbps >= 0) {
+    Leg_Bucket_Cap = ((Leg_Rate_Limit_kbps / 8000.0) * LEG_BUCKET_FILL_USEC + MAX_PACKET_SIZE);
+    Leg_Max_Buffered = Leg_Bucket_Cap;
+  } else {
+    Leg_Bucket_Cap = -1;
+    Leg_Max_Buffered = -1; 
+  }
+
   /* Num_Nodes = 0; */
   All_Routes = NULL;
 
@@ -189,18 +211,6 @@ void Init_Network(void)
   Init_MultiPath();
   Init_Priority_Flooding();
   Init_Reliable_Flooding();
-
-    /* ADDED FOR TESTING PURPOSES - REMOVE LATER ~DANO */
-    /* for (i=1; i<=12; i++)
-    {
-        if (i != My_ID)
-        {
-            printf("%d\t%d\t\n", My_ID, i);
-            for (k=1; k<=3; k++)
-                MultiPath_Compute(i, k);
-            printf("\n");
-        }
-    } */
 
   if (Conf_IT_Link.Intrusion_Tolerance_Mode == 0) {
     Resend_States(0, &Edge_Prot_Def);
@@ -430,7 +440,10 @@ Network_Leg *Create_Network_Leg(Interface_ID local_interf_id,
   }
 
   if ((edge = Get_Edge(local_interf->owner->nid, remote_interf->owner->nid)) == NULL) {
-    edge = Create_Edge(local_interf->owner->nid, remote_interf->owner->nid, -1);
+    /* AB: I decided to give edges that aren't known from the configuration
+     * file a base cost of -1 and index of USHRT_MAX to indicate that we don't
+     * have a real cost or index for them */
+    edge = Create_Edge(local_interf->owner->nid, remote_interf->owner->nid, -1, -1, USHRT_MAX);
   } 
 
   if (edge->leg != NULL) {
@@ -450,6 +463,14 @@ Network_Leg *Create_Network_Leg(Interface_ID local_interf_id,
   leg->local_interf         = local_interf;
   leg->remote_interf        = remote_interf;
   leg->edge                 = edge;
+  
+  /* Rate limiting set up */
+  if (Leg_Rate_Limit_kbps >= 0) {
+    leg->bucket_bytes = Leg_Bucket_Cap;
+    leg->bucket_last_filled = E_get_time();
+    stdcarr_construct(&leg->bucket_buf, sizeof(Leg_Buf_Cell), 0);
+    E_queue(Fill_Leg_Bucket, 0, leg, leg_bucket_to);
+  }
 
   for (i = 0; i != MAX_LINKS_4_EDGE; ++i) {
     leg->links[i] = NULL;
@@ -539,10 +560,13 @@ int16 Network_Leg_Initial_Cost(const Network_Leg *leg)
   case LOSSRATE_ROUTE:
     cost = 1;
     break;
+  case PROBLEM_ROUTE:
+    cost = -1 * MAX_LATENCY;
+    break;
 
   case LATENCY_ROUTE:
   case AVERAGE_ROUTE:
-    cost = 4;
+    cost = MAX_LATENCY;
     break;
 
   default:
@@ -563,9 +587,10 @@ void Network_Leg_Set_Cost(Network_Leg *leg, int16 new_leg_cost)
 	IP(edge->src_id), IP(edge->dst_id), IP(leg->local_interf->iid), IP(leg->remote_interf->iid), 
 	(int) old_leg_cost, (int) new_leg_cost);
 
-  if (new_leg_cost < 0 && new_leg_cost != -1) {
+  /* AB: Changed to use negative weights for problem-type routing */
+  /*if (new_leg_cost < 0 && new_leg_cost != -1) {
     Alarm(EXIT, "Network_Leg_Set_Cost: Invalid leg cost %d!\r\n", new_leg_cost);
-  }
+  }*/
 
   if ((new_leg_cost != -1 && leg->status != CONNECTED_LEG) ||
       (new_leg_cost == -1 && leg->status != DISCONNECTED_LEG && leg->status != NOT_YET_CONNECTED_LEG)) {
@@ -583,6 +608,9 @@ void Network_Leg_Set_Cost(Network_Leg *leg, int16 new_leg_cost)
   Alarm(PRINT, "Network_Leg_Set_Cost: edge = (" IPF " -> " IPF "); leg = (" IPF " -> " IPF "); EDGE cost %d -> %d!!!\r\n",
 	IP(edge->src_id), IP(edge->dst_id), IP(leg->local_interf->iid), IP(leg->remote_interf->iid), 
 	(int) old_leg_cost, (int) new_leg_cost);
+
+  /* Check whether dissemination graphs need to be updated */
+  DG_Process_Edge_Update(edge, new_leg_cost);
 
   edge->cost = new_leg_cost;
 
@@ -629,10 +657,12 @@ int Network_Leg_Update_Cost(Network_Leg *leg)
 {
   Link         *lk;
   Control_Data *c_data;
-  sp_time       now;
-  float         tmp, tmp1, tmp2, cost;
-  int16         prev_cost;
+  sp_time       now, diff_time;
+  float         tmp, cost;
+  int16         prev_cost, abs_prev_cost, abs_diff;
   int16         cost16;
+  float         latency_thresh, latency_np_thresh;
+  int           problem_flag;
 
   now = E_get_time();
 
@@ -683,37 +713,11 @@ int Network_Leg_Update_Cost(Network_Leg *leg)
 
   } else if (Route_Weight == AVERAGE_ROUTE) {
 
-    tmp = c_data->rtt / 2.0;  /* one way delay */
+    cost = Expected_Latency(c_data->rtt, c_data->est_loss_rate);
 
-    if (c_data->est_loss_rate > 0.0) {
-
-      /* 2*p^2 * max_latency (lost even after recovery) */
-      tmp1 = (float) (2.0 * c_data->est_loss_rate * c_data->est_loss_rate * 100.0);
-
-      /* (p - 2*p^2)(3*delay + delta) */
-      tmp2 = (float) ((tmp * 3.0 + 10.0) * (c_data->est_loss_rate - 2.0 * c_data->est_loss_rate * c_data->est_loss_rate));
-
-      /* (1-p)*delay + (p - 2*p^2)(3*delay + delta) + 2*p^2 * max_latency */
-      tmp  = (float) (tmp * (1.0 - c_data->est_loss_rate) + tmp1 + tmp2);
-    }
-
-    if (tmp < 1) {
-      tmp = 1;
-    }
-
-    tmp += 4.0;
-
-    if (tmp < 300.0) {
-      cost = tmp;
-
-    } else {
-      cost = 300.0;
-    }
-
-    if (prev_cost > cost && prev_cost - cost < prev_cost * 0.15) {
+    if (prev_cost > cost && prev_cost - cost < prev_cost * NET_UPDATE_THRESHOLD) {
       return -1;
-
-    } else if (prev_cost <= cost && cost - prev_cost < prev_cost * 0.15) {
+    } else if (prev_cost <= cost && cost - prev_cost < prev_cost * NET_UPDATE_THRESHOLD) {
       return -1;
     }
 	
@@ -721,6 +725,90 @@ int Network_Leg_Update_Cost(Network_Leg *leg)
 	  now.sec, c_data->rtt / 2.0, c_data->est_loss_rate, cost, prev_cost);
 	
     cost16 = (int16) (cost + 0.5);
+
+  } else if (Route_Weight == PROBLEM_ROUTE) {
+
+    /* Cost is negative if we are above the threshold for detecting a problem,
+     * and positive if we are below the threshold for detecting that there is
+     * no problem -- in between these two thresholds, we stick with our
+     * previous problem-state to increase routing stability. The absolute value
+     * of the cost is the expected latency.
+     */
+
+    /* Calculate latency thresholds for deciding whether there is a problem,
+     * based on the base case latency. Note that if this is an edge that we
+     * don't have a base-case latency for, we don't consider latency in
+     * determining whether there is a problem (any latency is okay) */
+    if (leg->edge->base_cost == -1) {
+        latency_thresh = FLT_MAX;
+        latency_np_thresh = FLT_MAX;
+    } else {
+        latency_thresh = (float) leg->edge->base_cost * LATENCY_PROB_THRESH;
+        latency_np_thresh = (float) leg->edge->base_cost * LATENCY_NO_PROB_THRESH;
+
+        if (latency_thresh < leg->edge->base_cost + LATENCY_ABS_PROB_THRESH)
+            latency_thresh = leg->edge->base_cost + LATENCY_ABS_PROB_THRESH;
+        if (latency_np_thresh < leg->edge->base_cost + LATENCY_ABS_NO_PROB_THRESH)
+            latency_np_thresh = leg->edge->base_cost + LATENCY_ABS_NO_PROB_THRESH;
+    }
+
+    /* Now check to see if we are learning about a new problem starting or
+     * stopping. Set problem_flag to 0 for no change, -1 for newly detected
+     * problem, and 1 for newly resolved problem */
+    problem_flag = 0;
+
+    if (c_data->est_loss_rate > LOSS_PROB_THRESH ||
+        c_data->rtt > latency_thresh)
+    {
+        if (prev_cost >= 0) {
+            /* New problem detected: update cost */
+            problem_flag = -1;
+        }
+    } else if (c_data->est_loss_rate < LOSS_NO_PROB_THRESH &&
+               c_data->rtt < latency_np_thresh)
+    {
+        if (prev_cost < 0) {
+            /* Problem resolved: try to update cost (will check that it is not
+             * too soon for this below) */
+            problem_flag = 1;
+        }
+    }
+
+    /* Get link weight value (expected latency */
+    cost = Expected_Latency(c_data->rtt, c_data->est_loss_rate);
+    cost16 = (int16) (cost + 0.5);
+
+    /* If there is no significant change (in value or problem state), no need
+     * to update everyone else */
+    abs_prev_cost = abs(prev_cost);
+    abs_diff = abs(abs_prev_cost - cost16);
+    if (problem_flag == 0 && (abs_diff < NET_UPDATE_THRESHOLD_ABS ||
+                              abs_diff < abs_prev_cost * NET_UPDATE_THRESHOLD))
+    {
+          return -1;
+    }
+
+    /* We have something new to report -- set the cost to be negative to
+     * indicate a problem if necessary */
+    if (problem_flag == -1 || (problem_flag == 0 && prev_cost < 0)) {
+        cost16 *= -1;
+    }
+
+    /* Check that is not too soon to report link improvement */
+    if (problem_flag == 1 || abs(cost16) < abs_prev_cost) {
+        diff_time = E_sub_time(now, c_data->reported_ts);
+        if (E_compare_time(diff_time, Problem_Route_Stable_Time) < 0) {
+            Alarm(DEBUG, "Link improved (%hd -> %hd), but not enough time "
+                         "has passed since last report (diff_time = %lu "
+                         "%lu)\n", prev_cost, cost16, diff_time.sec, diff_time.usec);
+            return -1;
+        }
+    }
+
+    if (problem_flag == 1)
+        Alarm(PRINT, "Problem resolved on my link! %f %f\n", c_data->est_loss_rate, c_data->rtt);
+    else if (problem_flag == -1)
+        Alarm(PRINT, "Problem detected on my link! %f %f\n", c_data->est_loss_rate, c_data->rtt);
 
   } else {
     Alarm(EXIT, "Network_Leg_Update_Cost: Unknown routing scheme %d!\r\n", Route_Weight);
@@ -730,6 +818,39 @@ int Network_Leg_Update_Cost(Network_Leg *leg)
   Network_Leg_Set_Cost(leg, cost16);
 
   return 1;
+}
+
+float Expected_Latency(float rtt, float loss_rate)
+{
+    float tmp, tmp1, tmp2, cost;
+
+    tmp = rtt / 2.0;  /* one way delay */
+
+    if (loss_rate > 0.0) {
+
+        /* 2*p^2 * max_latency (lost even after recovery) */
+        tmp1 = (float) (2.0 * loss_rate * loss_rate * MAX_LATENCY);
+
+        /* (p - 2*p^2)(3*delay + delta) */
+        tmp2 = (float) ((tmp * 3.0 + 10.0) * (loss_rate - 2.0 * loss_rate * loss_rate));
+
+        /* (1-p)*delay + (p - 2*p^2)(3*delay + delta) + 2*p^2 * max_latency */
+        tmp  = (float) (tmp * (1.0 - loss_rate) + tmp1 + tmp2);
+    }
+
+    /* Because we use -1 for disconnected links, we prevent latency
+     * measurements < 2 to avoid ambiguity */
+    if (tmp < 2) {
+        tmp = 2;
+    }
+
+    if (tmp < MAX_LATENCY) {
+        cost = tmp;
+    } else {
+        cost = MAX_LATENCY;
+    }
+
+    return cost;
 }
 
 void Net_Recv(channel sk,              /* socket on which to recv */
@@ -897,6 +1018,8 @@ int Read_UDP(Interface *local_interf, channel sk, int mode, sys_scatter *scat)
       goto FAIL;
   }
 
+  /* AB: This seems problematic? I think we frequently have ack_len >=
+   * reliable_tail when we aren't actually using the reliable_tail */
   if (!Same_endian(pack_type) && pack_hdr->ack_len >= sizeof(reliable_tail))             /* TODO: this should probably be moved to a more specific spot? */
       if (Flip_rel_tail(scat->elements[1].buf + pack_hdr->data_len, pack_hdr->ack_len))  /* the packet has a reliable tail */
           goto FAIL;

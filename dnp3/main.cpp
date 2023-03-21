@@ -123,6 +123,8 @@ void setup(int sub, DNP3Manager &manager) {
 
     /* Set up IPC stuff */
     memset(&itrc_info, 0, sizeof(itrc_data));
+    sprintf(itrc_info.prime_keys_dir, "%s", (char *)PROXY_PRIME_KEYS);
+    sprintf(itrc_info.sm_keys_dir, "%s", (char *)PROXY_SM_KEYS);
     sprintf(itrc_info.ipc_local, "%s%s%d", (char *)RTU_IPC_MAIN, "dnp3", sub);
     sprintf(itrc_info.ipc_remote, "%s%s%d", (char *)RTU_IPC_ITRC, "dnp3", sub);
     printf("DNP3: ipc: %s\n", itrc_info.ipc_local);
@@ -186,7 +188,7 @@ void setup(int sub, DNP3Manager &manager) {
 
             std::cout << "Making Master" << std::endl; 
             auto master = pChannel->AddMaster(
-                              "master sub:" + the_id,
+                              "master sub:" + std::to_string(the_id),
                               //callback_arr[callback_arr.size() - 1].Instance(),
                               Callback::Create(the_id, ipc_sock, itrc_info),
                               asiodnp3::DefaultMasterApplication::Create(),

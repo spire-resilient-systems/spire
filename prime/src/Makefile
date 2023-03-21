@@ -27,7 +27,7 @@
 #    Brian Coan           Design of the Prime algorithm
 #    Jeff Seibert         View Change protocol
 #       
-#  Copyright (c) 2008 - 2017
+#  Copyright (c) 2008 - 2018
 #  The Johns Hopkins University.
 #  All rights reserved.
 #  
@@ -52,6 +52,7 @@ SPINES = -DSET_USE_SPINES
 SPINES_LIB = ../../spines/libspines/libspines.a
 
 CC = gcc
+#CFLAGS = -g -pg -O2 -Wall $(SPINES) $(INC)  
 CFLAGS = -g -O2 -Wall $(SPINES) $(INC)  
 
 WRAPPER_OBJ = error_wrapper.o openssl_rsa.o
@@ -60,13 +61,13 @@ PRIME_OBJ = prime.o data_structs.o utility.o network.o pre_order.o \
 	util_dll.o validate.o process.o packets.o order.o \
 	signature.o net_wrapper.o merkle.o suspect_leader.o \
 	reliable_broadcast.o view_change.o erasure.o recon.o \
-	tc_wrapper.o proactive_recovery.o $(WRAPPER_OBJ)
+	tc_wrapper.o catchup.o proactive_recovery.o $(WRAPPER_OBJ)
 
 CLIENT_OBJ = client.o data_structs.o utility.o network.o pre_order.o \
 	util_dll.o packets.o process.o order.o \
 	signature.o net_wrapper.o erasure.o validate.o suspect_leader.o \
-	reliable_broadcast.o view_change.o proactive_recovery.o merkle.o recon.o \
-	tc_wrapper.o $(WRAPPER_OBJ)
+	reliable_broadcast.o view_change.o catchup.o proactive_recovery.o \
+	merkle.o recon.o tc_wrapper.o $(WRAPPER_OBJ)
 
 GEN_KEYS_OBJ = openssl_rsa.o generate_keys.o tc_wrapper.o
 
@@ -76,7 +77,7 @@ $(STDUTIL_LIB):
 	cd ../stdutil; ./configure; make
 
 $(LIBSPREAD_UTIL):
-	cd ../libspread-util; ./configure; make
+	cd ../libspread-util; ./configure --enable-threaded-alarm; make
 
 $(TC_LIB):
 	cd ../OpenTC-1.1/TC-lib-1.0/; ./configure; make
@@ -85,13 +86,13 @@ gen_keys: $(GEN_KEYS_OBJ)
 	$(CC) $(CFLAGS) -o ../bin/gen_keys $(GEN_KEYS_OBJ) $(LIBSPREAD_UTIL) $(TC_LIB) -lcrypto -ldl -lpthread -lrt
 
 prime: $(PRIME_OBJ)
-	$(CC) $(CFLAGS) -o ../bin/prime $(PRIME_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
+	$(CC) $(CFLAGS) $(CPPFLAGS) -o ../bin/prime $(PRIME_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
 
 client: $(CLIENT_OBJ)
 	$(CC) -o ../bin/client $(CLIENT_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
 
 %.o:	%.c
-	$(CC) $(CFLAGS) -c -o $*.o $*.c
+	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $*.o $*.c
 
 clean:
 	rm -f *~
@@ -110,4 +111,3 @@ cleaner: clean
 # Also removes all key files
 distclean: cleaner
 	cd ../bin/keys; rm -f *.pem; rm -f *.key
-	cd ../bin/sm_keys; rm -f *.pem; rm -f *.key

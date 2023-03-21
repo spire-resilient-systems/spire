@@ -24,10 +24,13 @@
  #   Amy Babay            babay@cs.jhu.edu
  #   Thomas Tantillo      tantillo@cs.jhu.edu
  #
- # Major Contributor:
+ # Major Contributors:
  #   Marco Platania       Contributions to architecture design 
  #
- # Copyright (c) 2017 Johns Hopkins University.
+ # Contributors:
+ #   Samuel Beckley       Contributions to HMIs 
+ #
+ # Copyright (c) 2018 Johns Hopkins University.
  # All rights reserved.
  #
  # Partial funding for Spire research was provided by the Defense Advanced 
@@ -38,17 +41,21 @@
 
 CC=gcc
 CFLAGS= -Wall -W -g
-CXX=/toolchains/bin/g++
-#CXX=g++   
-	#NOTE: if installing newer versions of g++ from scratch, change path accordingly
+# NON-STANDARD GCC LOCATION: change CXX to the path to your g++ >= 4.9
+#CXX=/toolchains/bin/g++
+CXX=g++   
+# NON-STANDARD GCC LOCATION: set CXXLIB to set rpath to your libs for g++ >= 4.9
+#CXXLIB=-Wl,-rpath,/toolchains/lib64
 CXXFLAGS= -std=gnu++11
-EXTRA=-fprofile-arcs -ftest-coverage
-LINKING= -lasiodnp3 -lasiopal -lopendnp3 -lopenpal -lgcov --coverage -lm
+
+DNP3_DIR=../opendnp3/opendnp3_build/install
 LIBS=-lpthread ../prime/OpenTC-1.1/TC-lib-1.0/.libs/libTC.a \
-           ../spines/libspines/libspines.a ../prime/stdutil/lib/libstdutil.a -lrt -ldl -lcrypto
-INC= -I ../prime/stdutil/include -I ../spines/libspines/
+           ../spines/libspines/libspines.a ../prime/stdutil/lib/libstdutil.a \
+		   $(DNP3_DIR)/lib/libasiodnp3.a $(DNP3_DIR)/lib/libasiopal.a \
+		   $(DNP3_DIR)/lib/libopendnp3.a $(DNP3_DIR)/lib/libopenpal.a \
+		   -lrt -ldl -lcrypto -lm
+INC= -I ../prime/stdutil/include -I ../spines/libspines/ -I $(DNP3_DIR)/include
 TARGET=dnp3_master
-CXXLIB=-Wl,-rpath,/toolchains/lib64
 OBJECTS=main.o \
 		callback.o \
 		command_sender.o \
@@ -63,7 +70,7 @@ OBJECTS=main.o \
 all: $(TARGET) 
 
 $(TARGET): $(OBJECTS)
-	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJECTS) $(LINKING) $(LIBS) $(CXXLIB)
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJECTS) $(LIBS) $(CXXLIB)
 
 %.o:	%.cpp
 		$(CXX) $(CXXFLAGS) $(INC) -c -o $*.o $*.cpp

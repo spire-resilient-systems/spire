@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -58,11 +59,11 @@
 #include "hello.h"
 #include "kernel_routing.h"
 #include "multipath.h"
+#include "dissem_graphs.h"
 #include "spines.h"
 
 #define MAX_RETR_DELAY 30
 
-static const sp_time  zero_timeout = { 0, 0 };
 static Link_State_LTS Link_State_Update_LTS = 0;
 
 /***********************************************************/
@@ -274,7 +275,10 @@ void *Edge_Process_state_cell(Node_ID source, Node_ID sender, char *pos, int32 t
   
   if ((edge = Get_Edge(nd_source->nid, nd_dest->nid)) == NULL) {
 
-    edge = Create_Edge(nd_source->nid, nd_dest->nid, -1);
+    /* AB: I decided to give edges that aren't known from the configuration
+     * file a base cost of -1 and index of USHRT_MAX to indicate that we don't
+     * have a real cost or index for them */
+    edge = Create_Edge(nd_source->nid, nd_dest->nid, -1, -1, USHRT_MAX);
 
     if (nd_source == This_Node) {
       /* TODO: figure out what to do with this situation (e.g. - just rely on remote hellos to create correct leg?) */
@@ -298,9 +302,11 @@ void *Edge_Process_state_cell(Node_ID source, Node_ID sender, char *pos, int32 t
 
   if (source != My_Address) {  /* nope */
 
-    Alarm(PRINT, "Updating edge (from state flood) (LTS = %u): " IPF " -> " IPF "; %hd -> %hd\r\n", 
+    Alarm(DEBUG, "Updating edge (from state flood) (LTS = %u): " IPF " -> " IPF "; %hd -> %hd\r\n", 
 	  edge_cell->lts, IP(edge->src->nid), IP(edge->dst->nid), edge->cost, edge_cell->cost);
-    
+
+    DG_Process_Edge_Update(edge, edge_cell->cost);
+
     edge->age  = edge_cell->age;
     edge->cost = edge_cell->cost;
     edge->lts  = edge_cell->lts;
@@ -350,7 +356,7 @@ int int16u_sklcmp(const void *a1, const void *a2)
 /*                                                         */
 /***********************************************************/
 
-Edge* Create_Edge(Node_ID src_id, Node_ID dst_id, int16 cost) 
+Edge* Create_Edge(Node_ID src_id, Node_ID dst_id, int16 cost, int16 base_cost, int16u index) 
 {
   sp_time      now = E_get_time();
   Node        *src_nd;
@@ -403,6 +409,9 @@ Edge* Create_Edge(Node_ID src_id, Node_ID dst_id, int16 cost)
 
   edge->src                 = src_nd;
   edge->dst                 = dst_nd;
+
+  edge->base_cost           = base_cost;
+  edge->index               = index;
 
   edge->leg                 = NULL;
 

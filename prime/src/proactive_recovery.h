@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -44,20 +44,43 @@
 
 #include "data_structs.h"
 
-#define CERT_PERIODIC 1
-#define CERT_CATCHUP  2
+#define PR_STARTUP  1 
+#define PR_RESET    2
+#define PR_RECOVERY 3
+#define PR_NORMAL   4
 
-#define NO_CATCHUP   0
-#define CATCHUP_SEQ  1
-#define CATCHUP_JUMP 2
+#define NO_RESET_APPLICATION  0
+#define RESET_APPLICATION     1
 
 void PR_Initialize_Data_Structure(void);
 
-void PR_Process_Catchup_Request(signed_message *mess);
-void PR_Process_ORD_Certificate(signed_message *mess);
-void PR_Process_PO_Certificate(signed_message *mess);
+void PR_Reset_Prime(void);
+void PR_Upon_Reset(void);
 
-void PR_Send_ORD_Cert_Periodically(int dummy, void *dummyp);
-void PR_Catchup_Periodically(int dummy, void *dummyp);
+void PR_Send_Application_Reset(void);
+void PR_Start_Recovery(void);
+void PR_Resume_Normal_Operation(void);
+//void PR_Resume_Normal_Operation(int32u reset_app_flag);
+
+void PR_Process_New_Incarnation(signed_message *mess);
+
+void PR_Process_Incarnation_Ack(signed_message *mess);
+void PR_Process_Incarnation_Cert(signed_message *mess);
+void PR_Process_Jump(signed_message *mess);
+void PR_Process_Pending_State(signed_message *mess);
+void PR_Process_Pending_Share(signed_message *mess);
+
+void PR_Send_Pending_State(int32u target, int32u acked_nonce);
+
+void PR_Process_Reset_Vote(signed_message *mess);
+void PR_Process_Reset_Share(signed_message *mess);
+void PR_Process_Reset_Proposal(signed_message *mess);
+void PR_Process_Reset_Prepare(signed_message *mess);
+void PR_Process_Reset_Commit(signed_message *mess);
+void PR_Process_Reset_NewLeader(signed_message *mess);
+void PR_Process_Reset_NewLeaderProof(signed_message *mess);
+void PR_Process_Reset_ViewChange(signed_message *mess);
+void PR_Process_Reset_NewView(signed_message *mess);
+void PR_Process_Reset_Certificate(signed_message *mess);
 
 #endif /* PRIME_PROACTIVE_RECOVERY_H */

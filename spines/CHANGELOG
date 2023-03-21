@@ -1,3 +1,31 @@
+Version 5.3 - March 9, 2018
+    * Added Source-Based Routing capability (separate from K-paths used in
+      Intrusion-Tolerant Messaging)
+        - Supports using K node-disjoint paths, flooding, or dissemination graphs (see below)
+    * Added support for dissemination-graph-based routing (a specific type of source-based routing)
+        - Based on the protocol from: "Timely, Reliable, and Cost-Effective
+          Internet Transport Service using Dissemination Graphs," Amy Babay,
+          Emily Wagner, Michael Dinitz, and Yair Amir, in Proceedings of the
+          IEEE 37th International Conference on Distributed Computing Systems,
+          Atlanta, GA, June 2017, pp. 1-12.
+    * Turned off TCP fairness by default (can be enabled by starting Spines with
+      the -tf commandline flag)
+        - By default, we now turn off TCP fairness but impose a 500 Mbps rate
+          limit on each link. The rate limit can be changed or turned off using
+          the commandline -rl option
+    * Added an option for tracking and periodically printing the number of
+      messages sent for each destination client at each daemon
+    * Simplified loss rate calculation
+    * Changed report format of spines2port and port2spines test programs
+    * Fixed memory leak in intrusion-tolerant protocols stemming from not
+      cleaning up OpenSSL context structures correctly
+    * Fixed libpread-util memory system to support allocating types smaller than 
+      sizeof(void*)
+    * Bug fixes in the reliable session
+    * Some tuning of default timeouts and window sizes to support higher
+      throughput and more aggressive rerouting
+    * See docs/spines_5.3_changes.txt for full details
+
 Version 5.2 - May 17, 2017
     * Added configuration option to encrypt messages sent on intrusion-tolerant data link
     * Added configuration option to enable or disable remote client connections to daemons

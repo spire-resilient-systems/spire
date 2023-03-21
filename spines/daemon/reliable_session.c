@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -51,6 +52,7 @@
 
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include "spu_alarm.h"
 #include "spu_events.h"
@@ -80,6 +82,7 @@ extern stdhash   Rel_Sessions_Port;
 extern stdhash   Sessions_Sock;
 extern int16     Link_Sessions_Blocked_On;
 
+extern int TCP_Fairness;
 
 /* Local consts */
 
@@ -157,9 +160,12 @@ int Init_Reliable_Session(Session *ses, Node_ID address, int16u port)
     r_data->last_ack_sent = 0;
 
     /* Congestion control */
-    r_data->window_size = 10;
+    if (TCP_Fairness) {
+        r_data->window_size = 10;
+    } else {
+        r_data->window_size = MAX_CG_WINDOW/2;
+    }
 
- 
     r_data->max_window = MAX_CG_WINDOW/2;
     r_data->ssthresh = MAX_CG_WINDOW/2;
 
@@ -501,6 +507,7 @@ void Close_Reliable_Session(Session* ses)
     int32 dummy_port;
     Session *tmp_ses;
 
+    Alarm(PRINT, "Close Reliable Session\n");
     
     E_dequeue(Ses_Send_Rel_Hello, ses->sess_id, NULL);
     E_dequeue(Ses_Delay_Close, ses->sess_id, NULL);
@@ -773,7 +780,7 @@ int Check_Double_Connect(char *buff, int16u len, int32u type)
 
 
     if(len != sizeof(ses_hello_packet) + sizeof(udp_header) + sizeof(rel_udp_pkt_add))
-	Alarm(EXIT, "Check_Double_Connect: packet too small\n");
+	Alarm(EXIT, "Check_Double_Connect: packet too small: len == %u, should be %u\n", len, sizeof(ses_hello_packet) + sizeof(udp_header) + sizeof(rel_udp_pkt_add));
 
 
     hdr = (udp_header*)buff;
@@ -936,7 +943,7 @@ int Deliver_Rel_UDP_Data(char* buff, int16u len, int32u type) {
     if(!stdcarr_empty(&ses->rel_deliver_buff)) {
 	if(stdcarr_size(&ses->rel_deliver_buff) >= 3*MAX_BUFF_SESS) {
 	    Disconnect_Reliable_Session(ses);
-	    Alarm(PRINT, "Session closed due to buffer overflow\n");
+	    Alarm(PRINT, "Session closed: buffer full\n");
 	    return(NO_BUFF);
 	}
     }
@@ -979,7 +986,10 @@ int Deliver_Rel_UDP_Data(char* buff, int16u len, int32u type) {
 
 
     /* put the packet in the window. If it is out of order, return. */
-    
+
+    if (r_data->recv_window[r_tail->seq_no%MAX_WINDOW].data.buff != NULL) {
+        Alarm(PRINT, "NON-NULL BUFF seq no: %d, recv_tail %d\n", r_tail->seq_no, r_data->recv_tail);
+    }
     r_data->recv_window[r_tail->seq_no%MAX_WINDOW].data.len = len;
     r_data->recv_window[r_tail->seq_no%MAX_WINDOW].data.buff = buff;
     r_data->recv_window[r_tail->seq_no%MAX_WINDOW].flag = RECVD_CELL;
@@ -1004,6 +1014,10 @@ int Deliver_Rel_UDP_Data(char* buff, int16u len, int32u type) {
     Alarm(DEBUG, "In order deliver pkt: %d\n", r_data->recv_tail);
 
     if(!stdcarr_empty(&ses->rel_deliver_buff)) {
+        Alarm(DEBUG, "Deliver_Rel_UDP_Data(): buffering one packet to deliver "
+                     "to session: buf size %d, tail %d, head %d\n",
+                     stdcarr_size(&ses->rel_deliver_buff), r_data->recv_tail,
+                     r_data->recv_head);
 
 	/* Put the packet in the buffer */
 	if((u_cell = (UDP_Cell*) new(UDP_CELL))==NULL) {
@@ -1021,25 +1035,28 @@ int Deliver_Rel_UDP_Data(char* buff, int16u len, int32u type) {
 	r_data->recv_window[r_data->recv_tail%MAX_WINDOW].flag = EMPTY_CELL;
 	r_data->recv_tail++;
 
-	return(BUFF_OK);
+        /* Amy: Changing to not return here...gets stuck if we fill in a gap
+         * while pkts are buffered..might actually want to combine with the
+         * loop below */
+	/* return(BUFF_OK); */
+        ret = BUFF_OK;
+    } else {
+
+        Alarm(DEBUG, "Direct deliver pkt: %d\n", r_tail->seq_no);
+
+        /* Deliver the packet and take it out of the window */
+        ret = Net_Rel_Sess_Send(ses, buff, len);
+        if(ret == NO_BUFF) {
+            /* The session has been closed */
+            return(ret);
+        }
+
+        r_data->recv_window[r_data->recv_tail%MAX_WINDOW].data.len = 0;
+        r_data->recv_window[r_data->recv_tail%MAX_WINDOW].data.buff = NULL;
+        r_data->recv_window[r_data->recv_tail%MAX_WINDOW].flag = EMPTY_CELL;
+        r_data->recv_tail++;
+        dec_ref_cnt(buff);
     }
-
-
-    Alarm(DEBUG, "Direct deliver pkt: %d\n", r_tail->seq_no);
-
-
-    /* Deliver the packet and take it out of the window */
-    ret = Net_Rel_Sess_Send(ses, buff, len);
-    if(ret == NO_BUFF) {
-	/* The session has been closed */
-	return(ret);
-    }
-
-    r_data->recv_window[r_data->recv_tail%MAX_WINDOW].data.len = 0;
-    r_data->recv_window[r_data->recv_tail%MAX_WINDOW].data.buff = NULL;
-    r_data->recv_window[r_data->recv_tail%MAX_WINDOW].flag = EMPTY_CELL;
-    r_data->recv_tail++;
-    dec_ref_cnt(buff);
 
 
     /* Then, deliver the rest of the in-order packets from the window, if any */
@@ -1052,13 +1069,18 @@ int Deliver_Rel_UDP_Data(char* buff, int16u len, int32u type) {
 
 	/* If there is a buffer already, just stick the packet in the buffer*/
 	if(!stdcarr_empty(&ses->rel_deliver_buff)) {
+            Alarm(DEBUG, "Deliver_Rel_UDP_Data(): buffering packets to deliver "
+                         "to session: buf size %d, tail %d, head %d\n",
+                         stdcarr_size(&ses->rel_deliver_buff), r_data->recv_tail,
+                         r_data->recv_head);
+
 	    if((u_cell = (UDP_Cell*) new(UDP_CELL))==NULL) {
 		Alarm(EXIT, "Deliver_Rel_UDP_Data(): Cannot allocte udp cell\n");
 	    }
 	    u_cell->len = r_data->recv_window[r_data->recv_tail%MAX_WINDOW].data.len;
 	    u_cell->buff = r_data->recv_window[r_data->recv_tail%MAX_WINDOW].data.buff;
 	    stdcarr_push_back(&ses->rel_deliver_buff, &u_cell);
-	    inc_ref_cnt(buff);
+            inc_ref_cnt(r_data->recv_window[r_data->recv_tail%MAX_WINDOW].data.buff);
 
 	    /* Take the packet from the window */
 	    dec_ref_cnt(r_data->recv_window[r_data->recv_tail%MAX_WINDOW].data.buff);
@@ -1069,7 +1091,6 @@ int Deliver_Rel_UDP_Data(char* buff, int16u len, int32u type) {
 
 	    continue;
 	}
-
 
 	tmp_ret = Net_Rel_Sess_Send(ses, 
 		   r_data->recv_window[r_data->recv_tail%MAX_WINDOW].data.buff,
@@ -1091,7 +1112,6 @@ int Deliver_Rel_UDP_Data(char* buff, int16u len, int32u type) {
 
     /* Return what happened with our initial packet */
 
-
     if(r_data->connect_state == DISCONNECT_LINK) {
 	if(r_data->recv_tail == r_data->last_seq_sent) {
 	    if(stdcarr_empty(&ses->rel_deliver_buff)) {
@@ -1099,8 +1119,12 @@ int Deliver_Rel_UDP_Data(char* buff, int16u len, int32u type) {
 	    }
 	}
     }
-    return(ret);
 
+    if (!stdcarr_empty(&ses->rel_deliver_buff)) {
+        Alarm(DEBUG, "Deliver_Rel_UDP_Data(): Finished with buffer size %d\n", stdcarr_size(&ses->rel_deliver_buff));
+    }
+
+    return(ret);
 }
 
 
@@ -1289,25 +1313,21 @@ int Net_Rel_Sess_Send(Session *ses, char *buff, int16u len)
 
 	if(ret < 0) {
 	    
-	    Alarm(DEBUG, "Net_Rel_Sess_Send(): write err\n");
-
+            Alarm(DEBUG, "Net_Rel_Sess_Send(): write err %d %d '%s'\n", ret, errno, strerror(errno));
 	    
 #ifndef	ARCH_PC_WIN95
-	    if((ret == -1)&&
-	       ((errno == EWOULDBLOCK)||(errno == EAGAIN))) 
+            if((ret == -1)&&((errno == EWOULDBLOCK)||(errno == EAGAIN))) 
 #else
 #ifndef _WIN32_WCE
-	    if((ret == -1)&&
-			((errno == WSAEWOULDBLOCK)||(errno == EAGAIN))) 
+            if((ret == -1)&&((errno == WSAEWOULDBLOCK)||(errno == EAGAIN))) 
 #else
-		sk_errno = WSAGetLastError();
-		if((ret == -1)&&	
-			((sk_errno == WSAEWOULDBLOCK)||(sk_errno == EAGAIN))) 
+            sk_errno = WSAGetLastError();
+            if((ret == -1)&&((sk_errno == WSAEWOULDBLOCK)||(sk_errno == EAGAIN))) 
 #endif /* Windows CE */
 #endif	
 	    {
 		if((u_cell = (UDP_Cell*) new(UDP_CELL))==NULL) {
-		    Alarm(EXIT, "Deliver_UDP_Data(): Cannot allocte udp cell\n");
+		    Alarm(EXIT, "Deliver_UDP_Data(): Cannot allocate udp cell\n");
 		}
 		u_cell->len = len;
 		u_cell->buff = buff;
@@ -1315,8 +1335,15 @@ int Net_Rel_Sess_Send(Session *ses, char *buff, int16u len)
 		inc_ref_cnt(buff);
 		
 		E_attach_fd(ses->sk, WRITE_FD, Session_Write, ses->sess_id, 
-			    NULL, HIGH_PRIORITY );
+			    NULL, HIGH_PRIORITY);
 		ses->fd_flags = ses->fd_flags | WRITE_DESC;
+                Alarm(DEBUG, "Net_Rel_Sess_Send(): put data in rel_deliver_buff, buff size %d\n", stdcarr_size(&ses->rel_deliver_buff));
+
+                /* AB: Debugging */
+                if (ses->sent_bytes < total_bytes) {
+                    Alarm(PRINT, "Net_Rel_Sess_Send(): sent bytes (%d) < total bytes (%d)\n", ses->sent_bytes, total_bytes);
+                }
+
 		return(BUFF_OK);
 	    } 
 	    else {
@@ -1331,6 +1358,7 @@ int Net_Rel_Sess_Send(Session *ses, char *buff, int16u len)
 	}
 	ses->sent_bytes += ret;
     }
+
     ses->sent_bytes = 0;
     return(BUFF_EMPTY);
 }
@@ -1358,7 +1386,7 @@ int Net_Rel_Sess_Send(Session *ses, char *buff, int16u len)
 /*                                                         */
 /* Return Value                                            */
 /*                                                         */
-/* (int) 1 if the packet that came with the ack contians   */
+/* (int) 1 if the packet that came with the ack contains   */
 /*         any useful data                                 */
 /*       0 if the packet has data that we already know     */
 /*	   (retransm)                                      */
@@ -1377,7 +1405,9 @@ int Process_Sess_Ack(Session *ses, char* buf, int16u ack_len,
     double old_window;
     int congestion_action = 0;
     int32 *nack;
+    int16u to_copy;
    
+    Alarm(DEBUG, "Process Ses_Ack\n");
     
     r_data = ses->r_data;
     
@@ -1421,24 +1451,32 @@ int Process_Sess_Ack(Session *ses, char* buf, int16u ack_len,
 	/* We also have NACKs here... */
 	Alarm(DEBUG, "We also have NACKs here...\n");
 	if(r_data->nack_len + ack_len > sizeof(packet_body)) {
-	    Alarm(DEBUG, "nack_len: %d; ack_len: %d\n", r_data->nack_len, ack_len);
-	    Alarm(EXIT, "WOW !!! a lot of nacks here.... definitely a bug\n");
+	    Alarm(PRINT, "Reliable session: nack_len: %d; ack_len: %d (sizeof packet_body = %u)\n", r_data->nack_len, ack_len, sizeof(packet_body));
+	    Alarm(PRINT, "WOW !!! a lot of nacks here....\n");
 	}
+
+        /* Amy: Get amount of nacks we can copy...can end up buffering nacks if the
+         * link gets disconnected before we get to send some */
+	if(r_data->nack_len + ack_len - sizeof(reliable_tail) > sizeof(packet_body)) {
+            to_copy = sizeof(packet_body) - r_data->nack_len;
+        } else {
+            to_copy = ack_len - sizeof(reliable_tail);
+        }
+
+        /* Allocate nack buffer if necessary */
 	if(r_data->nack_buff == NULL) {
 	    if((r_data->nack_buff = (char*) new(PACK_BODY_OBJ))==NULL) {
-		Alarm(EXIT, "Process_Sess_Ack(): Cannot allocte pack_body object\n");
+		Alarm(EXIT, "Process_Sess_Ack(): Cannot allocate pack_body object\n");
 	    }	
 	    else
 		Alarm(DEBUG, "nack_buff not empty; nack_len: %d\n", r_data->nack_len);
 	}
-	if(r_data->nack_len + ack_len - sizeof(reliable_ses_tail) <
-	   sizeof(packet_body)) {
-	    memcpy(r_data->nack_buff+r_data->nack_len, buf+sizeof(reliable_ses_tail), 
-		   ack_len-sizeof(reliable_ses_tail));
-	    r_data->nack_len += ack_len - sizeof(reliable_ses_tail);
-	    Alarm(DEBUG, "nack_len: %d\n", r_data->nack_len);
-	}
-	Alarm(DEBUG, "queueing nacks...\n");
+
+        /* Copy over nacks to nack buffer */
+	memcpy(r_data->nack_buff+r_data->nack_len, buf+sizeof(reliable_ses_tail), to_copy);
+	r_data->nack_len += to_copy;
+
+	Alarm(DEBUG, "Queueing nacks, nack_len: %d\n", r_data->nack_len);
 	E_queue(Ses_Send_Nack_Retransm, ses->sess_id, NULL, zero_timeout);
     }
 
@@ -1455,8 +1493,8 @@ int Process_Sess_Ack(Session *ses, char* buf, int16u ack_len,
 	}
     }
 
-    Alarm(DEBUG, "Got SES ack for %d; tail: %d\n", r_tail->cummulative_ack,
-	  r_data->tail);
+    Alarm(DEBUG, "Got SES ack for %d; tail: %d, head %d\n", r_tail->cummulative_ack,
+	  r_data->tail, r_data->head);
 
     if(r_tail->cummulative_ack > r_data->head) {
         /* This is from another movie...  got an ack for a packet
@@ -1500,49 +1538,49 @@ int Process_Sess_Ack(Session *ses, char* buf, int16u ack_len,
 	    
 	    r_data->tail++;
 
-
-	    old_window = r_data->window_size;
-	    
-	    /* Congestion control */
-	    if(congestion_action == 0) {
-		if(!stdcarr_empty(&(r_data->msg_buff))) { 
-		    /* there are other packets waiting, so it makes sense to increase the window */
-		    if(r_data->window_size < r_data->ssthresh) {
-			/* Slow start */
-			r_data->window_size += 1;
-		    }
-		    else {
-			/* Congestion avoidance */
-			r_data->window_size += 1/r_data->window_size;
-		    }
-		    if(r_data->window_size > r_data->max_window) {
-			r_data->window_size = (float)r_data->max_window;
-		    }
-		}
-	    }
-	    else if(congestion_action == 1) {
-		r_data->ssthresh /= 2;
-		if(r_data->ssthresh < 2) {
-		    r_data->ssthresh = 2;
-		}
-		r_data->window_size = 2;
-		congestion_action = 3;
-	    }
-	    else if(congestion_action == 2) {
-		r_data->ssthresh /= 2;
-		if(r_data->ssthresh < 2) {
-		    r_data->ssthresh = 2;
-		}
-		r_data->window_size /= 2;
-		if(r_data->window_size < 2) {
-		    r_data->window_size = 2;
-		}
-		congestion_action = 3;
-	    }
-	    
-	    if(r_data->window_size != old_window)
-		Alarm(DEBUG, "SES window adjusted: %5.3f\n", r_data->window_size);
-
+            if (TCP_Fairness) {
+                old_window = r_data->window_size;
+                
+                /* Congestion control */
+                if(congestion_action == 0) {
+                    if(!stdcarr_empty(&(r_data->msg_buff))) { 
+                        /* there are other packets waiting, so it makes sense to increase the window */
+                        if(r_data->window_size < r_data->ssthresh) {
+                            /* Slow start */
+                            r_data->window_size += 1;
+                        }
+                        else {
+                            /* Congestion avoidance */
+                            r_data->window_size += 1/r_data->window_size;
+                        }
+                        if(r_data->window_size > r_data->max_window) {
+                            r_data->window_size = (float)r_data->max_window;
+                        }
+                    }
+                }
+                else if(congestion_action == 1) {
+                    r_data->ssthresh /= 2;
+                    if(r_data->ssthresh < 2) {
+                        r_data->ssthresh = 2;
+                    }
+                    r_data->window_size = 2;
+                    congestion_action = 3;
+                }
+                else if(congestion_action == 2) {
+                    r_data->ssthresh /= 2;
+                    if(r_data->ssthresh < 2) {
+                        r_data->ssthresh = 2;
+                    }
+                    r_data->window_size /= 2;
+                    if(r_data->window_size < 2) {
+                        r_data->window_size = 2;
+                    }
+                    congestion_action = 3;
+                }
+                
+                if(r_data->window_size != old_window)
+                    Alarm(DEBUG, "SES window adjusted: %5.3f\n", r_data->window_size);
+            }
 	}		    
     }
 
@@ -1678,20 +1716,25 @@ int Reliable_Ses_Send(Session* ses)
 
 
     next_hop = Get_Route(My_Address, u_hdr->dest);
-    if((next_hop == NULL) && (u_hdr->dest != My_Address)){
+    /* Amy: taking this out and adding it to the buffering case below, so that
+     * we try to buffer packets if we temporarily lose our connection */
+    /*if((next_hop == NULL) && (u_hdr->dest != My_Address)){
+        Alarm(PRINT, "NO ROUTE!!! seq: %d\n", r_tail->seq_no);
         return(NO_ROUTE);
-    }
+    }*/
 
     /* If there is no more room in the window, or the connection is not valid yet, 
      * stick the message in the sending buffer */
 
-    if((r_data->head - r_data->tail >= r_data->window_size)||
+    if(((next_hop == NULL) && (u_hdr->dest != My_Address)) ||
+       (r_data->head - r_data->tail >= r_data->window_size)||
        (!stdcarr_empty(&r_data->msg_buff))||
        (r_data->head >= r_data->adv_win)||
        (!(r_data->flags & CONNECTED_LINK))) {
 	if((buf_cell = (Buffer_Cell*) new(BUFFER_CELL))==NULL) {
 	    Alarm(EXIT, "Reliable_Send_Control_Msg(): Cannot allocte buffer cell\n");
 	}
+        Alarm(DEBUG, "BUFFERING! head %d, tail %d, seq %d, buff %x\n", r_data->head, r_data->tail, r_tail->seq_no, send_buff);
 	buf_cell->data_len = data_len;
 	buf_cell->pack_type = r_add->type;
 	buf_cell->buff = send_buff;
@@ -1706,6 +1749,7 @@ int Reliable_Ses_Send(Session* ses)
 	    }
 	}
 
+        /* Amy: should we make sure the timeout is scheduled? */
 	return(BUFF_OK);
     }   
 
@@ -1716,11 +1760,13 @@ int Reliable_Ses_Send(Session* ses)
       Alarm(EXIT, "Reliable_Ses_Msg(): sending a packet with a smaller seq_no\n");
     }
     
+    assert(send_buff != NULL);
     r_data->window[r_tail->seq_no%MAX_WINDOW].data_len = data_len;
     r_data->window[r_tail->seq_no%MAX_WINDOW].pack_type = r_add->type;
     r_data->window[r_tail->seq_no%MAX_WINDOW].buff = send_buff;
     r_data->window[r_tail->seq_no%MAX_WINDOW].timestamp = now;
     r_data->window[r_tail->seq_no%MAX_WINDOW].resent = 0;
+    Alarm(DEBUG, "Increasing head from %d to %d, window: %f\n", r_data->head, r_tail->seq_no+1, r_data->window_size);
     r_data->head = r_tail->seq_no+1;
     inc_ref_cnt(send_buff);
 
@@ -1879,11 +1925,13 @@ void Ses_Send_Much(Session *ses)
     int32u i, ack_window_mask;
     stdit it;
 
+    Alarm(DEBUG, "Ses_Send_Much!\n");
 
     next_hop = Get_Route(My_Address, ses->rel_otherside_addr);
     if((next_hop == NULL) && (My_Address != ses->rel_otherside_addr)){
 	/* I don't have a route to the destination. 
 	   It might be temporary */
+        Alarm(DEBUG, "Ses_Send_Much: no route!\n");
 	return;
     }
     
@@ -1891,7 +1939,7 @@ void Ses_Send_Much(Session *ses)
 
     r_data = ses->r_data;
     if(r_data == NULL) {
-	Alarm(EXIT, "Reliable_Sess_Send: No reliable data struct !");
+	Alarm(EXIT, "Ses_Send_Much: No reliable data struct !");
     }
 
 
@@ -1901,16 +1949,19 @@ void Ses_Send_Much(Session *ses)
 
     /* See if we have room in the window to send anything */
     if(r_data->head - r_data->tail >= r_data->window_size) {
+        Alarm(DEBUG, "Ses_Send_Much: no room in window (head %d, tail %d, window %f!\n", r_data->head, r_data->tail, r_data->window_size);
 	return;
     }
 	
     /* Return if the buffer is empty */
     if(stdcarr_empty(&(r_data->msg_buff))) {
+        Alarm(DEBUG, "Ses_Send_Much: no buffered msgs\n");
 	return;
     }
 
     /* Return if the adv window is full */
     if(r_data->head >= r_data->adv_win) {
+        Alarm(DEBUG, "Ses_Send_Much: no room in adv_win (head %d, adv_win %d!\n", r_data->head, r_data->adv_win);
 	return;
     }
 
@@ -1956,13 +2007,13 @@ void Ses_Send_Much(Session *ses)
 	    Alarm(EXIT, "Ses_Send_Much(): smaller seq_no: %d than head: %d\n",
 		  r_tail->seq_no, r_data->head);
 	    
+        assert(send_buff != NULL);
 	r_data->window[r_tail->seq_no%MAX_WINDOW].data_len  = data_len;
 	r_data->window[r_tail->seq_no%MAX_WINDOW].buff      = send_buff;
 	r_data->window[r_tail->seq_no%MAX_WINDOW].timestamp = now;
 	r_data->window[r_tail->seq_no%MAX_WINDOW].resent = 0;
 	r_data->head = r_tail->seq_no+1;
-
-
+        Alarm(DEBUG, "Ses_Send_Much: advanced head to %d\n", r_data->head);
 	
 	/* Add NACKs to the reliable tail */
 	ack_len = sizeof(reliable_ses_tail); 
@@ -2146,6 +2197,7 @@ void Ses_Send_One(int sesid, void* dummy)
 
     r_data->adv_win++;
 
+    Alarm(PRINT, "Ses_Send_One: queueing Try_to_Send and Send_One: adv_win: %d, tail %d, head %d\n", r_data->adv_win, r_data->tail, r_data->head);
     E_queue(Ses_Try_to_Send, ses->sess_id, NULL, zero_timeout);
     E_queue(Ses_Send_One, ses->sess_id, NULL, one_sec_timeout);
 }
@@ -2370,6 +2422,8 @@ void Ses_Reliable_Timeout(int sesid, void *dummy)
     int32u i, cur_seq;
 
     UNUSED(dummy);
+
+    Alarm(DEBUG, "Ses_Reliable_Timeout\n");
     
     stdhash_find(&Sessions_ID, &it, &sesid);
     if(stdhash_is_end(&Sessions_ID, &it)) {
@@ -2388,7 +2442,9 @@ void Ses_Reliable_Timeout(int sesid, void *dummy)
     if(next_hop == NULL) {
 	/* I don't have a route to the destination. 
 	   It might be temporary */
-	return;
+        /* Amy: we want to make sure the function still gets re-enqueued in this case */
+	/*return;*/
+        goto END;
     }
  
     now = E_get_time();
@@ -2409,13 +2465,14 @@ void Ses_Reliable_Timeout(int sesid, void *dummy)
     Alarm(DEBUG, "SES_REL_TIMEOUT: tail: %d; head:%d\n", r_data->tail, r_data->head);
  
     /* Congestion control */
-    r_data->ssthresh = (unsigned int)(r_data->window_size/2);
-    if(r_data->ssthresh < 2)
-	r_data->ssthresh = 2;
-    r_data->window_size = 2;
+    if (TCP_Fairness) {
+        r_data->ssthresh = (unsigned int)(r_data->window_size/2);
+        if(r_data->ssthresh < 2)
+            r_data->ssthresh = 2;
+        r_data->window_size = 2;
 
-    Alarm(DEBUG, "SES window adjusted: %5.3f timeout\n", r_data->window_size);
-
+        Alarm(DEBUG, "SES window adjusted: %5.3f timeout\n", r_data->window_size);
+    }
 
     /* If there is already an ack to be sent on this link, cancel it, 
        as this packet will contain the ack info. */
@@ -2424,8 +2481,6 @@ void Ses_Reliable_Timeout(int sesid, void *dummy)
 	E_dequeue(Ses_Send_Ack, ses->sess_id, NULL);
 	Alarm(DEBUG, "Ack optimization successfull !!!\n");
     }
-
-    
 
     /* If we got up to here, we do have smthg in the window. */
 
@@ -2532,6 +2587,7 @@ void Ses_Reliable_Timeout(int sesid, void *dummy)
     dec_ref_cnt(scat);
     }
 
+END:
     timeout_val.sec = (r_data->rtt*15)/1000000;
     timeout_val.usec = (r_data->rtt*15)%1000000;
     
@@ -2604,7 +2660,7 @@ void Ses_Send_Nack_Retransm(int sesid, void *dummy)
     int32u i, nack_seq;
 
     UNUSED(dummy);
-    
+
     stdhash_find(&Sessions_ID, &it, &sesid);
     if(stdhash_is_end(&Sessions_ID, &it)) {
 	/* The session is gone */
@@ -2643,19 +2699,21 @@ void Ses_Send_Nack_Retransm(int sesid, void *dummy)
     }
 	
     /* Congestion control */
-    r_data->ssthresh = (unsigned int)(r_data->window_size/2);
-    if(r_data->ssthresh < 2) {
-	r_data->ssthresh = 2;
+    if (TCP_Fairness) {
+        r_data->ssthresh = (unsigned int)(r_data->window_size/2);
+        if(r_data->ssthresh < 2) {
+            r_data->ssthresh = 2;
+        }
+        r_data->window_size = r_data->window_size/2;
+        if(r_data->window_size < 2) {
+            r_data->window_size = 2;
+        }
+
+        Alarm(DEBUG, "SES window adjusted: %5.3f\n", r_data->window_size);
     }
-    r_data->window_size = r_data->window_size/2;
-    if(r_data->window_size < 2) {
-	r_data->window_size = 2;
-    }
-
-    Alarm(DEBUG, "SES window adjusted: %5.3f\n", r_data->window_size);
 
 
-    /* If there is already an ack to be sent on tis link, cancel it, 
+    /* If there is already an ack to be sent on this link, cancel it, 
        as these packets will contain the ack info. */
     if(r_data->scheduled_ack == 1) {
 	r_data->scheduled_ack = 0;
@@ -2786,6 +2844,3 @@ void Ses_Try_to_Send(int sesid, void* dummy)
     ses = *((Session **)stdhash_it_val(&it));
     Ses_Send_Much(ses);
 }
-
-
-

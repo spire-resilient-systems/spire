@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -59,12 +60,35 @@
 
 #include "spines.h"
 
+static sp_time Client_Cost_Stats_Timeout = {30, 0};
+
+void Print_Client_Cost_Stats(int dummy, void *dummy_ptr);
+
 int Node_ID_cmp(const void *l, const void *r)
 {
   Node_ID left  = *(Node_ID*) l;
   Node_ID right = *(Node_ID*) r;
 
   return (left < right ? -1 : (left != right ? 1 : 0));
+}
+
+int Client_ID_cmp(const void *l, const void *r)
+{
+    Client_ID left = *(Client_ID*) l;
+    Client_ID right = *(Client_ID*) r;
+
+    if (left.daemon_id < right.daemon_id) {
+        return -1;
+    } else if (left.daemon_id > right.daemon_id) {
+        return 1;
+    } else {
+        if (left.client_port < right.client_port)
+            return -1;
+        if (right.client_port < left.client_port)
+            return 1;
+        else
+            return 0;
+    }
 }
 
 /***********************************************************/
@@ -90,6 +114,8 @@ void Init_Nodes(void)
     Edge        *edge;
     stdit        it;
     Edge_Key     key;
+    Edge_Value  *val_ptr;
+    int16u       index;
 
     Num_Neighbors = 0;
 
@@ -108,6 +134,8 @@ void Init_Nodes(void)
     stdhash_construct(&All_Groups_by_Name,   sizeof(Group_ID),        sizeof(State_Chain*),      NULL, NULL, 0);
     stdhash_construct(&Changed_Group_States, sizeof(Node_ID),         sizeof(Changed_State*),    NULL, NULL, 0);
     stdhash_construct(&Monitor_Params,       sizeof(Network_Leg_ID),  sizeof(struct Lk_Param_d), NULL, NULL, 0);
+    /* AB: added for cost accounting */
+    stdskl_construct(&Client_Cost_Stats,     sizeof(Client_ID),       sizeof(int32),             Client_ID_cmp);
 
     for (i = 0; i < MAX_LINKS; ++i) {
       Links[i] = NULL;
@@ -152,17 +180,21 @@ void Init_Nodes(void)
         }
     }
 
-    /* Create all edges that we know from config file */
+    /* Create all edges that we know from config file (we also label each edge
+     * with its index, which is used for source-based routing bitmasks)*/
+    index = 0;
     stdskl_begin(&Sorted_Edges, &it);
     while (!stdskl_is_end(&Sorted_Edges, &it)) {
         key = *(Edge_Key*)stdskl_it_key(&it);
+        val_ptr = (Edge_Value*)stdskl_it_val(&it);
+        val_ptr->index = index++;
         tmp = -1;
    
         if (Get_Edge(temp_node_ip[key.src_id], temp_node_ip[key.dst_id]) == NULL)
-            edge = Create_Edge(temp_node_ip[key.src_id], temp_node_ip[key.dst_id], tmp);
+            edge = Create_Edge(temp_node_ip[key.src_id], temp_node_ip[key.dst_id], tmp, val_ptr->cost, val_ptr->index);
         if (Directed_Edges == 0) {
             if (Get_Edge(temp_node_ip[key.dst_id], temp_node_ip[key.src_id]) == NULL)
-                edge = Create_Edge(temp_node_ip[key.dst_id], temp_node_ip[key.src_id], tmp);
+                edge = Create_Edge(temp_node_ip[key.dst_id], temp_node_ip[key.src_id], tmp, val_ptr->cost, val_ptr->index);
         }
 
         stdskl_it_next(&it);
@@ -212,6 +244,9 @@ void Init_Nodes(void)
 
     Init_Routes();
     Print_Routes(NULL);
+    if (Print_Cost) {
+      Print_Client_Cost_Stats(0, NULL);
+    }
 }
 
 /***********************************************************/
@@ -431,4 +466,23 @@ int Try_Remove_Node(Node_ID address)
 	}
     }
     return 0;
+}
+
+void Print_Client_Cost_Stats(int dummy, void *dummy_ptr)
+{
+    stdit it;
+    Client_ID *cid;
+    int32u *count;
+
+    Alarm(PRINT, "--- CLIENT COST STATS ---\n");
+    for (stdskl_begin(&Client_Cost_Stats, &it); !stdskl_is_end(&Client_Cost_Stats, &it); stdskl_it_next(&it)) {
+        cid = (Client_ID *)stdskl_it_key(&it);
+        count = (int32u *)stdskl_it_val(&it);
+        Alarm(PRINT, "Client ID: (%d.%d.%d.%d, %u), %d msgs\n",
+              IP1(cid->daemon_id), IP2(cid->daemon_id), IP3(cid->daemon_id),
+              IP4(cid->daemon_id), cid->client_port, *count);
+    }
+    Alarm(PRINT, "\n");
+
+    E_queue(Print_Client_Cost_Stats, 0, NULL, Client_Cost_Stats_Timeout);
 }

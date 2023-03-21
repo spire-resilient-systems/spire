@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -48,6 +48,7 @@ enum rb_state { DUMMY_RB_STATE, INIT, SENT_ECHO, SENT_READY, MAX_RB_STATE };
 
 void RB_Initialize_Data_Structure(void);
 void RB_Initialize_Upon_View_Change(void);
+void RB_Upon_Reset(void);
 void RB_Periodic_Retrans(int d1, void *d2);
 
 void RB_Process_Init (signed_message *mess);

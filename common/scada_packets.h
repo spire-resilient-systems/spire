@@ -24,10 +24,13 @@
  *   Amy Babay            babay@cs.jhu.edu
  *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
- * Major Contributor:
+ * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
  *
- * Copyright (c) 2017 Johns Hopkins University.
+ * Contributors:
+ *   Samuel Beckley       Contributions to HMIs
+ *
+ * Copyright (c) 2018 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -48,11 +51,11 @@
 #define SIGNATURE_SIZE 128
 #define MAX_PAYLOAD_SIZE 512  /* should be at least update_size */
 
-#define UPDATE 30
-#define CLIENT_RESPONSE 31
+#define UPDATE 46
+#define CLIENT_RESPONSE 47
 #define PRIME_NO_OP 101
 #define PRIME_STATE_TRANSFER 102
-#define PRIME_NEW_INCARNATION 103
+#define PRIME_SYSTEM_RESET 103
 
 /* SCADA-specific definitions */
 #define MAX_SWITCHES 10
@@ -63,6 +66,10 @@
 /* PNNL scenario definitions */
 #define NUM_POINT 8
 #define NUM_BREAKER 14
+
+/* EMS scenario definitions */
+#define EMS_NUM_GENERATORS 6
+#define EMS_NUM_POWERPLANTS 2
 
 /*
  * Message types:
@@ -75,7 +82,8 @@
  *   BENCHMARK = message to measure latency   
  */
 enum message_type {DUMMY, RTU_DATA, RTU_FEEDBACK, HMI_UPDATE, HMI_COMMAND, 
-                    TC_SHARE, TC_FINAL, STATE_REQUEST, STATE_XFER, BENCHMARK};
+                    TC_SHARE, TC_FINAL, STATE_REQUEST, STATE_XFER, SYSTEM_RESET, 
+                    BENCHMARK};
 
 /*
  * Protocols:
@@ -107,9 +115,11 @@ enum crob_type{LATCH_ON, LATCH_OFF, PULSE_ON, PULSE_OFF};
  * Scenarios:
  *      JHU (power grid distribution)
  *      PNNL (power breakers)
+ *      EMS (energy management system)
  */
 #define JHU 1
 #define PNNL 2
+#define EMS 3
 
 /*
  * Type of equipment inside of substations
@@ -156,6 +166,9 @@ typedef struct dummy_signed_message {
     int32u len;        /* length of the content */
     int32u type;       /* type of the message */
 
+    int32u incarnation;
+    int32u monotonic_counter;
+
     /* Content of message follows */
 } signed_message;
 
@@ -168,7 +181,8 @@ typedef struct dummy_update_message {
     int32u server_id;
     int32_t address;
     uint16_t port;
-    seq_pair seq;
+    //seq_pair seq;
+    int32u seq_num;
     /* the update content follows */
 } update_message;
 
@@ -193,8 +207,11 @@ typedef struct dummy_client_response_message {
 /*              SCADA SYSTEM MESSAGE DEFINITIONS                */
 /****************************************************************/
 #define RTU_DATA_PAYLOAD_LEN 64
-#define RTU_DATA_PADDING 4
+#define PNNL_DATA_PADDING 4
 #define PNNL_RTU_ID 10
+#define EMS_DATA_PADDING 44
+#define EMS_TARGET_SET 0 // Message type for the RTU Feedback Msg
+#define EMS_RTU_ID_BASE 11
 
 /* JHU-specific RTU Data struct */
 typedef struct jhu_fields_d {
@@ -214,6 +231,16 @@ typedef struct pnnl_fields_d {
     unsigned char breaker_read[NUM_BREAKER];
     unsigned char breaker_write[NUM_BREAKER];
 } pnnl_fields;
+
+/* EMS-specific RTU Data struct */
+typedef struct ems_fields_d {
+    int32u id;
+    int32u status;
+    int32u max_generation;
+    int32u curr_generation;
+    int32u target_generation;
+    int32u padd1[EMS_DATA_PADDING / sizeof(int32u)];
+} ems_fields;
 
 /* RTU Data Message */
 //TODO: change sub_id to rtu_id
@@ -312,6 +339,8 @@ typedef struct dummy_benchmark_msg_d {
 typedef struct itrc_data_d {
     char ipc_local[100];
     char ipc_remote[100];
+    char prime_keys_dir[100];
+    char sm_keys_dir[100];
     char spines_int_addr[32];
     int spines_int_port;
     char spines_ext_addr[32];

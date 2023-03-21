@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -45,11 +45,15 @@
 #include "data_structs.h"
 
 void PRE_ORDER_Initialize_Data_Structure (void);
+void PRE_ORDER_Upon_Reset (void);
 void PRE_ORDER_Garbage_Collect_PO_Slot(int32u server_id, po_seq_pair ps, int erase);
+void PRE_ORDER_Periodically(int d1, void *d2);
+void PRE_ORDER_Periodic_Retrans(int d1, void *d2);
 
 void PRE_ORDER_Process_Update      (signed_message *mess);
 void PRE_ORDER_Process_PO_Request  (signed_message *mess);
 void PRE_ORDER_Process_PO_Ack      (signed_message *mess);
+void PRE_ORDER_Process_PO_Ack_Part (po_ack_part *part, signed_message *po_ack);
 void PRE_ORDER_Process_PO_ARU      (signed_message *mess);
 void PRE_ORDER_Process_Proof_Matrix(signed_message *mess);
 
@@ -58,8 +62,9 @@ void PRE_ORDER_Send_PO_Ack      (void);
 void PRE_ORDER_Send_PO_ARU      (void);
 void PRE_ORDER_Send_Proof_Matrix(void);
 
-bool PRE_ORDER_Latest_Proof_Sent       (void);
-void PRE_ORDER_Update_Latest_Proof_Sent(void);
+bool PRE_ORDER_Latest_Proof_Updated    (void);
+//bool PRE_ORDER_Latest_Proof_Sent       (void);
+//void PRE_ORDER_Update_Latest_Proof_Sent(void);
 
 po_seq_pair PRE_ORDER_Proof_ARU (int32u server, po_aru_signed_message *proof);
 int32u PRE_ORDER_Update_ARU(void);

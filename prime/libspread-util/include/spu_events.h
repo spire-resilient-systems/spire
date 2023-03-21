@@ -84,6 +84,7 @@ int     E_in_queue( void (* func)( int code, void *data ), int code,
 int 	E_dequeue( void (* func)( int code, void *data ), int code,
 		   void *data );
 void	E_delay( sp_time t );
+void    E_dequeue_all_time_events();
 
 int	E_attach_fd( int fd, int fd_type,
 		     void (* func)( int fd, int code, void *data), int code,

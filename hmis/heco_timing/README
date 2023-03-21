@@ -1,0 +1,11 @@
+This HMI was created in order to test the latency between issuing a command to
+a PLC and seeing the result on the display screen. It was used in conjunction
+with a RaspberryPi that could independently communicate with the PLC and had a
+photoreceptive sensor pointed at the screen. The RaspberryPi issued a command
+to the PLC that caused a box on the screen to change color from black to white
+(or vice-versa) and then timed how long it took its photosensor to notice the
+change.
+
+A similar test could be performed by modifying the HMI itself to issue a
+command and then measure the time until it sees a corresponding change in the
+data it is reading from the PLC.

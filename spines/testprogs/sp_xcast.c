@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -169,7 +170,7 @@ int main(int argc, char* argv[])
             }
             else  {
                 daemon_ptr = (struct sockaddr *)&unix_addr;
-                sprintf(unix_addr.sun_path, "%s%hu", SPINES_UNIX_SOCKET_PATH, spinesPort);
+                sprintf(unix_addr.sun_path, "%s%hu", SPINES_UNIX_SOCKET_PATH, (unsigned short) spinesPort);
                 printf("Using IPC on Port %s\n", unix_addr.sun_path);
             }
         } else {

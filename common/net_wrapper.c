@@ -24,10 +24,13 @@
  *   Amy Babay            babay@cs.jhu.edu
  *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
- * Major Contributor:
+ * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
  *
- * Copyright (c) 2017 Johns Hopkins University.
+ * Contributors:
+ *   Samuel Beckley       Contributions to HMIs
+ *
+ * Copyright (c) 2018 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -65,6 +68,10 @@ int CC_Sites[NUM_CC_REPLICA];
 char* Ext_Site_Addrs[NUM_CC]    = SPINES_EXT_SITE_ADDRS;
 char* Int_Site_Addrs[NUM_SITES] = SPINES_INT_SITE_ADDRS;
 sigset_t signal_mask;
+
+/* local functions */
+int max_rcv_buff(int sk);
+int max_snd_buff(int sk);
 
 /* Fills in CC_Replicas array with ids of control center replicas */
 void Init_SM_Replicas()
@@ -120,6 +127,9 @@ int serverTCPsock(int port, int qlen)
     conn.sin_family = AF_INET;
     conn.sin_port = htons(port);
     conn.sin_addr.s_addr = htonl(INADDR_ANY);
+
+    max_snd_buff(s);
+    max_rcv_buff(s);
     
     // Bind
     if(bind(s, (struct sockaddr *)&conn, sizeof(conn)) < 0) {
@@ -155,6 +165,9 @@ int clientTCPsock(int port, int addr)
     conn.sin_port = htons(port);
     conn.sin_addr.s_addr = addr;
 
+    max_snd_buff(s);
+    max_rcv_buff(s);
+    
     // Connect to the server
     if(connect(s, (struct sockaddr *)&conn, sizeof(conn)) < 0) {
         print_addr.s_addr = addr;
@@ -250,6 +263,9 @@ int IPC_Client_Sock(const char *path)
     memset(&conn, 0, sizeof(struct sockaddr_un));
     conn.sun_family = AF_UNIX;
     strncpy(conn.sun_path, path, sizeof(conn.sun_path) - 1);
+    
+    max_snd_buff(s);
+    max_rcv_buff(s);
 
     if((connect(s, (struct sockaddr *)&conn, sizeof(conn))) < 0) {
         perror("IPC_Client_Sock: connect");
@@ -275,6 +291,9 @@ int IPC_DGram_Sock(const char *path)
     conn.sun_family = AF_UNIX;
     strncpy(conn.sun_path, path, sizeof(conn.sun_path) - 1);
 
+    max_snd_buff(s);
+    max_rcv_buff(s);
+
     if (remove(conn.sun_path) == -1 && errno != ENOENT) {
         perror("IPCsock: error removing previous path binding");
         exit(EXIT_FAILURE);
@@ -299,6 +318,9 @@ int IPC_DGram_SendOnly_Sock()
         perror("IPCsock: Couldn't create a socket");
         exit(EXIT_FAILURE);
     }
+
+    max_snd_buff(s);
+    max_rcv_buff(s);
 
     return s;
 }
@@ -387,7 +409,7 @@ int Spines_SendOnly_Sock(const char *sp_addr, int sp_port, int proto)
 
     /* printf("Creating IPC spines_socket\n");
     sk = spines_socket(PF_SPINES, SOCK_DGRAM, protocol, (struct sockaddr *)&spines_uaddr); */
-    
+   
     if ((int)inet_addr(sp_addr) == My_IP) {
         printf("Creating default spines_socket\n");
         sk = spines_socket(PF_SPINES, SOCK_DGRAM, protocol, (struct sockaddr *)&spines_uaddr);
@@ -502,4 +524,42 @@ int getIP()
 
     memcpy( &my_ip, p_h_ent->h_addr_list[0], sizeof(my_ip));
     return my_ip;
+}
+
+int max_rcv_buff(int sk) 
+{
+  /* Increasing the buffer on the socket */
+  int i, val, ret;
+  unsigned int lenval;
+
+  for(i=10; i <= 3000; i+=5) {
+    val = 1024*i;
+    ret = setsockopt(sk, SOL_SOCKET, SO_RCVBUF, (void *)&val, sizeof(val));
+    if (ret < 0)
+      break;
+    lenval = sizeof(val);
+    ret= getsockopt(sk, SOL_SOCKET, SO_RCVBUF, (void *)&val, &lenval);
+    if(val < i*1024 )
+      break;
+  }
+  return(1024*(i-5));
+}
+
+int max_snd_buff(int sk) 
+{
+  /* Increasing the buffer on the socket */
+  int i, val, ret;
+  unsigned int lenval;
+
+  for(i=10; i <= 3000; i+=5) {
+    val = 1024*i;
+    ret = setsockopt(sk, SOL_SOCKET, SO_SNDBUF, (void *)&val, sizeof(val));
+    if (ret < 0)
+      break;
+    lenval = sizeof(val);
+    ret = getsockopt(sk, SOL_SOCKET, SO_SNDBUF, (void *)&val,  &lenval);
+    if(val < i*1024)
+      break;
+  }
+  return(1024*(i-5));
 }

@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -48,6 +49,7 @@
 #define RESERVED1_ROUTE 4
 #define IT_PRIORITY_ROUTE 5
 #define RELIABLE_FLOOD_ROUTE 6
+#define PROBLEM_ROUTE   7
 
 typedef struct Route_d 
 {
@@ -78,6 +80,8 @@ typedef struct CONF_RR_d {
 #endif
 
 ext CONF_RR Conf_RR;
+ext int32u My_Source_Seq;
+ext int32u My_Source_Incarnation;
 
 void     Init_Routes(void);
 void     Schedule_Routes(void);

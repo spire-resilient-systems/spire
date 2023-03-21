@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -91,6 +91,7 @@ int32 UTIL_Get_Server_Spines_Address    (int32u server);
 /* Leader identification functions */
 int32u UTIL_I_Am_Leader(void);
 int32u UTIL_Leader     (void); 
+int32u UTIL_Leader_Of_View(int32u view);
 
 /* Attack functions */
 int32u UTIL_I_Am_Faulty(void);

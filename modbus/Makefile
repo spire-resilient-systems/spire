@@ -24,10 +24,13 @@
  #   Amy Babay            babay@cs.jhu.edu
  #   Thomas Tantillo      tantillo@cs.jhu.edu
  #
- # Major Contributor:
+ # Major Contributors:
  #   Marco Platania       Contributions to architecture design 
  #
- # Copyright (c) 2017 Johns Hopkins University.
+ # Contributors:
+ #   Samuel Beckley       Contributions to HMIs 
+ #
+ # Copyright (c) 2018 Johns Hopkins University.
  # All rights reserved.
  #
  # Partial funding for Spire research was provided by the Defense Advanced 
@@ -40,10 +43,11 @@ CC            = gcc
 CXX           = g++
 CFLAGS        = -m64 -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
 CXXFLAGS      = -m64 -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
-INCPATH       = -I. -I/opt/pvb/rllib/lib -I../prime/stdutil/include -I../spines/libspines/
+PVB			  = ../pvb
+INCPATH       = -I. -I$(PVB)/rllib/lib -I../prime/stdutil/include -I../spines/libspines/
 LINK          = g++
 LFLAGS        = -m64 -Wl,-O1
-LIBS          = $(SUBLIBS) -lpthread /usr/lib/librllib.so \
+LIBS          = $(SUBLIBS) -lpthread $(PVB)/rllib/lib/librllib.a \
 				../prime/OpenTC-1.1/TC-lib-1.0/.libs/libTC.a \
 				../spines/libspines/libspines.a ../prime/stdutil/lib/libstdutil.a \
 				-lrt -ldl -lm -lcrypto
@@ -74,15 +78,15 @@ clean:
 	rm -f $(OBJECTS) 
 	rm -f $(TARGET)
 
-modbus_master.o: modbus_master.cpp /opt/pvb/rllib/lib/rlmodbus.h \
-		/opt/pvb/rllib/lib/rldefine.h \
-		/opt/pvb/rllib/lib/rlsocket.h \
-		/opt/pvb/rllib/lib/rlstring.h \
-		/opt/pvb/rllib/lib/rlserial.h \
-		/opt/pvb/rllib/lib/rlthread.h \
-		/opt/pvb/rllib/lib/rlwthread.h \
-		/opt/pvb/rllib/lib/rlinifile.h \
-		/opt/pvb/rllib/lib/rlspreadsheet.h \
+modbus_master.o: modbus_master.cpp $(PVB)/rllib/lib/rlmodbus.h \
+		$(PVB)/rllib/lib/rldefine.h \
+		$(PVB)/rllib/lib/rlsocket.h \
+		$(PVB)/rllib/lib/rlstring.h \
+		$(PVB)/rllib/lib/rlserial.h \
+		$(PVB)/rllib/lib/rlthread.h \
+		$(PVB)/rllib/lib/rlwthread.h \
+		$(PVB)/rllib/lib/rlinifile.h \
+		$(PVB)/rllib/lib/rlspreadsheet.h \
 		../common/scada_packets.h \
 		../common/net_wrapper.h \
 		../common/openssl_rsa.h \

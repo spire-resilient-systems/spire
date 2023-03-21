@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -54,43 +54,20 @@
 #include "suspect_leader.h"
 #include "reliable_broadcast.h"
 #include "view_change.h"
+#include "catchup.h"
 #include "proactive_recovery.h"
 
 /* Gobally Accessible Variables */
 extern server_variables   VAR;
 extern server_data_struct DATA;
-
-/* void PROCESS_Update      (signed_message *update); 
-void PROCESS_PO_Request  (signed_message *mess);
-void PROCESS_PO_Ack      (signed_message *mess);
-void PROCESS_PO_ARU      (signed_message *mess);
-void PROCESS_Proof_Matrix(signed_message *mess);
-void PROCESS_Pre_Prepare (signed_message *mess);
-void PROCESS_Prepare     (signed_message *mess);
-void PROCESS_Commit      (signed_message *mess);
-void PROCESS_Recon       (signed_message *mess);
-void PROCESS_TAT_Measure (signed_message *mess);
-void PROCESS_RTT_Measure (signed_message *mess);
-void PROCESS_TAT_UB      (signed_message *mess);
-void PROCESS_RB_Init     (signed_message *mess);
-void PROCESS_RB_Echo     (signed_message *mess);
-void PROCESS_RB_Ready    (signed_message *mess);
-void PROCESS_Report      (signed_message *mess);
-void PROCESS_PC_Set      (signed_message *mess);
-
-int32u PROCESS_Prepare_Certificate_Ready(ord_slot *slot);
-void   PROCESS_Move_Prepare_Certificate (ord_slot *slot);
-int32u PROCESS_Prepare_Matches_Pre_Prepare(signed_message *prepare,
-					 complete_pre_prepare_message *pp);
-
-int32u PROCESS_Commit_Certificate_Ready  (ord_slot *slot);
-void   PROCESS_Move_Commit_Certificate   (ord_slot *slot);
-int32u PROCESS_Commit_Matches_Pre_Prepare(signed_message *commit,
-					complete_pre_prepare_message *pp); */
+extern benchmark_struct   BENCH;
 
 /* Process a signed message */
 void PROCESS_Message(signed_message *mess) 
 {
+
+  util_stopwatch profile_sw;
+  UTIL_Stopwatch_Start(&profile_sw);
 
   switch (mess->type) {   
 
@@ -222,23 +199,90 @@ void PROCESS_Message(signed_message *mess)
     break;
 
   case CATCHUP_REQUEST:
-    PR_Process_Catchup_Request(mess);
+    CATCH_Process_Catchup_Request(mess);
     break;
 
   case ORD_CERT:
-    PR_Process_ORD_Certificate(mess);
+    CATCH_Process_ORD_Certificate(mess);
     break;
 
   case PO_CERT:
-    PR_Process_PO_Certificate(mess);
+    CATCH_Process_PO_Certificate(mess);
     break;
 
-  /* case CATCHUP_REPLY:
-    PR_Process_Catchup_Reply(mess);
-    break; */
+  case JUMP:
+    CATCH_Process_Jump(mess);
+    break;
+
+  case NEW_INCARNATION:
+    PR_Process_New_Incarnation(mess);
+    break;
+
+  case INCARNATION_ACK:
+    PR_Process_Incarnation_Ack(mess);
+    break;
+
+  case INCARNATION_CERT:
+    PR_Process_Incarnation_Cert(mess);
+    break;
+
+  case PENDING_STATE:
+    PR_Process_Pending_State(mess);
+    break;
+
+  case PENDING_SHARE:
+    PR_Process_Pending_Share(mess);
+    break;
+  
+  case RESET_VOTE:
+    PR_Process_Reset_Vote(mess);
+    break;
+
+  case RESET_SHARE:
+    PR_Process_Reset_Share(mess);
+    break;
+
+  case RESET_PROPOSAL:
+    PR_Process_Reset_Proposal(mess);
+    break;
+
+  case RESET_PREPARE:
+    PR_Process_Reset_Prepare(mess);
+    break;
+
+  case RESET_COMMIT:
+    PR_Process_Reset_Commit(mess);
+    break;
+
+  case RESET_NEWLEADER:
+    PR_Process_Reset_NewLeader(mess);
+    break;
+
+  case RESET_NEWLEADERPROOF:
+    PR_Process_Reset_NewLeaderProof(mess);
+    break;
+
+  case RESET_VIEWCHANGE:
+    PR_Process_Reset_ViewChange(mess);
+    break;
+
+  case RESET_NEWVIEW:
+    PR_Process_Reset_NewView(mess);
+    break;
+
+  case RESET_CERT:
+    PR_Process_Reset_Certificate(mess);
+    break;
 
   default:
     Alarm(PRINT, "Unexpected message type in PROCESS message: %d\n", mess->type);
     return;
+  }
+
+  UTIL_Stopwatch_Stop(&profile_sw);
+  if (UTIL_Stopwatch_Elapsed(&profile_sw) >= 0.002) {
+    Alarm(DEBUG, "PROF PROC: %s took %f s\n", 
+            UTIL_Type_To_String(mess->type), UTIL_Stopwatch_Elapsed(&profile_sw));
+    BENCH.profile_count[mess->type]++;
   }
 }

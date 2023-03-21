@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -148,7 +148,7 @@ void RECON_Process_Recon (signed_message *recon)
 void RECON_Do_Recon (ord_slot *o_slot)
 {
   complete_pre_prepare_message *pp;
-  complete_pre_prepare_message *prev_pp;
+  //complete_pre_prepare_message *prev_pp;
   ord_slot *prev_ord_slot;
   po_slot *p_slot;
   signed_message *req;
@@ -175,7 +175,7 @@ void RECON_Do_Recon (ord_slot *o_slot)
   /* First check to see if we've locally executed the previous global
    * sequence number. */
   prev_ord_slot = UTIL_Get_ORD_Slot_If_Exists(gseq - 1);
-  
+
   /* The previous slot is allowed to be NULL only if this is the first seq.
    * Otherwise, it means we can't have a complete Pre-Prepare for that one
    * yet and should return. */
@@ -188,23 +188,26 @@ void RECON_Do_Recon (ord_slot *o_slot)
 
   /*-----If we get here, we're good to reconcile.-------*/
 
-  /* See which PO-Requests are now eligible for execution. */
+  /* See which PO-Requests are now eligible for execution by
+   * comparing made_eligible - last_executed. First, setup
+   * prev_pop as either last_executed or (0,0) if first ORD */
   if(prev_ord_slot == NULL) {
-    for(i = 1; i <= NUM_SERVERS; i++)
+    assert(gseq == 1);
+
+    for(i = 1; i <= NUM_SERVERS; i++) 
       prev_pop[i] = zero_ps;
   }
   else {
-    prev_pp = &prev_ord_slot->complete_pre_prepare;
-    
-    /* Set up the Prev_pop array */
-    for(i = 1; i <= NUM_SERVERS; i++)
-      prev_pop[i] = PRE_ORDER_Proof_ARU(i, prev_pp->cum_acks);
+    for(i = 1; i <= NUM_SERVERS; i++) 
+      prev_pop[i] = pp->last_executed[i-1];
   }
-  
-  /* Set up the current array */
-  for(i = 1; i <= NUM_SERVERS; i++)
-    cur_pop[i] = PRE_ORDER_Proof_ARU(i, pp->cum_acks);
-  
+
+  /* Second, setup cur_pop as made_eligible, which should be setup
+   * by now either when we sent our prepare or when we ordered 
+   * (collected 2f+k+1 commits) */
+  for (i = 1; i <= NUM_SERVERS; i++) 
+    cur_pop[i] = o_slot->made_eligible[i-1];
+
   UTIL_DLL_Initialize(&message_list);
   for(i = 1; i <= NUM_SERVERS; i++) {
 
@@ -296,7 +299,7 @@ void RECON_Do_Recon (ord_slot *o_slot)
    * line. Also try to garbage collect the ord_slot. */
   o_slot->reconciled = 1;
   RECON_Update_Recon_White_Line();
-  ORDER_Attempt_To_Garbage_Collect_ORD_Slot(gseq);
+  //ORDER_Attempt_To_Garbage_Collect_ORD_Slot(gseq);
 
   /* Return if nothing to do */
   if(UTIL_DLL_Is_Empty(&message_list))
@@ -391,7 +394,7 @@ void RECON_Update_Recon_White_Line()
 
     slot = UTIL_Get_ORD_Slot_If_Exists(seq);
     if(slot != NULL && slot->reconciled) {
-      ORDER_Attempt_To_Garbage_Collect_ORD_Slot(seq);
+      //ORDER_Attempt_To_Garbage_Collect_ORD_Slot(seq);
       DATA.ORD.recon_white_line++;
     }
     else {
@@ -413,7 +416,7 @@ void RECON_Decode_Recon(recon_slot *slot)
   int32u i, message_len, ret;
   int32u mpackets, rpackets;
   int32u initialized;
-  po_request_message *req;
+  /*po_request_message *req;*/
   
   initialized = 0;
   message_len = 0;
@@ -474,9 +477,10 @@ void RECON_Decode_Recon(recon_slot *slot)
 #endif    
   
   assert(mess->type == PO_REQUEST);
+
+/* #if 1
   req = (po_request_message *)(mess+1);
   
-/* #if 1
   if(req->seq_num % 250 == 0)
     Alarm(PRINT, "Decoded %d %d\n", mess->machine_id, req->seq_num);
 #endif */

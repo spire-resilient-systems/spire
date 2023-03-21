@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -50,24 +50,31 @@
 /* NOTE: PO_ARU is PO_SUMMARY and PROOF_MATRIX is SUMMARY_MATRIX in Kirsch's thesis */
 
 enum packet_types {DUMMY, 
-		   PO_REQUEST,  PO_ACK,  PO_ARU, PROOF_MATRIX,
+		   PO_REQUEST, PO_ACK, PO_ARU, PROOF_MATRIX,
 		   PRE_PREPARE, PREPARE, COMMIT, RECON,
            TAT_MEASURE, RTT_PING, RTT_PONG, RTT_MEASURE, TAT_UB,
            NEW_LEADER, NEW_LEADER_PROOF,
            RB_INIT, RB_ECHO, RB_READY,
            REPORT, PC_SET, VC_LIST, VC_PARTIAL_SIG, VC_PROOF,
            REPLAY, REPLAY_PREPARE, REPLAY_COMMIT,
-           CATCHUP_REQUEST, ORD_CERT, PO_CERT, //CATCHUP_REPLY,
-		   UPDATE, CLIENT_RESPONSE, 
+           ORD_CERT, PO_CERT, CATCHUP_REQUEST, JUMP,
+           NEW_INCARNATION, INCARNATION_ACK, INCARNATION_CERT,
+           PENDING_STATE, PENDING_SHARE,
+           RESET_VOTE, RESET_SHARE,
+           RESET_PROPOSAL, RESET_PREPARE, RESET_COMMIT,
+           RESET_NEWLEADER, RESET_NEWLEADERPROOF, 
+           RESET_VIEWCHANGE, RESET_NEWVIEW, RESET_CERT,
+		   /* 46 --> */ UPDATE, CLIENT_RESPONSE, 
            MAX_MESS_TYPE};
 
 /* Defines to help with SCADA application */
 #define CLIENT_NO_OP 101
 #define CLIENT_STATE_TRANSFER 102
-#define NEW_INCARNATION 103
+#define CLIENT_SYSTEM_RESET 103
 
 /* Forward declaration */
 struct dummy_ord_slot;
+struct dummy_po_slot;
 
 typedef byte packet_body[PRIME_MAX_PACKET_SIZE];
 
@@ -81,6 +88,9 @@ typedef struct dummy_signed_message {
   
   int32u len;        /* length of the content */
   int32u type;       /* type of the message */
+
+  int32u incarnation;          /* set for session-key-signed messages */
+  int32u monotonic_counter;    /* set for TPM-signed messages */
   
   /* int32u seq_num; */
 
@@ -96,7 +106,7 @@ typedef struct dummy_update_message {
   int32u server_id;
   int32  address;
   int16  port;
-  int32u incarnation;
+  //int32u incarnation;
   int32u seq_num;
   /* the update content follows */
 } update_message;
@@ -122,22 +132,25 @@ typedef struct dummy_po_request {
 
 /* Structure for batching acks */
 typedef struct dummy_po_ack_part {
-  int32u originator;                /* originating entity (server) */
+  int32u originator;              /* originating entity (server) */
   po_seq_pair seq;
-  byte digest[DIGEST_SIZE];         /* a digest of the update      */
+  byte digest[DIGEST_SIZE];       /* a digest of the update */
 } po_ack_part;
 
 typedef struct dummy_po_ack_message {
-    int32u num_ack_parts;             /* Number of Acks */
-    /* a list of po_ack_parts follows */
+  int32u num_ack_parts;             /* Number of Acks */
+  
+  /* preinstalled incarnation for each server */
+  int32u preinstalled_incarnations[NUM_SERVERS]; 
+  
+  /* a list of po_ack_parts follows */
 } po_ack_message;
 
 /* Messages for Pre-Ordering */
 typedef struct dummy_po_aru_message {
-  int32u incarnation;
   int32u num;
   /* Cumulative ack for each server */
-  po_seq_pair ack_for_server[NUM_SERVERS]; 
+  po_seq_pair ack_for_server[NUM_SERVERS];
 } po_aru_message;
 
 /* a struct containing pre-order proof messages */
@@ -164,8 +177,15 @@ typedef struct dummy_pre_prepare_message {
   int32u view;
 
   /* timing tests */
-  int32u sec;
-  int32u usec;
+  //int32u sec;
+  //int32u usec;
+  
+  /* Digest representing the global incarnation AKA membership of the
+   * reset proposal that started this instantiation of the system */
+  byte proposal_digest[DIGEST_SIZE];
+
+  /* Last Executed Vector */
+  po_seq_pair last_executed[NUM_SERVERS];
 
   int16u part_num;
   int16u total_parts;
@@ -178,6 +198,7 @@ typedef struct dummy_prepare_message {
   int32u seq_num;              /* seq number                            */
   int32u view;                 /* the view number                       */
   byte   digest[DIGEST_SIZE];  /* a digest of whatever is being ordered */
+  int32u preinstalled_incarnations[NUM_SERVERS]; 
 } prepare_message;
 
 /* Structure of a Commit Message */
@@ -185,12 +206,15 @@ typedef struct dummy_commit_message {
   int32u seq_num;                      /* seq number */
   int32u view;
   byte digest[DIGEST_SIZE];   /* a digest of the content */
+  int32u preinstalled_incarnations[NUM_SERVERS]; 
 } commit_message;
 
 typedef struct dummy_complete_pre_prepare_message {
   int32u seq_num;
   int32u view;
-
+  
+  byte proposal_digest[DIGEST_SIZE];
+  po_seq_pair last_executed[NUM_SERVERS];
   po_aru_signed_message cum_acks[NUM_SERVERS];
 } complete_pre_prepare_message;
 
@@ -296,9 +320,31 @@ typedef struct dummy_replay_commit {
   byte digest[DIGEST_SIZE];
 } replay_commit_message;
 
+typedef struct dummy_ord_certificate_message {
+  int32u view;
+  int32u seq_num;
+  int32u type;
+  /* ord certificate follows: always 1 pre-prepare, If commit_cert, also 2f+k+1 commits */
+} ord_certificate_message;
+
+typedef struct dummy_po_certificate_message {
+  int32u server;
+  po_seq_pair seq;
+  /* What follows is the PO_request and 2f+k+1 PO_Ack_Part messages */
+} po_certificate_message;
+
+
+
+/* NOTE: All TPM-signed messages must have the TPM monotonically increasing
+ *   counter number on them. In the case of the new_incarnation message,
+ *   only the incarnation is needed since it is a snapshot of the counter */
+
 typedef struct dummy_catchup_request {
-//  int32u view;
+  int32u flag;    // CATCHUP, JUMP, PERIODIC, RECOVERY
+  int32u nonce;
   int32u aru;
+  po_seq_pair po_aru[NUM_SERVERS];
+  byte   proposal_digest[DIGEST_SIZE];
   /* possibly include PO.aru vector so that the
    * receiver can know if they should EXCLUDE any of the
    * PO_Requests that became eligible for exection from
@@ -308,26 +354,106 @@ typedef struct dummy_catchup_request {
    * list of PO Requests */
 } catchup_request_message;
 
-//typedef struct dummy_catchup_reply {
-//  int32u view;
-//  int32u seq_num;
-//  int32u type;
-  /* ord certificate follows: always 1 pre-prepare, If commit_cert, also 2f+k+1 commits */
-//} catchup_reply_message;
+typedef struct dummy_jump_message {
+  int32u seq_num;
+  int32u acked_nonce;
+  byte   proposal_digest[DIGEST_SIZE];
+  /* if the global ARU is 0, there is no ord certificate to send, so only the reset_cert that
+   * started the system is sent. Otherwise, there is normally:
+   *  (1)  N new_incarnation (or incarnation cert) messages that give currently used session key 
+   *        for each replica, which is required to make sense of the ORD cert
+   *       FOR NOW - using installed_incarnations vector to emulate session keys
+   *  (2)  ord certificate: always 1 pre-prepare, If commit_cert, also 2f+k+1 commits
+   *  (3)  Reset certificate that originally bootstrapped this global system incarnation */
+  int32u installed_incarn[NUM_SERVERS];
+} jump_message;
 
-typedef struct dummy_ord_certificate_message {
+typedef struct dummy_new_incarnation_message {
+  int32u nonce;
+  int32u timestamp;
+  byte key[DIGEST_SIZE]; //PRTODO: put real public part of session key here
+} new_incarnation_message;
+
+typedef struct dummy_incarnation_ack_message {
+  int32u acked_id;             /* ID of which replica this ack is supporting */
+  int32u acked_incarnation;    /* Incarnation of that replica being supported */
+  byte digest[DIGEST_SIZE];    /* digest of new_incarnation message */
+} incarnation_ack_message;
+
+typedef struct dummy_incarnation_cert_message {
+  /* What follows is the new_incarnation message + 2f+k+1 incarnation_acks */ 
+} incarnation_cert_message;
+
+typedef struct dummy_pending_state_message {
+  int32u seq_num;
+  int32u acked_nonce;
+  int32u total_shares;
+} pending_state_message;
+
+typedef struct dummy_pending_share_message {
+  int32u acked_nonce;
+  int32u type;   /* whether this is an ORD or PO share */
+  int32u index;  /* the index within the total shares */
+  /* what follows is the message content of the ORD or PO message (i.e. pending
+   * pre-prepare or po-request) */
+} pending_share_message;
+
+typedef struct dummy_reset_vote_message {
+  int32u acked_incarnation;  /* Their incarnation */
+  int32u acked_nonce;        /* Their nonce challenge to prove freshness */
+} reset_vote_message;
+
+typedef struct dummy_reset_share_message {
   int32u view;
-  int32u seq_num;
-  int32u type;
-  int32u flag;   /* indicates whether this is part of periodic sending or specifically catchup */
-  /* ord certificate follows: always 1 pre-prepare, If commit_cert, also 2f+k+1 commits */
-} ord_certificate_message;
+  int32u nonce;
+  byte key[DIGEST_SIZE];
+} reset_share_message;
 
-typedef struct dummy_po_certificate_message {
-  int32u server;
-  int32u seq_num;
-  // TODO
-} po_certificate_message;
+typedef struct dummy_reset_proposal_message {
+  int32u view;
+  int32u num_shares;
+  /* What follows is the list of reset_shares (in their complete signed_message form) */
+} reset_proposal_message;
+
+typedef struct dummy_reset_prepare_message {
+  int32u view;
+  byte digest[DIGEST_SIZE];
+} reset_prepare_message;
+
+typedef struct dummy_reset_commit_message {
+  int32u view;
+  byte digest[DIGEST_SIZE];
+} reset_commit_message;
+
+typedef struct dummy_reset_newleader_message {
+  int32u new_view;
+} reset_newleader_message;
+
+typedef struct dummy_reset_newleaderproof_message {
+  int32u new_view;
+  /* what follows are: 2*F+K+1 signed reset_newleader messages for
+      the new proposed view */
+} reset_newleaderproof_message;
+
+typedef struct dummy_reset_viewchange_message {
+  reliable_broadcast_tag rb_tag;    /* contains the view */
+  int32u contains_proposal;
+  /* if contains_proposal == TRUE, prepare certificate of proposal follows: 
+   *    1 reset_proposal and 2f+k reset_prepares */
+} reset_viewchange_message;
+
+typedef struct dummy_reset_newview_message {
+  reliable_broadcast_tag rb_tag;    /* contains the view */
+  int32u list;
+} reset_newview_message;
+
+typedef struct dummy_reset_certificate_message {
+  int32u view;
+  /* reset certificate follows: 1 reset_proposal and 2f+k+1 reset_commits */
+} reset_certificate_message;
+
+
+
 
 typedef struct dummy_erasure_part {
 
@@ -359,7 +485,7 @@ typedef struct dummy_commit_certificate {
 } commit_certificate_struct;
 
 signed_message* PRE_ORDER_Construct_PO_Request  (void);
-signed_message* PRE_ORDER_Construct_PO_Ack      (int32u *more_to_ack, int32u send_all_nonexec);
+signed_message* PRE_ORDER_Construct_PO_Ack      (int32u *more_to_ack, int32u send_all_non_preordered);
 signed_message* PRE_ORDER_Construct_PO_ARU      (void);
 void PRE_ORDER_Construct_Proof_Matrix(signed_message **mset, 
 				      int32u *num_parts);
@@ -392,9 +518,26 @@ signed_message* VIEW_Construct_Replay(vc_proof_message *vc_proof);
 signed_message* VIEW_Construct_Replay_Prepare();
 signed_message* VIEW_Construct_Replay_Commit();
 
-signed_message* PR_Construct_Catchup_Request(void);
-signed_message* PR_Construct_ORD_Certificate(struct dummy_ord_slot *slot);
-signed_message* PR_Construct_PO_Certificate(void);
+signed_message* CATCH_Construct_Catchup_Request(int32u catchup_flag);
+signed_message* CATCH_Construct_ORD_Certificate(struct dummy_ord_slot *slot);
+signed_message* CATCH_Construct_PO_Certificate(int32u replica, struct dummy_po_slot *slot);
+signed_message* CATCH_Construct_Jump(int32u sender_nonce);
+
+signed_message* PR_Construct_New_Incarnation_Message(void);
+signed_message* PR_Construct_Incarnation_Ack(signed_message *ni_mess);
+signed_message* PR_Construct_Incarnation_Cert(void);
+signed_message* PR_Construct_Pending_State(int32u target, int32u acked_nonce);
+signed_message* PR_Construct_Pending_Share(int32u index, signed_message *mess, int32u acked_nonce);
+signed_message* PR_Construct_Reset_Vote(signed_message *ni_mess);
+signed_message* PR_Construct_Reset_Share(void);
+signed_message* PR_Construct_Reset_Proposal(void);
+signed_message* PR_Construct_Reset_Prepare(void);
+signed_message* PR_Construct_Reset_Commit(void);
+signed_message* PR_Construct_Reset_NewLeader(void);
+signed_message* PR_Construct_Reset_NewLeaderProof(void);
+signed_message* PR_Construct_Reset_ViewChange(void);
+signed_message* PR_Construct_Reset_NewView(void);
+signed_message* PR_Construct_Reset_Certificate(void);
 
 signed_message *RECON_Construct_Recon_Erasure_Message(dll_struct *list,
 							int32u *more_to_encode);

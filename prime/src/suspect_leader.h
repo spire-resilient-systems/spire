@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -39,13 +39,15 @@
 
 /* Suspect Leader Functions */
 
-#ifndef PRIME_SUSEPCT_LEADER_H
+#ifndef PRIME_SUSPECT_LEADER_H
 #define PRIME_SUSPECT_LEADER_H
 
 #include "data_structs.h"
 
 void SUSPECT_Initialize_Data_Structure(void);
 void SUSPECT_Initialize_Upon_View_Change(void);
+void SUSPECT_Restart_Timed_Functions(void);
+void SUSPECT_Upon_Reset(void);
 
 void SUSPECT_Process_TAT_Measure     (signed_message *mess);
 void SUSPECT_Process_RTT_Ping        (signed_message *mess);

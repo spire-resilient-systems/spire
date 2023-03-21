@@ -24,10 +24,13 @@
  *   Amy Babay            babay@cs.jhu.edu
  *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
- * Major Contributor:
+ * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
  *
- * Copyright (c) 2017 Johns Hopkins University.
+ * Contributors:
+ *   Samuel Beckley       Contributions to HMIs
+ *
+ * Copyright (c) 2018 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -102,6 +105,7 @@ int main(int argc, char *argv[])
     char *buffer;
     char path[MAX_PATH];
     pthread_t tid;
+    int num_locations;
 
     setlinebuf(stdout);
     
@@ -133,14 +137,18 @@ int main(int argc, char *argv[])
     // find my location in the json file
     cJSON * my_loc;
     cJSON * locations = cJSON_GetObjectItem(root, "locations");
-    for(i = 0 ; i < cJSON_GetArraySize(locations) ; i++) {
+    num_locations = cJSON_GetArraySize(locations);
+    for(i = 0 ; i < num_locations ; i++) {
         cJSON * loc = cJSON_GetArrayItem(locations, i);
         if(My_ID == cJSON_GetObjectItem(loc, "ID")->valueint) {
             printf("Found my loc\n");
             my_loc = loc;
             break;
         }
-        
+    }
+    if (i == num_locations) {
+        printf("My id is not in config.json file!\n");
+        exit(0);
     }
 
     printf("PROXY: finding what protocols I support\n");
@@ -151,6 +159,8 @@ int main(int argc, char *argv[])
         int p_n = string_to_protocol(prot);
         printf("PROXY: Creating Socket for protocol: %s\n", prot);
         memset(&protocol_data[p_n], 0, sizeof(itrc_data));
+        sprintf(protocol_data[p_n].prime_keys_dir, "%s", (char *)PROXY_PRIME_KEYS);
+        sprintf(protocol_data[p_n].sm_keys_dir, "%s", (char *)PROXY_SM_KEYS);
         sprintf(protocol_data[p_n].ipc_local, "%s%s%d", (char *)RTU_IPC_ITRC, 
                 prot, My_ID);
         sprintf(protocol_data[p_n].ipc_remote, "%s%s%d", (char *)RTU_IPC_MAIN,
@@ -197,16 +207,20 @@ int main(int argc, char *argv[])
     // Setup IPC for the RTU Proxy main thread
     printf("PROXY: Setting up IPC for RTU proxy thread\n");
     memset(&itrc_main, 0, sizeof(itrc_data));
+    sprintf(itrc_main.prime_keys_dir, "%s", (char *)PROXY_PRIME_KEYS);
+    sprintf(itrc_main.sm_keys_dir, "%s", (char *)PROXY_SM_KEYS);
     sprintf(itrc_main.ipc_local, "%s%d", (char *)RTU_IPC_MAIN, My_ID);
     sprintf(itrc_main.ipc_remote, "%s%d", (char *)RTU_IPC_ITRC, My_ID);
     ipc_sock = IPC_DGram_Sock(itrc_main.ipc_local);
 
     // Setup IPC for the Worker Thread (running the ITRC Client)
     memset(&itrc_thread, 0, sizeof(itrc_data));
+    sprintf(itrc_thread.prime_keys_dir, "%s", (char *)PROXY_PRIME_KEYS);
+    sprintf(itrc_thread.sm_keys_dir, "%s", (char *)PROXY_SM_KEYS);
     sprintf(itrc_thread.ipc_local, "%s%d", (char *)RTU_IPC_ITRC, My_ID);
     sprintf(itrc_thread.ipc_remote, "%s%d", (char *)RTU_IPC_MAIN, My_ID);
     ip_ptr = strtok(argv[2], ":");
-    sprintf(itrc_thread.spines_ext_addr, ip_ptr);
+    sprintf(itrc_thread.spines_ext_addr, "%s", ip_ptr);
     ip_ptr = strtok(NULL, ":");
     sscanf(ip_ptr, "%d", &itrc_thread.spines_ext_port);
 
@@ -241,7 +255,7 @@ int main(int argc, char *argv[])
                 /* enqueue in correct ipc */
                 in_list = key_value_get(rtu_dst, &channel);
                 if(in_list) {
-                    printf("PROXY: Delivering msg to RTU");
+                    printf("PROXY: Delivering msg to RTU\n");
                     IPC_Send(ipc_s[channel], buff, nBytes, 
                              protocol_data[channel].ipc_remote);
                 }
@@ -262,7 +276,7 @@ int main(int argc, char *argv[])
                     rtud = (rtu_data_msg *)(mess + 1);
                     ps = (seq_pair *)&rtud->seq;
                     ps->incarnation = My_Incarnation;
-                    printf("PROXY: sending data to sm\n");
+                    //printf("PROXY: sending data to sm\n");
                     ret = IPC_Send(ipc_sock, (void *)buff, nBytes, itrc_main.ipc_remote);
                 }
             }

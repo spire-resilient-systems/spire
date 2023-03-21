@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -34,6 +35,8 @@
 #undef ext_multipath
 
 #include <string.h>
+#include <float.h>
+#include "dissem_graphs.h"
 
 extern int16u *Neighbor_IDs[];
 
@@ -94,13 +97,6 @@ void Init_MultiPath()
         Alarm(EXIT, "MultiPath_Post_Conf_Setup: could not allocate memory for "
                 "MP_Flooding_Bitmask object\r\n");
     memset(MP_Flooding_Bitmask, 0xFF, MultiPath_Bitmask_Size);
-
-    /* Going through sorted list of edges to label each edge with its index */
-    stdskl_begin(&Sorted_Edges, &it);
-    while(!stdskl_is_end(&Sorted_Edges, &it)) {
-        ((Edge_Value*)stdskl_it_val(&it))->index = index++;
-        stdskl_it_next(&it);
-    }
 
     /* Allocate and Initialize the Bitmask for each neighbor */
     MP_Neighbor_Mask = Mem_alloc(sizeof(unsigned char*) * (Degree[My_ID] + 1));
@@ -314,6 +310,9 @@ void Init_MultiPath()
 
         stdskl_it_next(&it);
     }
+
+    /* Init Static Dissemination Graphs */
+    DG_Compute_Graphs();
 }
 
 void MultiPath_Clear_Cache()
@@ -329,9 +328,9 @@ void MultiPath_Clear_Cache()
     }
 }
 
-int MultiPath_Compute(int16u dest_id, int16u k)
+int MultiPath_Compute(int16u dest_id, int16u k, unsigned char **ret_mask, int use_base_cost, int require_reverse)
 {
-    int i, j, path_index, progress = 0; /* total_cost; */
+    int i, path_index, progress = 0; /* total_cost; */
     unsigned char *mask;
     stdhash bag_of_edges;
     int16 cost = 0, c1, c2;
@@ -341,6 +340,19 @@ int MultiPath_Compute(int16u dest_id, int16u k)
     sp_time start, stop;
 
     start = E_get_time();
+
+    /* Special case for myself: don't need to send anywhere else, so just set
+     * bitmask to all zeros */
+    if (dest_id == My_ID) {
+        /*MP_Cache[dest_id][k] = mask;*/
+        if (ret_mask != NULL) {
+            mask = new(MP_BITMASK);
+            memset(mask, 0x00, MultiPath_Bitmask_Size);
+            *ret_mask = mask;
+        }
+
+        return k;
+    }
 
     /* Iterate through Flow_Edges to initalize flow on each edge, 
      *      real edges get flow = 0, residual get flow = capacity */
@@ -361,7 +373,7 @@ int MultiPath_Compute(int16u dest_id, int16u k)
     for (path_index = 1; path_index <= k; path_index++) {
 
         /* BELLMAN-FORD START */
-        /* Step 1: Inialize the graph: 
+        /* Step 1: Initialize the graph: 
          *      Each vertex gets distance = "INF" and predecessor = NULL */
         for (i = 1; i <= MAX_NODES; i++) {
             if (Flow_Nodes_Inbound[i] != NULL) {
@@ -385,14 +397,25 @@ int MultiPath_Compute(int16u dest_id, int16u k)
                 else if (e->edge == NULL || e->reverse_edge == NULL)
                     Alarm(EXIT, "Multipath_Compute: Edge or Reverse is NULL\n");
                 else {
-                    c1 = e->edge->cost;
-                    c2 = e->reverse_edge->cost;
-                    /* link is considered broken if either is -1 */
-                    if (c1 < 0 || c2 < 0) {
-                        e = e->next;
-                        continue;
+                    if (use_base_cost) {
+                        c1 = e->edge->base_cost;
+                        c2 = e->reverse_edge->base_cost;
+                    } else {
+                        c1 = e->edge->cost;
+                        c2 = e->reverse_edge->cost;
+                        /* link is considered broken if either is -1 */
+                        if (c1 == -1 || (require_reverse && c2 == -1)) {
+                            e = e->next;
+                            continue;
+                        }
+                        /* AB: negative costs are legal now */
+                        c1 = abs(e->edge->cost);
+                        c2 = abs(e->reverse_edge->cost);
                     }
-                    cost = (c1 > c2) ? c1 : c2;
+                    if (require_reverse)
+                        cost = (c1 > c2) ? c1 : c2;
+                    else
+                        cost = c1;
                 }
                 /* if edge is residual, flip cost */
                 if (e->residual == 1)
@@ -436,41 +459,34 @@ int MultiPath_Compute(int16u dest_id, int16u k)
 
     } /* FORD-FULKERSON END */
 
-    mask = new(MP_BITMASK);
-    memset(mask, 0x00, MultiPath_Bitmask_Size);
+    /* Construct bitmask */
+    if (ret_mask != NULL) {
+        mask = new(MP_BITMASK);
+        memset(mask, 0x00, MultiPath_Bitmask_Size);
 
-    stdhash_begin(&bag_of_edges, &it);
-    /* j = 0; */ /* Added for testing */
-    /* total_cost = 0; */ /* Added for testing */
-    /* printf("Edges: "); */
-    while(!stdhash_is_end(&bag_of_edges, &it)) {
-        e = *((Flow_Edge**)stdhash_it_key(&it));
-        if (e->edge != NULL) {
-            *(mask + (e->index / 8)) |= 0x80 >> (e->index % 8);
-            /* j++; */ /* Added for testing */
-            /* printf("  %d  ", e->index); */ /* Added for testing */
-            /* total_cost += e->edge->cost; */ /* Added for testing */
+        stdhash_begin(&bag_of_edges, &it);
+        /* j = 0; */ /* Added for testing */
+        /* total_cost = 0; */ /* Added for testing */
+        /*printf("Edges: ");*/
+        while(!stdhash_is_end(&bag_of_edges, &it)) {
+            e = *((Flow_Edge**)stdhash_it_key(&it));
+            if (e->edge != NULL && ret_mask != NULL) {
+                *(mask + (e->index / 8)) |= 0x80 >> (e->index % 8);
+                /* j++; */ /* Added for testing */
+                /* printf("  %d  ", e->index); *//* Added for testing */
+                /* total_cost += e->edge->cost; */ /* Added for testing */
+            }
+            stdhash_erase(&bag_of_edges, &it);
         }
-        stdhash_erase(&bag_of_edges, &it);
-    }
-    /* printf("\n"); */
-    /* printf("\n%d\tTotal cost: %d\t", j, total_cost); */ /* Added for testing */
+        /* printf("\n"); */
 
-    if (path_index - 1 == k)
-        MP_Cache[dest_id][k] = mask;
-    else if (path_index - 1 < k) {
-        for (j = path_index-1; j <= MULTIPATH_MAX_K; j++) {
-            if (MP_Cache[dest_id][j] != NULL)
-                dispose(MP_Cache[dest_id][j]);
-            MP_Cache[dest_id][j] = new(MP_BITMASK);
-            memcpy(MP_Cache[dest_id][j], mask, MultiPath_Bitmask_Size);
-        }
-        dispose(mask);
+        /* Return the computed mask as ret_mask */
+        *ret_mask = mask;
     }
-    else 
+
+    if (path_index - 1 > k)
         Alarm(EXIT, "MultiPath_Compute: paths found (%d) > k (%d) !!!\r\n",
                 path_index - 1, k);
-        
 
     /* Cleanup the hash table */
     stdhash_destruct(&bag_of_edges);
@@ -485,8 +501,8 @@ int MultiPath_Compute(int16u dest_id, int16u k)
 
 int MultiPath_Stamp_Bitmask(int16u dest_id, int16u k, unsigned char *mask)
 {
-    int ret;
-   
+    int i, ret;
+
     if ((dest_id == 0 && k > 0) || dest_id > MAX_NODES) {
         Alarm(PRINT, "Multipath_Stamp_Bitmask: invalid destination ID "
             "specified (%hu)\r\n", dest_id);
@@ -498,6 +514,17 @@ int MultiPath_Stamp_Bitmask(int16u dest_id, int16u k, unsigned char *mask)
         return 1;
     }
 
+    if (k == DG_K_FLAG) {
+        if (DG_Destinations[dest_id].current_mask == NULL) {
+            /* Default to 2 paths if static graphs are not given */
+            Alarm(PRINT, "Dissem graphs specified, but mask is NULL...defaulting to k = 2\n");
+            k = 2;
+        } else {
+            memcpy(mask, DG_Destinations[dest_id].current_mask, MultiPath_Bitmask_Size);
+            return 1;
+        }
+    }
+
     if (k > MULTIPATH_MAX_K) {
         Alarm(PRINT, "Multipath_Stamp_Bitmask: Requested K (%d) is"
                 " larger than max supported K (%d), defaulting to"
@@ -506,14 +533,28 @@ int MultiPath_Stamp_Bitmask(int16u dest_id, int16u k, unsigned char *mask)
     }
    
     if (MP_Cache[dest_id][k] == NULL) {
-        Alarm(DEBUG, "COMPUTING [%u,%u] for k = %u\r\n", My_ID, dest_id, k);
-        ret = MultiPath_Compute(dest_id, k);
+        Alarm(PRINT, "COMPUTING [%u,%u] for k = %u\r\n", My_ID, dest_id, k);
+        ret = MultiPath_Compute(dest_id, k, &MP_Cache[dest_id][k], 0, 1);
         if (ret == 0) {
             Alarm(PRINT, "MultiPath_Stamp_Bitmask: Warning! Compute returned 0, "
                 "no paths found with current network conditions\r\n");
-            /* return 0; */
+            /* This is not necessarily an error: If a message is destined to
+             * myself, I can still deliver it with a bitmask of all 0s */
+            /*return 0;*/
         }
         else if (ret < k) {
+            /* If we didn't find all the paths we requested, update cache for
+             * all higher numbers of paths as well (since we won't be able to
+             * compute the requested number for those either) */
+            for (i = ret; i <= MULTIPATH_MAX_K; i++) {
+                if (i == k) continue;
+
+                if (MP_Cache[dest_id][i] != NULL)
+                    dispose(MP_Cache[dest_id][i]);
+                MP_Cache[dest_id][i] = new(MP_BITMASK);
+                memcpy(MP_Cache[dest_id][i], MP_Cache[dest_id][k], MultiPath_Bitmask_Size);
+            }
+                
             Alarm(PRINT, "MultiPath_Stamp_Bitmask: Requested K = %d, "
                 "Compute found %d\r\n", k, ret);
         }

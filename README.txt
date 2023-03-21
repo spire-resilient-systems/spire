@@ -19,8 +19,8 @@ network level, while meeting the timeliness requirements of power grid
 monitoring and control systems (on the order of 100-200ms update latency).
 
 The Spire system includes a SCADA Master and PLC/RTU proxy designed from
-scratch to support intrusion tolerance, as well as two example HMIs based on
-pvbrowser (https://pvbrowser.de/pvbrowser/index.php). The SCADA Master is
+scratch to support intrusion tolerance, as well as several example HMIs based
+on pvbrowser (https://pvbrowser.de/pvbrowser/index.php). The SCADA Master is
 replicated using the Prime intrusion-tolerant replication engine
 (www.dsn.jhu.edu/prime). Communication between Spire components is protected
 using the Spines intrusion-tolerant network (www.spines.org). The Spire PLC/RTU
@@ -28,20 +28,39 @@ proxy can interact with any devices that use the Modbus or DNP3 communication
 protocols over IP. We use OpenPLC (http://www.openplcproject.com/) to emulate
 PLCs.
 
-The Spire 1.0 release consists of the version of the Spire code that
-successfully withstood a red-team attack conducted by Sandia National
-Laboratories in an exercise at Pacific Northwest National Laboratory (PNNL)
-from March 27 to April 7, 2017. This version of the code was deployed using
+The Spire 1.1 release consists of the version of the Spire code that was used
+in a test deployment with the Hawaiian Electric Company from January 22 to
+February 1, 2018. This version of the code was deployed using Prime 3.1 and
+Spines 5.3.
+
+Spire 1.1 builds on the Spire 1.0 release, which consisted of the version of
+the Spire code that successfully withstood a red-team attack conducted by
+Sandia National Laboratories in an exercise at Pacific Northwest National
+Laboratory (PNNL) from March 27 to April 7, 2017. Spire 1.0 was deployed using
 Prime 3.0 and Spines 5.2.
 
-Spire 1.0 includes support for two example SCADA systems, which are referred to
-as the "jhu" and "pnnl" systems in the code. The "pnnl" system is the exact
-system that was used in the red-team exercise, where it monitored and
-controlled a real PLC provided by PNNL. The "jhu" system is an example system
-we created to represent a power distribution system with 10 substations, each
-monitored and controlled by a different PLC or RTU. The SCADA Master of Spire
-1.0 can support both systems simultaneously; we provide a separate HMI for each
-system.
+Spire 1.1 supports six different example SCADA systems:
+- jhu: an example system we created to represent a power distribution system
+  with 10 substations, each monitored and controlled by a different PLC or RTU
+- pnnl: the exact system that was used in the red-team exercise at PNNL, where
+  it monitored and controlled a real PLC provided by PNNL
+- heco_3breaker: the system that was deployed at the Hawaiian Electric Company,
+  monitoring and controlling to a real PLC that controlled three physical
+  breakers
+- heco_5breaker: a system similar to heco_3breaker but including two additional
+  breakers
+- heco_timing: the system used at the Hawaiian Electric Company to measure the
+  end-to-end response time of the system by flipping a breaker and measuring
+  the time for the HMI to reflect the change
+- ems: a system modeling an Energy Management System (EMS) that controls
+  several different types of generators with different ramp-up rates and
+  renewable energy sources that can be connected to the grid or deactivated
+
+The SCADA Master of Spire 1.1 can support all of these systems; we provide a
+separate HMI for each system. Note that because the pnnl and heco systems use
+the same underlying infrastructure, only one of the pnnl, heco_3breaker,
+heco5_breaker, and heco_timing systems can be run at once. However, any one of
+these systems can be simultaneously run with both the jhu and ems systems.
 
 ***********************
 * Deployment Overview *
@@ -97,10 +116,9 @@ proxies verify that the command has a valid threshold signature and then pass
 it on to the PLC(s) or RTU(s). 
 
 PLCs and RTUs are periodically polled by their proxies. When a proxy has new
-PLC/RTU data, it similarly sends the data to the control-center SCADA Master
-replicas over the external Spines network to be agreed upon and sent to the
-HMI. The HMI verifies the threshold signature on the update and updates its
-display.
+PLC/RTU data, it sends the data to the control-center SCADA Master replicas
+over the external Spines network to be agreed upon and sent to the HMI. The HMI
+verifies the threshold signature on the update and updates its display.
 
 *****************
 * Configuration *
@@ -119,8 +137,8 @@ There are several configuration files relevant to the Spire system:
       settings, including a unique ID (starting at 0) and the protocols of the
       PLCs/RTUs this proxy will need to use (i.e., Modbus and/or DNP3). Then,
       the specification of the individual PLCs and RTUs under the control of
-      each Proxy is listed. These settings include which scenario (JHU, PNNL)
-      that device belongs to and then Modbus-specific and DNP3-specific
+      each Proxy is listed. These settings include which scenario (JHU, PNNL,
+      EMS) that device belongs to and then Modbus-specific and DNP3-specific
       settings, such as the IP address and Port on which to connect with and
       the various field types and locations of the data stored in the PLC/RTU
       that is collected from equipment.
@@ -157,10 +175,19 @@ Spines Prerequisites
 HMI Prerequisites
 ------------------
 
-- pvbrowser (pvb.tar.gz)
-    * follow the instructions here: https://pvbrowser.de/pvbrowser/index.php?lang=en&menu=6
-- pvbaddon (pvbaddon.tar.gz)
-    * follow the instructions here: https://pvbrowser.de/pvbrowser/index.php?lang=en&menu=6&left=9
+- QT development package and webkit
+    * e.g. yum install qt-devel epel-release qtwebkit-devel, apt-get install qt-sdk
+
+- pvbrowser (https://pvbrowser.de/pvbrowser/)
+    * pvbrowser is packaged with Spire 1.1, located in the pvb directory. To
+      build pvbrowser (from the top-level Spire directory): 
+        cd pvb; ./build.sh
+
+    * Note that by default Spire looks for pvbrowser files in the pvb directory
+      packaged with it. If you prefer to use a version of pvbrowser already
+      installed on your system, you can modify the PVB variable in the
+      Makefiles in the hmi directories to point to your installation (e.g.
+      /opt/pvb)
 
 --------------------------
 DNP3 Support Prerequisites
@@ -168,22 +195,38 @@ DNP3 Support Prerequisites
 
 - cmake (e.g. yum install cmake, apt-get install cmake)
 - gcc and g++ 4.9 or higher
-- Opendnp3
-  * Steps that we used, see https://www.automatak.com/opendnp3/docs/guide/current/ for details
-	mkdir dnp3;
-	cd dnp3; sudo git clone --recursive https://github.com/automatak/dnp3.git
-	mkdir dnp3_build; cd dnp3_build;
-	cmake ../dnp3 -DSTATICLIBS=ON -DCMAKE_INSTALL_PREFIX=/usr
-	make
-	chmod -R o+w .
-	sudo make install
+    * Note that if your gcc/g++ >= 4.9 is not the default system gcc/g++, you
+      will need to modify:
+      1. The Makefile in the dnp3 directory (set CXX and CXXLIB variables to
+         point to your installation of g++ 4.9 or higher)
+      2. The build.sh script in opendnp/opendnp3_build (set C_LOC and CXX_LOC
+         to point to your installation of gcc and g++ 4.9 or higher, and use
+         the alternative cmake command that specifies these locations)
+      3. The OpenPLC build.sh and core/core-builders/build_normal.sh scripts
+         (set CXX_LOC variable to point to your g++ >= 4.9)
+
+- Opendnp3 (https://www.automatak.com/opendnp3)
+    * Opendnp3 is packaged with Spire 1.1 in the opendnp3/opendnp3 directory. To
+      build (from top-level Spire directory):
+        cd opendnp3/opendnp3_build; ./build.sh
+    
+    * The provided build script installs opendnp3 libraries in
+      opendnp/opendnp3_build/install. By default, Spire looks for opendnp3
+      files in that directory. If you prefer to use a version of opendnp3
+      already installed on your system, you can change the DNP3_DIR variable
+      in the Makefile in the dnp3 directory to point to your installation, as
+      well as the DNP3_DIR variable in
+      OpenPLC_v2/core/core_builders/build_normal.sh.
 
 ----------------------------------------------
 OpenPLC (optional, for PLC emulation/creation)
 ----------------------------------------------
 
-git clone https://github.com/TrevorAron/OpenPLC_v2.git
-cd OpenPLC_v2; ./build
+* A version of OpenPLC with added DNP3 support
+  (https://github.com/TrevorAron/OpenPLC_v2.git) is packaged with Spire 1.1 in
+  the OpenPLC_v2 directory. To build (from top-level Spire directory):
+    cd OpenPLC_v2; ./build.sh
+    - Select "Blank" driver (1) to build emulated PLCs that run on Linux
 
 * Note that the version of OpenPLC above with added DNP3 support will
   eventually be merged with the main OpenPLC branch
@@ -203,6 +246,9 @@ cd OpenPLC_v2; ./build
 
 3. Build Spire (from top-level Spire directory):
    make
+
+4. (optional) Build emulated PLCs (from top-level Spire directory):
+   make plcs
 
 *******************
 * Generating Keys *
@@ -241,6 +287,8 @@ generated before the system can run.
       threshold crypto shares as well (see below)
 
 3. Spire
+    - To generate keys: cd scada_master; ./gen_keys
+
     - Since we consider a SCADA Master + its co-located Prime daemon one
       "replica", each SCADA Master uses the same public-private key pair as its
       Prime daemon (e.g. SCADA Master 1 uses the key pair
@@ -255,7 +303,9 @@ generated before the system can run.
             * Note that benchmark clients (see "Running" section) use the same
               keys as a proxy with the same ID would
         - HMIs calculate their Prime client ID as (NUM_SM + 1 + MAX_EMU_RTU +
-          ID), where ID is 1 for the jhu_hmi and 2 for the pnnl_hmi.
+          ID), where ID is 1 for the jhu_hmi, 2 for the
+          pnnl_hmi/heco_3breaker/heco_5breaker/heco_timing HMIs, and 3 for the
+          ems_hmi.
           MAX_EMU_RTU is 100 by default. In a system with 4 replicas, the
           jhu_hmi would have public_client_105.key and private_client_105.key,
           and the pnnl_hmi would have public_client_106.key,
@@ -266,10 +316,9 @@ generated before the system can run.
       HMIs can use to verify that the updates/commands they receive were agreed
       upon by enough replicas. For this, the SCADA Masters use their own set of
       threshold crypto shares.
-        - These keys are currently generated by the Prime gen_keys script (but
-          this functionality will likely be moved in a later release). After
-          prime/bin/gen_keys has been run, these key shares will be located in
-          prime/bin/sm_keys. The prime/bin/sm_keys directory includes:
+        - These keys are generated by the scada_master gen_keys script. After
+          scada_master/gen_keys has been run, these key shares will be located in
+          scada_master/sm_keys. The scada_master/sm_keys directory includes:
             - 1 public key used by PLC/RTU proxies and HMIs to verify threshold
               signatures (pubkey_1.pem)
             - NUM_SERVERS threshold crypto shares (e.g. share0_1.pem,
@@ -339,8 +388,9 @@ generated before the system can run.
       config.json file
 
 5. Run the HMIs
-    - To run (jhu): cd jhu_hmi; ./jhu_hmi SPINES_HMI_ADDR:SPINES_EXT_PORT -port=pv_port_jhu
-    - To run (pnnl): cd pnnl_hmi; ./pnnl_hmi SPINES_HMI_ADDR:SPINES_EXT_PORT -port=pv_port_pnnl
+    - To run (jhu): cd hmis/jhu_hmi; ./jhu_hmi SPINES_HMI_ADDR:SPINES_EXT_PORT -port=pv_port_jhu
+    - To run (pnnl): cd hmis/pnnl_hmi; ./pnnl_hmi SPINES_HMI_ADDR:SPINES_EXT_PORT -port=pv_port_pnnl
+    - To run (ems): cd hmis/ems_hmi; ./ems_hmi SPINES_HMI_ADDR:SPINES_EXT_PORT -port=pv_port_ems
 
     * pv_port_* is the port on which the HMI will accept pvbrowser connections
       to interface with the GUI that reflects the current power grid state and
@@ -348,13 +398,21 @@ generated before the system can run.
 
     - To connect GUI: Run pvbrowser application (located in main pvb
       installation folder). In the browser's address bar, give the IP address
-      of the HMI and the pv_port (e.g. 10.0.0.1:5050).
+      of the HMI and the pv_port (e.g. 192.168.101.108:5050).
 
 6. (Optional) Run OpenPLC PLCs
+    - cd plcs/pnnl_plc; sudo ./openplc -m 502 -d 20000
+
     - cd plcs/jhu0; sudo ./openplc -m 503 -d 20001
     - ...
     - cd plcs/jhu9; sudo ./openplc -m 512 -d 20010
-    - cd plcs/pnnl_plc; sudo ./openplc -m 502 -d 20000
+
+    - cd plcs/ems0; sudo ./openplc -m 513 -d 20011
+    - cd plcs/ems1; sudo ./openplc -m 514 -d 20012
+    - cd plcs/ems2; sudo ./openplc -m 515 -d 20013
+    - cd plcs/ems_hydro; sudo ./openplc -m 516 -d 20014
+    - cd plcs/ems_solar; sudo ./openplc -m 517 -d 20015
+    - cd plcs/ems_wind; sudo ./openplc -m 518 -d 20016
 
     * -m option is the Modbus port, and -d option is the DNP3 port. These
       should match what is specified in the config.json file for each PLC.
@@ -382,27 +440,31 @@ Example
 -------
 
 The default configuration files included with Spire create a system with:
-    - 4 control-center sites, each consisting of a single machine that runs the
+    - 6 control-center sites, each consisting of a single machine that runs the
       following four processes:
         - 1 external Spines daemon
         - 1 internal Spines daemon
         - 1 SCADA Master
         - 1 Prime daemon
-    - 1 site with a single machine running the PLC/RTU proxy + 11 emulated PLCs
-      (10 for the jhu system and 1 for the pnnl system)
-    - 1 site with a single machine running 2 HMIs (1 jhu_hmi and 1 pnnl_hmi)
+    - 1 site with a single machine running the PLC/RTU proxy + 17 emulated PLCs
+      (10 for the jhu system, 1 for the pnnl/heco system, and 6 for the ems
+      system)
+    - 1 site with a single machine running 3 HMIs (1 jhu_hmi, 1 pnnl_hmi or one
+      of the heco HMIs, and 1 ems_hmi)
 
 To run this example, execute the following:
 
     * Note that you will need to adjust IP addresses in the configuration files
       and commands to match your environment. The instructions below assume the
       following IP addresses:
-        - HMI machine:              192.168.101.100
         - Control center 1 machine: 192.168.101.101
         - Control center 2 machine: 192.168.101.102
         - Control center 3 machine: 192.168.101.103
         - Control center 4 machine: 192.168.101.104
-        - PLC/RTU proxy machine:    192.168.101.105
+        - Control center 5 machine: 192.168.101.105
+        - Control center 6 machine: 192.168.101.106
+        - PLC/RTU proxy machine:    192.168.101.107
+        - HMI machine:              192.168.101.108
 
     On control center 1 machine:
     cd spines/daemon; ./spines -p 8100 -c spines_int.conf
@@ -428,19 +490,47 @@ To run this example, execute the following:
     cd scada_master; ./scada_master 4 192.168.101.104:8100 192.168.101.104:8120
     cd prime/bin; ./prime -i 4
 
+    On control center 5 machine:
+    cd spines/daemon; ./spines -p 8100 -c spines_int.conf
+    cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
+    cd scada_master; ./scada_master 5 192.168.101.105:8100 192.168.101.105:8120
+    cd prime/bin; ./prime -i 5
+
+    On control center 6 machine:
+    cd spines/daemon; ./spines -p 8100 -c spines_int.conf
+    cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
+    cd scada_master; ./scada_master 6 192.168.101.106:8100 192.168.101.106:8120
+    cd prime/bin; ./prime -i 6
+
     On the PLC/RTU proxy machine:
     cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
-    cd proxy; ./proxy 0 192.168.101.105:8120 1
+    cd proxy; ./proxy 0 192.168.101.107:8120 1
+    ...
+    cd proxy; ./proxy 16 192.168.101.107:8120 1
+
 	cd plcs/jhu0; sudo ./openplc -m 503 -d 20001
 	cd plcs/jhu1; sudo ./openplc -m 504 -d 20002
     ...
     cd plcs/jhu9; sudo ./openplc -m 512 -d 20010
     cd plcs/pnnl_plc; sudo ./openplc -m 502 -d 20000
+    cd plcs/ems0; sudo ./openplc -m 513 -d 20011
+    cd plcs/ems1; sudo ./openplc -m 514 -d 20012
+    cd plcs/ems2; sudo ./openplc -m 515 -d 20013
+    cd plcs/ems_hydro; sudo ./openplc -m 516 -d 20014
+    cd plcs/ems_solar; sudo ./openplc -m 517 -d 20015
+    cd plcs/ems_wind; sudo ./openplc -m 518 -d 20016
 
     On the HMI machine:
-    cd jhu_hmi; ./jhu_hmi 192.168.101.100:8120 -port=5051
-    cd pnnl_hmi; ./pnnl_hmi 192.168.101.100:8120 -port=5052
+    cd jhu_hmi; ./jhu_hmi 192.168.101.108:8120 -port=5051
+    cd pnnl_hmi; ./pnnl_hmi 192.168.101.108:8120 -port=5052
+    cd ems_hmi; ./ems_hmi 192.168.101.108:8120 -port=5053
 
     Connect GUIs by running the pvbrowser application (located in main pvb
-    installation folder) twice. In one browser's address bar, type
-    192.168.101.100:5051. In the other, type 192.168.101.100:5052
+    installation folder) three times. In one browser's address bar, type
+    192.168.101.108:5051, in another type 192.168.101.108:5052, and in the
+    last type 192.168.101.108:5053.
+
+* This corresponds to the conf_6 configuration in the example_conf directory.
+  Two additional example configurations are provided in that directory: conf_4
+  (4 replicas, default configuration in Spire 1.0) and conf_3+3+3+3 (12
+  replicas divided across 4 sites). See example_conf/README.txt for details.

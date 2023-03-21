@@ -24,10 +24,13 @@
  #   Amy Babay            babay@cs.jhu.edu
  #   Thomas Tantillo      tantillo@cs.jhu.edu
  #
- # Major Contributor:
+ # Major Contributors:
  #   Marco Platania       Contributions to architecture design 
  #
- # Copyright (c) 2017 Johns Hopkins University.
+ # Contributors:
+ #   Samuel Beckley       Contributions to HMIs 
+ #
+ # Copyright (c) 2018 Johns Hopkins University.
  # All rights reserved.
  #
  # Partial funding for Spire research was provided by the Defense Advanced 
@@ -35,16 +38,18 @@
  # Spire is not necessarily endorsed by DARPA or the DoD. 
  #
  #
+ 
+.PHONY: all clean plcs
 
-
-.PHONY: all clean
-
-SUBDIRS=jhu_hmi pnnl_hmi scada_master proxy modbus dnp3 benchmark
+SUBDIRS=hmis scada_master proxy modbus dnp3 benchmark
 
 all: $(SUBDIRS)
 	for dir in $(SUBDIRS); do \
     	( $(MAKE) -C $$dir); \
 	done
+
+plcs:
+	( $(MAKE) -C plcs )
 
 clean:
 	for dir in $(SUBDIRS); do \

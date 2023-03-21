@@ -1,0 +1,68 @@
+PROGRAM My_Program
+  VAR
+    OnOff AT %QX0.0 : BOOL := 0;
+    MaxGen AT %IW0 : INT := 300;
+    CurrentGen AT %IW1 : INT := 200;
+    ID AT %IW2 : INT := 5;
+    TargetGen AT %QW0 : INT := 200;
+  END_VAR
+  VAR
+    Delta : INT := 1;
+    Increasing : BOOL := 0;
+    Decreasing : BOOL := 0;
+    Tick : BOOL := 0;
+    Tick_Count : INT := 0;
+    TON0 : TON;
+    R_TRIG1 : R_TRIG;
+    ADD128_OUT : INT;
+    SEL129_OUT : INT;
+    MOVE133_OUT : INT;
+    MIN79_OUT : INT;
+    MIN45_OUT : INT;
+    INT_TO_REAL179_OUT : REAL;
+    INT_TO_REAL2_OUT : REAL;
+    DIV182_OUT : REAL;
+    SIN180_OUT : REAL;
+    INT_TO_REAL3_OUT : REAL;
+    MUL181_OUT : REAL;
+    REAL_TO_INT4_OUT : INT;
+    ADD153_OUT : INT;
+    MOVE162_OUT : INT;
+    LE138_OUT : BOOL;
+    SEL139_OUT : INT;
+  END_VAR
+
+  TON0(IN := NOT(Tick), PT := T#2000ms);
+  Tick := TON0.Q;
+  R_TRIG1(CLK := Tick);
+  ADD128_OUT := ADD(1, Tick_Count);
+  SEL129_OUT := SEL(R_TRIG1.Q AND 1, Tick_Count, ADD128_OUT);
+  MOVE133_OUT := MOVE(SEL129_OUT);
+  Tick_Count := MOVE133_OUT;
+  MIN79_OUT := MIN(CurrentGen, MaxGen);
+  CurrentGen := MIN79_OUT;
+  MIN45_OUT := MIN(TargetGen, MaxGen);
+  TargetGen := MIN45_OUT;
+  INT_TO_REAL179_OUT := INT_TO_REAL(Tick_Count);
+  INT_TO_REAL2_OUT := INT_TO_REAL(20);
+  DIV182_OUT := DIV(INT_TO_REAL179_OUT, INT_TO_REAL2_OUT);
+  SIN180_OUT := SIN(DIV182_OUT);
+  INT_TO_REAL3_OUT := INT_TO_REAL(75);
+  MUL181_OUT := MUL(SIN180_OUT, INT_TO_REAL3_OUT);
+  REAL_TO_INT4_OUT := REAL_TO_INT(MUL181_OUT);
+  ADD153_OUT := ADD(200, REAL_TO_INT4_OUT);
+  MOVE162_OUT := MOVE(ADD153_OUT);
+  CurrentGen := MOVE162_OUT;
+  LE138_OUT := LE(TargetGen, 0);
+  SEL139_OUT := SEL(LE138_OUT, 0, TargetGen);
+  TargetGen := SEL139_OUT;
+END_PROGRAM
+
+
+CONFIGURATION Config0
+
+  RESOURCE Res0 ON PLC
+    TASK TaskMain(INTERVAL := T#50ms,PRIORITY := 0);
+    PROGRAM Inst0 WITH TaskMain : My_Program;
+  END_RESOURCE
+END_CONFIGURATION

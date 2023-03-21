@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -76,6 +76,7 @@ RSA *private_client_rsa; /* My Private Client Key (If im also a server) */
 RSA *public_rsa_by_server[NUMBER_OF_SERVERS + 1];
 RSA *public_rsa_by_client[NUMBER_OF_CLIENTS + 1];
 const EVP_MD *message_digest;
+EVP_MD_CTX mdctx;
 void *pt;
 int32 verify_count;
 
@@ -131,9 +132,13 @@ void Write_RSA( int32u rsa_type, int32u server_number, RSA *rsa)
 void Read_BN( FILE *f, BIGNUM **bn ) 
 {
   char bn_buf[1000];
+  char *ret;
 
   (*bn) = BN_new();
-  fgets(bn_buf, 1000, f);
+  ret = fgets(bn_buf, 1000, f);
+  if (ret == NULL)
+    Alarm(EXIT, "ERROR: Could not read BN\n");
+
   BN_hex2bn( bn, bn_buf );
 }
 
@@ -246,6 +251,8 @@ void OPENSSL_RSA_Init()
   /* Use sha1 as the digest algorithm. */
   message_digest = EVP_get_digestbyname( DIGEST_ALGORITHM );
   verify_count = 0;
+
+  EVP_MD_CTX_init(&mdctx);
 }
 
 int32u OPENSSL_RSA_Digests_Equal( unsigned char *digest1, 
@@ -274,29 +281,42 @@ void OPENSSL_RSA_Make_Digest( const void *buffer, size_t buffer_size,
      * computational cost because these high-level functions are used. We might
      * want to test this and see if we take a performance hit. */
     
-    EVP_MD_CTX mdctx;
+    //EVP_MD_CTX mdctx;
     int32u md_len;
     
 #if REMOVE_CRYPTO 
     //return;
 #endif
-    
-    EVP_MD_CTX_init(&mdctx);
+  
+    //memset(digest_value, 0, DIGEST_SIZE);
+    //return;
+
+    sp_time start, end, diff;
+    double elap;
+    start = E_get_time();
+
+    //EVP_MD_CTX_init(&mdctx);
     EVP_DigestInit_ex(&mdctx, message_digest, NULL);
     EVP_DigestUpdate(&mdctx, buffer, buffer_size);
     EVP_DigestFinal_ex(&mdctx, digest_value, &md_len);
-    EVP_MD_CTX_cleanup(&mdctx);
+    //EVP_MD_CTX_cleanup(&mdctx);
 
     /* Check to determine if the digest length is expected for sha1. It should
-     * be 20 bytes. */
+     * be DIGEST_SIZE bytes, which is 20 */
    
-    if ( md_len != 20 ) {
+    if ( md_len != DIGEST_SIZE ) {
 	printf("An error occurred while generating a message digest.\n"
-		"The length of the digest was set to %d. It should be 20.\n"
-		, md_len);
+		"The length of the digest was set to %d. It should be %d.\n"
+		, md_len, DIGEST_SIZE);
 	exit(0);
     }
 
+    end = E_get_time();
+    diff = E_sub_time(end, start);
+    elap = diff.sec + diff.usec / 1000000.0;
+    if (elap >= 0.0015)
+        Alarm(DEBUG, "OPENSSL_Digest: %f sec\n", elap);
+    
 #if 0 
     printf("Digest is, size %d: ",md_len);
 #endif
@@ -318,7 +338,7 @@ void OPENSSL_RSA_Make_Signature( const byte *digest_value, byte *signature )
   int32u signature_size = 0;
   
   /* Make a signature for the specified digest value. The digest value is
-   * assumed to be 20 bytes. */
+   * assumed to be DIGEST_SIZE bytes. */
 
 #if REMOVE_CRYPTO
   UTIL_Busy_Wait(0.000005);
@@ -340,7 +360,7 @@ void OPENSSL_RSA_Make_Signature( const byte *digest_value, byte *signature )
  
   start = E_get_time();
 
-  RSA_sign(NID_sha1, digest_value, 20, signature, &signature_size,private_rsa);
+  RSA_sign(NID_sha1, digest_value, DIGEST_SIZE, signature, &signature_size,private_rsa);
 
   end = E_get_time();
   
@@ -379,7 +399,7 @@ int32u OPENSSL_RSA_Verify_Signature( const byte *digest_value,
         rsa = public_rsa_by_server[number];
     }
     
-    ret = RSA_verify(NID_sha1, digest_value, 20, signature, SIGNATURE_SIZE,
+    ret = RSA_verify(NID_sha1, digest_value, DIGEST_SIZE, signature, SIGNATURE_SIZE,
 	    rsa );
     
     verify_count++;

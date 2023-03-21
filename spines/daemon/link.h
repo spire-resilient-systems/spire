@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -33,18 +34,19 @@
 #define LINK_H
 
 /* Window (for reliability) */
-#define MAX_WINDOW       500
-#define MAX_CG_WINDOW    200
+#define MAX_WINDOW       20000
+#define MAX_CG_WINDOW    20000
 #define CTRL_WINDOW      10 
 #define MAX_HISTORY      1000
 
 /* Packet (unreliable) window for detecting loss rate */
-#define PACK_MAX_SEQ     20000
+#define PACK_MAX_SEQ     30000
 
 /* Loss rate calculation constants */
 #define LOSS_RATE_SCALE  1000000  /* For conversion from float to int*/
 #define UNKNOWN             (-1)
 #define LOSS_HISTORY        50
+#define LOSS_DECAY_FACTOR   0.99
 
 /* Link types */
 typedef enum 
@@ -116,7 +118,7 @@ typedef enum {
 #define SENT_CELL        3
 #define RETRANS_CELL     4
 
-#define MAX_BUFF_LINK    50
+#define MAX_BUFF_LINK    10000
 #define MAX_REORDER      10
 #define MAX_SEND_ON_LINK 500 /* default used to be 100 */
 #define LINK_START_SEQ   1   /* test wrap-around case: (2147483648-90) */
@@ -159,6 +161,12 @@ typedef struct Lk_Param_d {
     sp_time last_time_add;
     sp_time delay;
 } Lk_Param;
+
+typedef struct Leg_Buf_Cell_d {
+  Link_Type   link_type;  /* type for specific link the packet should be sent on */
+  sys_scatter scat;       /* packet to send */
+  int32u      total_bytes;
+} Leg_Buf_Cell;
 
 typedef struct Buffer_Cell_d {
     int32u seq_no;
@@ -242,7 +250,9 @@ typedef struct Loss_Data_d {
     char   recv_flags[MAX_REORDER];/* Window of flags for received packets */
     Loss_Event loss_interval[LOSS_HISTORY]; /* History of loss events */      
     int32  loss_event_idx;        /* Index in the loss event array */
-    float  loss_rate;             /* Locally estimated loss rate */
+    double  loss_rate;             /* Locally estimated loss rate */
+    int16   recvd_seqs[MAX_LINKS_4_EDGE]; /* Highest sequence received from other side for each link type */
+    int16   my_seqs[MAX_LINKS_4_EDGE]; /* My last sequence number for each link type */
 } Loss_Data;
 
 typedef struct Control_Data_d {
@@ -256,15 +266,18 @@ typedef struct Control_Data_d {
 
     int32  reported_rtt;          /* RTT last reported in a link_state (if any) */
     float  reported_loss_rate;    /* Loss rate last reported in a link_state (if any) */
+    sp_time reported_ts;          /* Time at which we last sent an update for this link */
 } Control_Data;
 
+typedef int64u rt_seq_type;
+
 typedef struct Realtime_Data_d {
-    int32u    head;
-    int32u    tail;
+    rt_seq_type    head;
+    rt_seq_type    tail;
     struct History_Cell_d window[MAX_HISTORY]; /* Sending window history
-						(keeps actual pakets for a while) */    
-    int32u    recv_head;
-    int32u    recv_tail;
+						(keeps actual packets for a while) */    
+    rt_seq_type    recv_head;
+    rt_seq_type    recv_tail;
     struct History_Recv_Cell_d recv_window[MAX_HISTORY]; /* Receiving window history    
 							    Only flags here, no packets */
     char nack_buff[MAX_PACKET_SIZE];
@@ -381,7 +394,7 @@ typedef struct Link_d {
 
 } Link;
 
-int16   Create_Link(Network_Leg *leg, int16 mode);
+int16   Create_Link(struct Network_Leg_d *leg, int16 mode);
 void    Destroy_Link(int16 linkid);
 
 Link   *Get_Best_Link(Node_ID node_id, int mode);
@@ -389,8 +402,10 @@ int     Link_Send(Link *lk, sys_scatter *scat);
 
 int32   Relative_Position(int32 base, int32 seq);
 
-void    Check_Link_Loss(struct Network_Leg_d *leg, int16u seq_no);
+void    Check_Link_Loss(struct Network_Leg_d *leg, int16u seq_no, int link_type);
 int32   Compute_Loss_Rate(struct Network_Leg_d *leg);
-int16u  Set_Loss_SeqNo(struct Network_Leg_d *leg);
+int16u  Set_Loss_SeqNo(struct Network_Leg_d *leg, int link_type);
+void    Fill_Leg_Bucket(int dummy, void* input_leg);
+int     Leg_Try_Send_Buffered(struct Network_Leg_d *leg);
 
 #endif

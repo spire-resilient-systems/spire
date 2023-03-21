@@ -24,10 +24,13 @@
  *   Amy Babay            babay@cs.jhu.edu
  *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
- * Major Contributor:
+ * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
  *
- * Copyright (c) 2017 Johns Hopkins University.
+ * Contributors:
+ *   Samuel Beckley       Contributions to HMIs
+ *
+ * Copyright (c) 2018 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -68,6 +71,7 @@ RSA *private_rsa; /* My Private Key */
 RSA *public_rsa_by_server[NUMBER_OF_SERVERS + 1];
 RSA *public_rsa_by_client[NUMBER_OF_CLIENTS + 1];
 const EVP_MD *message_digest;
+//EVP_MD_CTX mdctx;
 void *pt;
 int32 verify_count;
 
@@ -90,21 +94,20 @@ void Write_BN(FILE *f, BIGNUM *bn)
    * be used again. TODO */ 
 }
 
-void Write_RSA( int32u rsa_type, int32u server_number, RSA *rsa) 
+void Write_RSA( int32u rsa_type, int32u server_number, RSA *rsa, const char *keys_dir) 
 {
   FILE *f;
-  char fileName[50];
-  char dir[100] = "../prime/bin/keys";
+  char fileName[100];
   
   /* Write an RSA structure to a file */
   if(rsa_type == RSA_TYPE_PUBLIC)
-    sprintf(fileName,"%s/public_%02d.key", dir, server_number);
+    snprintf(fileName, 100, "%s/public_%02d.key", keys_dir, server_number);
   else if(rsa_type == RSA_TYPE_PRIVATE)
-    sprintf(fileName,"%s/private_%02d.key", dir, server_number);
+    snprintf(fileName, 100, "%s/private_%02d.key", keys_dir, server_number);
   else if(rsa_type == RSA_TYPE_CLIENT_PUBLIC)
-    sprintf(fileName,"%s/public_client_%02d.key", dir, server_number);
+    snprintf(fileName, 100, "%s/public_client_%02d.key", keys_dir, server_number);
   else if(rsa_type == RSA_TYPE_CLIENT_PRIVATE)
-    sprintf(fileName,"%s/private_client_%02d.key", dir, server_number);
+    snprintf(fileName, 100, "%s/private_client_%02d.key", keys_dir, server_number);
      
   f = fopen(fileName, "w");
 
@@ -126,28 +129,32 @@ void Write_RSA( int32u rsa_type, int32u server_number, RSA *rsa)
 void Read_BN( FILE *f, BIGNUM **bn ) 
 {
   char bn_buf[1000];
+  char *ret;
 
   (*bn) = BN_new();
-  fgets(bn_buf, 1000, f);
+  ret = fgets(bn_buf, 1000, f);
+  if (ret == NULL) {
+    printf("ERROR: Could not read BN\n");
+    exit(1);
+  }
   BN_hex2bn( bn, bn_buf );
 }
 
-void Read_RSA( int32u rsa_type, int32u server_number, RSA *rsa) 
+void Read_RSA( int32u rsa_type, int32u server_number, RSA *rsa, const char *keys_dir) 
 {
   FILE *f;
-  char fileName[50];
-  char dir[100] = "../prime/bin/keys";
+  char fileName[100];
   
   /* Read an RSA structure to a file */
   
   if(rsa_type == RSA_TYPE_PUBLIC)
-    sprintf(fileName,"%s/public_%02d.key", dir, server_number);
+    snprintf(fileName, 100, "%s/public_%02d.key", keys_dir, server_number);
   else if(rsa_type == RSA_TYPE_PRIVATE)
-    sprintf(fileName,"%s/private_%02d.key", dir, server_number);
+    snprintf(fileName, 100, "%s/private_%02d.key", keys_dir, server_number);
   else if(rsa_type == RSA_TYPE_CLIENT_PUBLIC)
-    sprintf(fileName,"%s/public_client_%02d.key", dir, server_number);
+    snprintf(fileName, 100, "%s/public_client_%02d.key", keys_dir, server_number);
   else if(rsa_type == RSA_TYPE_CLIENT_PRIVATE)
-    sprintf(fileName,"%s/private_client_%02d.key", dir, server_number);
+    snprintf(fileName, 100, "%s/private_client_%02d.key", keys_dir, server_number);
   
   if((f = fopen( fileName, "r")) == NULL) {
     printf("ERROR: Could not open the key file: %s\n", fileName );
@@ -171,7 +178,7 @@ void Read_RSA( int32u rsa_type, int32u server_number, RSA *rsa)
 
 /* This function generates keys based on the current configuration as specified
  * in data_structs.h */
-void OPENSSL_RSA_Generate_Keys() {
+void OPENSSL_RSA_Generate_Keys(const char *keys_dir) {
 
     RSA *rsa;
     int32u s;
@@ -182,22 +189,22 @@ void OPENSSL_RSA_Generate_Keys() {
     for ( s = 1; s <= NUMBER_OF_SERVERS; s++ ) {
       rsa = RSA_generate_key( 1024, 3, Gen_Key_Callback, NULL );
       /*RSA_print_fp( stdout, rsa, 4 );*/
-      Write_RSA( RSA_TYPE_PUBLIC,  s, rsa ); 
-      Write_RSA( RSA_TYPE_PRIVATE, s, rsa ); 
+      Write_RSA( RSA_TYPE_PUBLIC,  s, rsa, keys_dir ); 
+      Write_RSA( RSA_TYPE_PRIVATE, s, rsa, keys_dir ); 
     } 
 
     /* Generate Keys For Clients */
     for ( s = 1; s <= NUMBER_OF_CLIENTS; s++ ) {
       rsa = RSA_generate_key( 1024, 3, Gen_Key_Callback, NULL );
       /*RSA_print_fp( stdout, rsa, 4 );*/
-      Write_RSA( RSA_TYPE_CLIENT_PUBLIC,  s, rsa ); 
-      Write_RSA( RSA_TYPE_CLIENT_PRIVATE, s, rsa ); 
+      Write_RSA( RSA_TYPE_CLIENT_PUBLIC,  s, rsa, keys_dir ); 
+      Write_RSA( RSA_TYPE_CLIENT_PRIVATE, s, rsa, keys_dir ); 
     } 
 }
 
 /* Read all of the keys for servers or clients. All of the public keys
  * should be read and the private key for this server should be read. */
- void OPENSSL_RSA_Read_Keys(int32u my_number, int32u type)
+ void OPENSSL_RSA_Read_Keys(int32u my_number, int32u type, const char *keys_dir)
 {
 
   int32u s; 
@@ -206,13 +213,13 @@ void OPENSSL_RSA_Generate_Keys() {
   /* Read all public keys for servers. */
   for(s = 1; s <= NUMBER_OF_SERVERS; s++) {
     public_rsa_by_server[s] = RSA_new();
-    Read_RSA(RSA_TYPE_PUBLIC, s, public_rsa_by_server[s] );
+    Read_RSA(RSA_TYPE_PUBLIC, s, public_rsa_by_server[s], keys_dir);
   } 
 
   /* Read all public keys for clients. */
   for ( s = 1; s <= NUMBER_OF_CLIENTS; s++ ) {
     public_rsa_by_client[s] = RSA_new();
-    Read_RSA( RSA_TYPE_CLIENT_PUBLIC, s, public_rsa_by_client[s] );
+    Read_RSA( RSA_TYPE_CLIENT_PUBLIC, s, public_rsa_by_client[s], keys_dir);
   } 
     
   if ( type == RSA_SERVER ) {
@@ -226,7 +233,7 @@ void OPENSSL_RSA_Generate_Keys() {
 
   /* Read my private key. */
   private_rsa = RSA_new();
-  Read_RSA( rt, my_number, private_rsa );
+  Read_RSA( rt, my_number, private_rsa, keys_dir);
 }
 
 void OPENSSL_RSA_Init() 
@@ -237,6 +244,8 @@ void OPENSSL_RSA_Init()
   /* Use sha1 as the digest algorithm. */
   message_digest = EVP_get_digestbyname( DIGEST_ALGORITHM );
   verify_count = 0;
+
+  //EVP_MD_CTX_init(&mdctx);
 }
 
 int32u OPENSSL_RSA_Digests_Equal( unsigned char *digest1, 
@@ -271,7 +280,10 @@ void OPENSSL_RSA_Make_Digest( const void *buffer, size_t buffer_size,
 #if REMOVE_CRYPTO 
     //return;
 #endif
-    
+   
+    //memset(digest_value, 0, DIGEST_SIZE);
+    //return;
+
     EVP_MD_CTX_init(&mdctx);
     EVP_DigestInit_ex(&mdctx, message_digest, NULL);
     EVP_DigestUpdate(&mdctx, buffer, buffer_size);

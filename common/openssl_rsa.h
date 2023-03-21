@@ -24,10 +24,13 @@
  *   Amy Babay            babay@cs.jhu.edu
  *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
- * Major Contributor:
+ * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
  *
- * Copyright (c) 2017 Johns Hopkins University.
+ * Contributors:
+ *   Samuel Beckley       Contributions to HMIs
+ *
+ * Copyright (c) 2018 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -63,9 +66,9 @@ int OPENSSL_RSA_Verify( const unsigned char *message, size_t message_length,
 			unsigned char *signature, int32u server_number, 
 			int32u type ); 
  
-void OPENSSL_RSA_Read_Keys( int32u my_number, int32u type ); 
+void OPENSSL_RSA_Read_Keys( int32u my_number, int32u type, const char *keys_dir ); 
 
-void OPENSSL_RSA_Generate_Keys(void); 
+void OPENSSL_RSA_Generate_Keys( const char *keys_dir ); 
 
 void OPENSSL_RSA_Make_Signature( const unsigned char *digest_value, 
 				 unsigned char *signature ); 

@@ -24,10 +24,13 @@
  *   Amy Babay            babay@cs.jhu.edu
  *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
- * Major Contributor:
+ * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
  *
- * Copyright (c) 2017 Johns Hopkins University.
+ * Contributors:
+ *   Samuel Beckley       Contributions to HMIs
+ *
+ * Copyright (c) 2018 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -66,6 +69,9 @@ p_tx * tx_arr;
 // Storage for PNNL
 pnnl_fields pnnl_data;
 
+// Storage for EMS
+ems_fields ems_data[EMS_NUM_GENERATORS];
+
 //size info
 int stat_len;
 int sw_arr_len;
@@ -79,15 +85,15 @@ void Usage(int, char **);
 void init();
 void err_check_read(char * ret);
 void process();
-void read_from_rtu(signed_message *, struct timeval *);
+int read_from_rtu(signed_message *, struct timeval *);
 void read_from_hmi(signed_message *);
 void package_and_send_state(signed_message *);
 void apply_state(signed_message *);
 void print_state();
 
-int main(int argc, char **argv) 
+int main(int argc, char **argv)
 {
-    int nbytes, ret;
+    int nbytes, id, i, ret;
     char buf[MAX_LEN];
     char *ip;
     struct timeval t, now;
@@ -96,6 +102,7 @@ int main(int argc, char **argv)
     rtu_data_msg *rtud;
     benchmark_msg *ben;
     pthread_t m_tid, pi_tid;
+    /*int remove_me;*/
 
     setlinebuf(stdout);
     Init_SM_Replicas(); // call before usage to check that we get the right args for our type
@@ -126,33 +133,35 @@ int main(int argc, char **argv)
 
     // initalize the IPC communication with the ITRC
     memset(&itrc_main, 0, sizeof(itrc_data));
+    sprintf(itrc_main.prime_keys_dir, "%s", (char *)SM_PRIME_KEYS);
+    sprintf(itrc_main.sm_keys_dir, "%s", (char *)SM_SM_KEYS);
     sprintf(itrc_main.ipc_local, "%s%d", (char *)SM_IPC_MAIN, My_ID);
     sprintf(itrc_main.ipc_remote, "%s%d", (char *)SM_IPC_ITRC, My_ID);
     ipc_sock = IPC_DGram_Sock(itrc_main.ipc_local);
-  
+
     memset(&itrc_thread, 0, sizeof(itrc_data));
+    sprintf(itrc_thread.prime_keys_dir, "%s", (char *)SM_PRIME_KEYS);
+    sprintf(itrc_thread.sm_keys_dir, "%s", (char *)SM_SM_KEYS);
     sprintf(itrc_thread.ipc_local, "%s%d", (char *)SM_IPC_ITRC, My_ID);
     sprintf(itrc_thread.ipc_remote, "%s%d", (char *)SM_IPC_MAIN, My_ID);
     ip = strtok(argv[2], ":");
-    sprintf(itrc_thread.spines_int_addr, ip);
+    sprintf(itrc_thread.spines_int_addr, "%s", ip);
     ip = strtok(NULL, ":");
     sscanf(ip, "%d", &itrc_thread.spines_int_port);
     if (Type == CC_TYPE) {
         ip = strtok(argv[3], ":");
-        sprintf(itrc_thread.spines_ext_addr, ip);
+        sprintf(itrc_thread.spines_ext_addr, "%s", ip);
         ip = strtok(NULL, ":");
         sscanf(ip, "%d", &itrc_thread.spines_ext_port);
     }
-    
+
     // Setup and spawn the main itrc thread
     pthread_create(&m_tid, NULL, &ITRC_Master, (void *)&itrc_thread);
-    
-    // If I am a Control Center, start the Prime inject thread
-    //if (Type == CC_TYPE)
 
-    // Create the Prime_Inject thread for all types of replicas so that
-    // they can request a state transfer if the first ordinal received is
-    // further ahead that what is expected
+    // Create the Prime_Inject thread for all types of replicas (not only
+    // control-center replicas). Only control-center replicas introduce client
+    // (HMI/Proxy) updates, but all replicas can request a state transfer if
+    // the first ordinal received is further ahead than what is expected
     pthread_create(&pi_tid, NULL, &ITRC_Prime_Inject, (void *)&itrc_thread);
 
     // Setup the FD_SET
@@ -160,7 +169,7 @@ int main(int argc, char **argv)
     FD_SET(ipc_sock, &mask);
 
     while(1) {
-        
+
         tmask = mask;
         select(FD_SETSIZE, &tmask, NULL, NULL, NULL);
 
@@ -169,19 +178,28 @@ int main(int argc, char **argv)
             mess = (signed_message *)buf;
 
             if (mess->type == RTU_DATA) {
-                read_from_rtu(mess, &t);
+                id = read_from_rtu(mess, &t);
 
                 /* Separate sending correct HMI update for each scenario */
                 rtud = (rtu_data_msg *)(mess + 1);
                 if (rtud->scen_type == JHU) {
-                    mess = PKT_Construct_HMI_Update_Msg(rtud->seq, rtud->scen_type, 
+                    mess = PKT_Construct_HMI_Update_Msg(rtud->seq, rtud->scen_type,
                                     stat_len, stat, t.tv_sec, t.tv_usec);
                 }
-                else { /* (rtu->scen_type == PNNL) */
-                    mess = PKT_Construct_HMI_Update_Msg(rtud->seq, rtud->scen_type, 
-                                RTU_DATA_PAYLOAD_LEN - RTU_DATA_PADDING, 
-                                (char *)(((char *)&pnnl_data) + RTU_DATA_PADDING), 
+                else if (rtud->scen_type == PNNL) {
+                    mess = PKT_Construct_HMI_Update_Msg(rtud->seq, rtud->scen_type,
+                                RTU_DATA_PAYLOAD_LEN - PNNL_DATA_PADDING,
+                                (char *)(((char *)&pnnl_data) + PNNL_DATA_PADDING),
                                 t.tv_sec, t.tv_usec);
+                }
+                else if (rtud->scen_type == EMS) {
+                    mess = PKT_Construct_HMI_Update_Msg(rtud->seq, rtud->scen_type,
+                                RTU_DATA_PAYLOAD_LEN,
+                                (char *)((char *)&ems_data[id]),
+                                t.tv_sec, t.tv_usec);
+                    /*for(remove_me = 0; remove_me < EMS_NUM_GENERATORS; ++remove_me) {
+                        printf("ID: %d Current: %d Target: %d Max: %d\n", remove_me, ems_data[remove_me].curr_generation, ems_data[remove_me].target_generation, ems_data[remove_me].max_generation);
+                    }*/
                 }
                 nbytes = sizeof(signed_message) + mess->len;
                 IPC_Send(ipc_sock, (void *)mess, nbytes, itrc_main.ipc_remote);
@@ -201,7 +219,23 @@ int main(int argc, char **argv)
                 package_and_send_state(mess);
             }
             else if (mess->type == STATE_XFER) {
-                apply_state(mess); 
+                apply_state(mess);
+            }
+            else if (mess->type == SYSTEM_RESET) {
+                printf("Resetting State @ SM!!\n");
+                for(i = 0; i < sw_arr_len; i++)
+                    sw_arr[i].status = 1;
+                for(i = 0; i < tx_arr_len; i++)
+                    tx_arr[i].status = 1;
+                for(i = 0; i < sub_arr_len; i++)
+                    sub_arr[i].status = 1;
+                for(i = 0; i < pl_arr_len; i++)
+                    pl_arr[i].status = 1;
+                for(i = 0; i < stat_len; i++)
+                    stat[i] = 1;
+
+                /* Initialize PNNL Scenario */
+                memset(&pnnl_data, 0, sizeof(pnnl_fields));
             }
             else {
                 printf("SM_MAIN: invalid message type %d\n", mess->type);
@@ -227,7 +261,7 @@ void Usage(int argc, char **argv)
         printf("Invalid My_ID: %d\n", My_ID);
         exit(EXIT_FAILURE);
     }
-    
+
     if (Is_CC_Replica(My_ID) && argc != 4) {
         printf("Invalid arguments...\n");
         printf("Control Center Replicas must have internal and external spines networks specified!\n");
@@ -238,7 +272,7 @@ void Usage(int argc, char **argv)
         printf("Data Center Replicas should only have internal spines network specified!\n");
         exit(EXIT_FAILURE);
     }
-    
+
     /* while (--argc > 0) {
         argv++;
 
@@ -255,12 +289,12 @@ void Usage(int argc, char **argv)
                     "\t-i id, indexed base 1\n");
             exit(EXIT_FAILURE);
         }
-    } */
+    }
 
     if (My_ID == 0) {
         printf("No Server ID. Please specify the ID using -i\n");
         exit(EXIT_FAILURE);
-    }
+    } */
 }
 
 // Set everything up
@@ -280,7 +314,7 @@ void init()
         exit(1);
     }
     //find size of tooltip array
-    err_check_read(fgets(line, line_size, fp)); //ignore this line
+    err_check_read(fgets(line, line_size, fp)); //ignore this line (comment #SIZE OF TOOLTIP ARRAY)
     err_check_read(fgets(line, line_size, fp));
     stat_len = atoi(line);
 
@@ -290,7 +324,7 @@ void init()
     sub_arr_len = 0;
     tx_arr_len = 0;
 
-    err_check_read(fgets(line, line_size, fp)); //ignore this line, comment
+    err_check_read(fgets(line, line_size, fp)); //ignore this line (comment #TOOLTIP ARRAY)
     for(i = 0; i < stat_len; i++) {
         err_check_read(fgets(line, line_size, fp));
         switch(line[0]) {
@@ -320,26 +354,26 @@ void init()
 
     memset(sub_arr, 0, sizeof(sub) * sub_arr_len);
     num_jhu_sub = sub_arr_len;
-    
+
     //start filling arrays
-    err_check_read(fgets(line, line_size, fp)); //ignore
-    err_check_read(fgets(line, line_size, fp)); //ignore
+    err_check_read(fgets(line, line_size, fp)); //ignore (comment #_____________________)
+    err_check_read(fgets(line, line_size, fp)); //ignore (10?)
     for(i = 0; i < sub_arr_len; i++) {
-        err_check_read(fgets(line, line_size, fp)); //ignore
-        err_check_read(fgets(line, line_size, fp)); 
+        err_check_read(fgets(line, line_size, fp)); //ignore (comment #SUB ID)
+        err_check_read(fgets(line, line_size, fp));
         sub_arr[i].id = atoi(line);
         //set up tx
-        err_check_read(fgets(line, line_size, fp)); //ignore
+        err_check_read(fgets(line, line_size, fp)); //ignore (comment #TX ID)
         err_check_read(fgets(line, line_size, fp));
         tx_arr[tx_cur].id = atoi(line);
         sub_arr[i].tx = tx_arr + tx_cur;
         tx_cur++;
         //set up switches
-        err_check_read(fgets(line, line_size, fp)); //ignore
+        err_check_read(fgets(line, line_size, fp)); //ignore (#NUMBER OF SWITCHES)
         err_check_read(fgets(line, line_size, fp));
         num_switches = atoi(line);
         sub_arr[i].num_switches = num_switches;
-        err_check_read(fgets(line, line_size, fp)); //ignore
+        err_check_read(fgets(line, line_size, fp)); //ignore (#SWITCH_IDS)
         for(j = 0; j < num_switches; j++) {
             err_check_read(fgets(line, line_size, fp));
             sw_arr[sw_cur].id = atoi(line);
@@ -347,12 +381,12 @@ void init()
             sw_cur++;
         }
         //set up lines
-        err_check_read(fgets(line, line_size, fp)); //ignore
+        err_check_read(fgets(line, line_size, fp)); //ignore (#NUMBER OF LINES)
         err_check_read(fgets(line, line_size, fp));
         num_lines = atoi(line);
         sub_arr[i].num_lines = num_lines;
         for(j = 0; j < num_lines; j++) {
-            err_check_read(fgets(line, line_size, fp)); //ignore
+            err_check_read(fgets(line, line_size, fp)); //ignore (#LINE INFO)
             // line id, src switch id, dest switch id, dest sub id
             err_check_read(fgets(line, line_size, fp));
             pl_arr[pl_cur].id = atoi(line);
@@ -408,7 +442,7 @@ void init()
     memset(&pnnl_data, 0, sizeof(pnnl_fields));
 }
 
-void err_check_read(char * ret) 
+void err_check_read(char * ret)
 {
     if(ret == NULL) {
         fprintf(stderr, "read issue");
@@ -419,7 +453,7 @@ void err_check_read(char * ret)
 //Figure out which substations have power
 void process()
 {
-    int i, j;    
+    int i, j;
 
     /*initialize data*/
     queue_init();
@@ -457,7 +491,7 @@ void process()
         }
     }
 
-    //check if links are broke
+    //check if links are broken
     for(i = 0; i < pl_arr_len; i++){
         if(pl_arr[i].src_sw->status == 2) {
             //tripped line, raise alarm
@@ -478,31 +512,44 @@ void process()
 }
 
 //Read from RTU, and update data structures
-void read_from_rtu(signed_message *mess, struct timeval *t)
+int read_from_rtu(signed_message *mess, struct timeval *t)
 {
-    int i; 
+    int i;
     rtu_data_msg *payload;
     jhu_fields *jhf;
     pnnl_fields *pf;
+    ems_fields *ems;
 
     payload = (rtu_data_msg *)(mess + 1);
-    
+
     // Only send updates from Real RTUs (ID = 0 to NUM_RTU - 1) to HMI
+    // We don't actually check this return value anywhere...should move to itrc
+    // validate_message function?
     if (payload->rtu_id >= NUM_RTU || payload->seq.seq_num == 0)
-        return;
+        return -1;
 
     t->tv_sec  = payload->sec;
     t->tv_usec = payload->usec;
 
     if (payload->scen_type == JHU) {
+        /* If we got an invalid id, we don't want to try to use it to update
+         * the sub_arr. Note that we will still send an HMI update (keeping all
+         * of the ordinal accounting happy), but it won't actually reflect any
+         * state change. It would be better to be able to identify this message
+         * as invalid at the itrc level, but we don't know how many substation
+         * we have until we read the configuration file at the SCADA Master
+         * level today */
+        if (payload->rtu_id >= num_jhu_sub) return 0;
+
         jhf = (jhu_fields *)(payload->data);
 
         for(i = 0; i < sub_arr[payload->rtu_id].num_switches; i++) {
-            if(jhf->sw_status[i] == 1 || jhf->sw_status[i] == 0 || 
+            if(jhf->sw_status[i] == 1 || jhf->sw_status[i] == 0 ||
                     jhf->sw_status[i] == 2) {
                 sub_arr[payload->rtu_id].sw_list[i]->status = jhf->sw_status[i];
             }
         }
+
         if(jhf->tx_status == 1 || jhf->tx_status == 0)
             sub_arr[payload->rtu_id].tx->status = jhf->tx_status;
         process();
@@ -511,14 +558,20 @@ void read_from_rtu(signed_message *mess, struct timeval *t)
         pf = (pnnl_fields *)(payload->data);
         memcpy(&pnnl_data, pf, sizeof(pnnl_data));
     }
+    else if (payload->scen_type == EMS) {
+        ems = (ems_fields *)(payload->data);
+        memcpy(&ems_data[ems->id], ems, sizeof(ems_fields));
+        return ems->id;
+    }
+    return 0;
 }
 
 //Read PVS message, send message to DAD saying what to write
-void read_from_hmi(signed_message *mess) 
+void read_from_hmi(signed_message *mess)
 {
     //printf("READ FROM HMI\n");
     //char buf[MAX_LEN];
-    int val;
+    int val = 0;
     int found = 0;
     int nbytes = 0;
     int i, z;
@@ -534,7 +587,7 @@ void read_from_hmi(signed_message *mess)
     //up = (update_message *)(mess + 1);
     //payload = (hmi_command_msg *)(res + 1);
     payload = (hmi_command_msg *)(mess + 1);
-    
+
     if (payload->scen_type == JHU) {
         switch(payload->type){
             case TRANSFORMER: {
@@ -543,7 +596,7 @@ void read_from_hmi(signed_message *mess)
                     if(payload->ttip_pos == sub_arr[i].tx->id) {
                         found = 1;
                         val = (sub_arr[i].tx->status == 0)? 1:0;
-                        dad_mess = PKT_Construct_RTU_Feedback_Msg(payload->seq, 
+                        dad_mess = PKT_Construct_RTU_Feedback_Msg(payload->seq,
                                     payload->scen_type, TRANSFORMER, i, i, 0, val);
                         break;
                     }
@@ -560,7 +613,7 @@ void read_from_hmi(signed_message *mess)
                                 return;
                                 //return 1;
                             val = (sub_arr[i].sw_list[z]->status==0)?1:0;
-                            dad_mess = PKT_Construct_RTU_Feedback_Msg(payload->seq, 
+                            dad_mess = PKT_Construct_RTU_Feedback_Msg(payload->seq,
                                         payload->scen_type, SWITCH, i, i, z, val);
                             break;
                         }
@@ -573,10 +626,13 @@ void read_from_hmi(signed_message *mess)
         }
         if(found == 0) {
             perror("ID from PVS not found\n");
+            // Are we still required to create some kind of feedback message in
+            // this case?
         }
     }
     else if (payload->scen_type == PNNL) {
-        
+        // We should probably make sure the validate function is actually
+        // ensuring this before asserting it
         assert(payload->ttip_pos >= 0 && payload->ttip_pos < NUM_BREAKER);
 
         if (payload->type == BREAKER_FLIP) {
@@ -591,6 +647,21 @@ void read_from_hmi(signed_message *mess)
 
         dad_mess = PKT_Construct_RTU_Feedback_Msg(payload->seq, payload->scen_type,
                         BREAKER, PNNL_RTU_ID, PNNL_RTU_ID, payload->ttip_pos, val);
+    }
+    else if (payload->scen_type == EMS) {
+        /* payload->type is the updated Target value
+         * payload->ttip_pos is the generator ID*/
+        // Need to validate payload0>ttip_pos < NUM_EMS_GENERATORS
+        ems_data[payload->ttip_pos].target_generation = payload->type;
+        printf("EMS message, gen: %d target: %d\n", payload->ttip_pos, payload->type);
+
+        dad_mess = PKT_Construct_RTU_Feedback_Msg(payload->seq,
+                        payload->scen_type,
+                        EMS_TARGET_SET,
+                        (EMS_RTU_ID_BASE+payload->ttip_pos),
+                        (EMS_RTU_ID_BASE+payload->ttip_pos),
+                        0, // Hardcode to 0 b/c we always write to the target, which is the first R/W Int
+                        ems_data[payload->ttip_pos].target_generation);
     }
 
     /* With the message constructed (from either scenario), send it on */
@@ -636,9 +707,9 @@ void package_and_send_state(signed_message *mess)
     slot_ptr->client = PNNL_RTU_ID;
     slot_ptr->num_fields = 0;            /* Handled in special way for now */
     field_ptr = (char *)(slot_ptr + 1);
-    memcpy(field_ptr, (char *)(((char *)&pnnl_data) + RTU_DATA_PADDING), 
-            RTU_DATA_PAYLOAD_LEN - RTU_DATA_PADDING);
-    state_size += sizeof(sm_state) + (RTU_DATA_PAYLOAD_LEN - RTU_DATA_PADDING);
+    memcpy(field_ptr, (char *)(((char *)&pnnl_data) + PNNL_DATA_PADDING),
+            RTU_DATA_PAYLOAD_LEN - PNNL_DATA_PADDING);
+    state_size += sizeof(sm_state) + (RTU_DATA_PAYLOAD_LEN - PNNL_DATA_PADDING);
 
     /* pf = (pnnl_fields *)(&pnnl_data);
     for (i = 0; i < NUM_POINT; i++)
@@ -705,9 +776,9 @@ void apply_state(signed_message *mess)
 
     /* Handle the PNNL scenario - Last client*/
     field_ptr = (char *)(slot_ptr + 1);
-    memcpy((char *)(((char *)&pnnl_data) + RTU_DATA_PADDING), field_ptr,
-            RTU_DATA_PAYLOAD_LEN - RTU_DATA_PADDING);
-    size += sizeof(sm_state) + (RTU_DATA_PAYLOAD_LEN - RTU_DATA_PADDING);
+    memcpy((char *)(((char *)&pnnl_data) + PNNL_DATA_PADDING), field_ptr,
+            RTU_DATA_PAYLOAD_LEN - PNNL_DATA_PADDING);
+    size += sizeof(sm_state) + (RTU_DATA_PAYLOAD_LEN - PNNL_DATA_PADDING);
 
     assert(size == st->state_size);
     process();
@@ -747,4 +818,12 @@ void print_state()
     for (i = 0; i < NUM_BREAKER; i++)
         printf("%d ", pf->breaker_write[i]);
     printf("\n");
+
+    /* print out EMS State */
+    for (i = 0; i < EMS_NUM_GENERATORS; ++i) {
+        printf("EMS Generator #%d, id: %d\n", i, ems_data[i].id);
+        printf("    Max Generation: %d\n", ems_data[i].max_generation);
+        printf("    Current Generation: %d\n", ems_data[i].curr_generation);
+        printf("    Target Generation: %d\n", ems_data[i].target_generation);
+    }
 }

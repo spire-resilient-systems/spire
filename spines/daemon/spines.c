@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -133,6 +134,7 @@ Link*    Links[MAX_LINKS];
 channel  Ses_UDP_Channel;   /* For udp client connections */
 sys_scatter Recv_Pack[MAX_LINKS_4_EDGE];
 Route*   All_Routes;
+stdskl  Client_Cost_Stats; /* AB: added for cost accounting */
 
 stdhash  Monitor_Params;
 int      Accept_Monitor;
@@ -214,6 +216,8 @@ sp_time  Time_until_Exit;
 int      Minimum_Window;
 int      Fast_Retransmit;
 int      Stream_Fairness;
+int      TCP_Fairness;
+int      Print_Cost;
 int      Unicast_Only;
 int      Memory_Limit;
 int16    KR_Flags;
@@ -263,6 +267,18 @@ static void     Init_Memory_Objects(int x);
 void            Set_resource_limit(int max_mem);
 int32           Get_Interface_ip(char *iface);
 
+void E_exit_events_wrapper(int signum)
+{
+    E_exit_events_async_safe();
+}
+
+void Immediate_Cleanup(int signum)
+{
+    Session_Finish();
+    printf("Process Terminated with %d signal\n", signum);
+    exit(signum);
+}
+
 #if 0
 /* 01/2015 - SIGNAL HANDLER FUNCTION FOR DEBUGGING CRASHES */
 void signal_handler(int sig) {
@@ -289,21 +305,11 @@ void signal_handler(int sig) {
     free(strings);
 
     printf("... Goodbye\n");
+
+    Immediate_Cleanup(sig);
     exit(0);
 }
 #endif
-
-void E_exit_events_wrapper(int signum)
-{
-    E_exit_events_async_safe();
-}
-
-void Immediate_Cleanup(int signum)
-{
-    Session_Finish();
-    printf("Process Terminated with %d signal\n", signum);
-    exit(signum);
-}
 
 /***********************************************************/
 /* int main(int argc, char* argv[])                        */
@@ -330,7 +336,7 @@ int main(int argc, char* argv[])
 
     Alarm( PRINT, "/===========================================================================\\\n");
     Alarm( PRINT, "| Spines                                                                    |\n");
-    Alarm( PRINT, "| Copyright (c) 2003 - 2017 Johns Hopkins University                        |\n"); 
+    Alarm( PRINT, "| Copyright (c) 2003 - 2018 Johns Hopkins University                        |\n"); 
     Alarm( PRINT, "| All rights reserved.                                                      |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| Spines is licensed under the Spines Open-Source License.                  |\n");
@@ -343,6 +349,7 @@ int main(int argc, char* argv[])
     Alarm( PRINT, "|    John Lane Schultz         jschultz@spreadconcepts.com                  |\n");
     Alarm( PRINT, "|    Daniel Obenshain          dano@cs.jhu.edu                              |\n");
     Alarm( PRINT, "|    Thomas Tantillo           tantillo@cs.jhu.edu                          |\n");
+    Alarm( PRINT, "|    Amy Babay                 babay@cs.jhu.edu                             |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| Major Contributors:                                                       |\n");
     Alarm( PRINT, "|    John Lane                 johnlane@cs.jhu.edu                          |\n");
@@ -353,7 +360,7 @@ int main(int argc, char* argv[])
     Alarm( PRINT, "| WWW:     www.spines.org      www.dsn.jhu.edu                              |\n");
     Alarm( PRINT, "| Contact: spines@spines.org                                                |\n");
     Alarm( PRINT, "|                                                                           |\n");
-    Alarm( PRINT, "| Version 5.2, Built May 17, 2017                                           |\n"); 
+    Alarm( PRINT, "| Version 5.3, Built March 9, 2018                                          |\n"); 
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use       |\n");
     Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                 |\n");
@@ -385,6 +392,10 @@ int main(int argc, char* argv[])
     signal(SIGSEGV, Immediate_Cleanup);
     signal(SIGFPE,  Immediate_Cleanup);
     signal(SIGILL,  Immediate_Cleanup);
+    /*signal(SIGABRT, signal_handler);
+    signal(SIGSEGV, signal_handler);
+    signal(SIGFPE,  signal_handler);
+    signal(SIGILL,  signal_handler);*/
 
 #ifdef	ARCH_PC_WIN95    
     ret = WSAStartup( MAKEWORD(1,1), &WSAData );
@@ -662,6 +673,8 @@ static  void    Usage(int argc, char *argv[])
     Minimum_Window = 1;
     Fast_Retransmit = 0;
     Stream_Fairness = 0;
+    TCP_Fairness = 0;
+    Print_Cost = 0;
     Up_Down_Interval.sec  = 0;
     Up_Down_Interval.usec = 0;
     Time_until_Exit.sec  = 0;
@@ -676,265 +689,291 @@ static  void    Usage(int argc, char *argv[])
     memset((void*)Wireless_if, '\0', sizeof(Wireless_if));
     Use_Log_File = 0;
     Unix_Domain_Use_Default = 1;
+    Leg_Rate_Limit_kbps = 500000;
 
     strcpy( Config_file, "spines.conf" );
     Num_Discovery_Addresses = 0;
 
     while(--argc > 0) {
         argv++;
-	if(!strncmp(*argv, "-mw", 4)) {
-	    sscanf(argv[1], "%d", (int*)&Minimum_Window);
-	    argc--; argv++;
-	}else if(!strncmp(*argv, "-fr", 4)) {
-	    Fast_Retransmit = 1;
-	}else if(!strncmp(*argv, "-sf", 4)) {
-	    Stream_Fairness = 1;
-	}else if(!strncmp(*argv, "-m", 3)) {
-	    Accept_Monitor = 1;
-	}else if(!strncmp(*argv, "-U", 3)) {
-	    Unicast_Only = 1;
-	}else if(!strncmp(*argv, "-M", 3)) {
-	    sscanf(argv[1], "%d", (int*)&Memory_Limit);
-        if (Memory_Limit < 1) Memory_Limit = 1; 
-	    argc--; argv++;
-	}else if(!strncmp(*argv, "-Wts", 5)) {
-	    sscanf(argv[1], "%d", (int*)&Wireless_ts);
+        if(!strncmp(*argv, "-mw", 4)) {
+            sscanf(argv[1], "%d", (int*)&Minimum_Window);
+            argc--; argv++;
+        }else if(!strncmp(*argv, "-fr", 4)) {
+            Fast_Retransmit = 1;
+        }else if(!strncmp(*argv, "-sf", 4)) {
+            Stream_Fairness = 1;
+        }else if(!strncmp(*argv, "-tf", 4)) {
+            TCP_Fairness = 1;
+        }else if(!strncmp(*argv, "-pc", 4)) {
+            Print_Cost = 1;
+        }else if(!strncmp(*argv, "-m", 3)) {
+            Accept_Monitor = 1;
+        }else if(!strncmp(*argv, "-U", 3)) {
+            Unicast_Only = 1;
+        }else if(!strncmp(*argv, "-rl", 4)) {
+            sscanf(argv[1], "%d", &Leg_Rate_Limit_kbps);
+            argc--; argv++;
+        }else if(!strncmp(*argv, "-M", 3)) {
+            sscanf(argv[1], "%d", (int*)&Memory_Limit);
+            if (Memory_Limit < 1) Memory_Limit = 1; 
+            argc--; argv++;
+        }else if(!strncmp(*argv, "-Wts", 5)) {
+            sscanf(argv[1], "%d", (int*)&Wireless_ts);
             Wireless = 1;
-	    argc--; argv++;
-	}else if(!strncmp(*argv, "-Wif", 5)) {
+            argc--; argv++;
+        }else if(!strncmp(*argv, "-Wif", 5)) {
             sscanf(argv[1], "%s", Wireless_if);
             Wireless = 1;
             Wireless_monitor = 1;
             argc--; argv++;
-	}else if(!strncmp(*argv, "-W", 3)) {
+        }else if(!strncmp(*argv, "-W", 3)) {
             Wireless = 1;
-	}else if(!strncmp(*argv, "-p", 3)) {
-	    sscanf(argv[1], "%d", (int*)&tmp);
-	    Port = (int16u)tmp;
-	    argc--; argv++;
-	}else if(!strncmp(*argv, "-u", 3)) {
-	    sscanf(argv[1], "%ld", &Up_Down_Interval.sec);
-	    argc--; argv++;
-	}else if(!strncmp(*argv, "-x", 3)) {
-	    sscanf(argv[1], "%ld", &Time_until_Exit.sec);
-	    argc--; argv++;
-	}else if(!strncmp(*argv, "-l", 3)) {
+        }else if(!strncmp(*argv, "-p", 3)) {
+            sscanf(argv[1], "%d", (int*)&tmp);
+            Port = (int16u)tmp;
+            argc--; argv++;
+        }else if(!strncmp(*argv, "-u", 3)) {
+            sscanf(argv[1], "%ld", &Up_Down_Interval.sec);
+            argc--; argv++;
+        }else if(!strncmp(*argv, "-x", 3)) {
+            sscanf(argv[1], "%ld", &Time_until_Exit.sec);
+            argc--; argv++;
+        }else if(!strncmp(*argv, "-l", 3)) {
 
-	    if (My_Address != 0) {
-	      Alarm(EXIT, "-l should be specified at most once and should be "
-                        "specified before any -I parameters!\r\n");
-	    }
+            if (My_Address != 0) {
+                Alarm(EXIT, "-l should be specified at most once and should "
+                            "be specified before any -I parameters!\r\n");
+            }
 
-	    sscanf(argv[1], "%s", ip_str);
-	    ret = sscanf( ip_str ,"%d.%d.%d.%d",&i1, &i2, &i3, &i4);
-	    if (ret == 4) { 
-		  My_Address = ( (i1 << 24 ) | (i2 << 16) | (i3 << 8) | i4 );
-	    } else { 
-		  My_Address = Get_Interface_ip(ip_str);
-		  if(My_Address == 0) {
-			break;
-	          }
-	    }
-	    /* Look up the host name of My Address */
-	    sock_addr.sin_addr.s_addr = htonl(My_Address);            
-	    /*s_addr = htonl(My_Address);*/
-	    hostp = gethostbyaddr( &(sock_addr.sin_addr.s_addr),
-		    sizeof(sock_addr.sin_addr.s_addr),
-		    AF_INET);
+            sscanf(argv[1], "%s", ip_str);
+            ret = sscanf( ip_str ,"%d.%d.%d.%d",&i1, &i2, &i3, &i4);
+            if (ret == 4) { 
+                My_Address = ( (i1 << 24 ) | (i2 << 16) | (i3 << 8) | i4 );
+            } else { 
+                My_Address = Get_Interface_ip(ip_str);
+                if(My_Address == 0) {
+                    break;
+                }
+            }
+            /* Look up the host name of My Address */
+            sock_addr.sin_addr.s_addr = htonl(My_Address);            
+            /*s_addr = htonl(My_Address);*/
+            hostp = gethostbyaddr(&(sock_addr.sin_addr.s_addr),
+                      sizeof(sock_addr.sin_addr.s_addr), AF_INET);
 
-	    if ( hostp != NULL ) {
-		snprintf(My_Host_Name,HOST_NAME_LEN,"%s",hostp->h_name); 
-	    } else {
-		snprintf(My_Host_Name,HOST_NAME_LEN,IPF,IP(My_Address)); 
-	    }
+            if ( hostp != NULL ) {
+                snprintf(My_Host_Name,HOST_NAME_LEN,"%s",hostp->h_name); 
+            } else {
+                snprintf(My_Host_Name,HOST_NAME_LEN,IPF,IP(My_Address)); 
+            }
 
-	    argc--; argv++;
+            argc--; argv++;
 
-	} else if (!strncmp(*argv, "-I", 3)) {
+        } else if (!strncmp(*argv, "-I", 3)) {
 
-	  if (Num_Local_Interfaces == MAX_LOCAL_INTERFACES) {
-	    Alarm(EXIT, "Too many local interfaces specified!\r\n");
-	  }
+            if (Num_Local_Interfaces == MAX_LOCAL_INTERFACES) {
+                Alarm(EXIT, "Too many local interfaces specified!\r\n");
+            }
 
-	  ++argv;
-	  --argc;
+            ++argv;
+            --argc;
 
-	  if (argc == 0) {
-	    Alarm(EXIT, "-I requires at least one parameter!\r\n");
-	  }
+            if (argc == 0) {
+                Alarm(EXIT, "-I requires at least one parameter!\r\n");
+            }
 
-	  if (sscanf(*argv, "%d.%d.%d.%d", &i1, &i2, &i3, &i4) != 4 ||
-	      i1 < 0 || i1 > 255 || i2 < 0 || i2 > 255 || i3 < 0 || i3 > 255 || i4 < 0 || i4 > 255) {
-	    Alarm(EXIT, "-I expects an IPv4 address first!\r\n");
-	  }
+            if (sscanf(*argv, "%d.%d.%d.%d", &i1, &i2, &i3, &i4) != 4 ||
+                i1 < 0 || i1 > 255 || i2 < 0 || i2 > 255 ||
+                i3 < 0 || i3 > 255 || i4 < 0 || i4 > 255) {
+                  Alarm(EXIT, "-I expects an IPv4 address first!\r\n");
+            }
 
-	  My_Interface_Addresses[Num_Local_Interfaces] = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
+            My_Interface_Addresses[Num_Local_Interfaces] = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
 
-      if (My_Address == 0 && Num_Local_Interfaces == 0)
-        My_Address = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
+            if (My_Address == 0 && Num_Local_Interfaces == 0)
+                My_Address = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
 
-	  if (argc > 1 && argv[1][0] != '-') {
+            if (argc > 1 && argv[1][0] != '-') {
 
-	    ++argv;
-	    --argc;
+                ++argv;
+                --argc;
 
-	    if (sscanf(*argv, "%d.%d.%d.%d", &i1, &i2, &i3, &i4) != 4 ||
-		i1 < 0 || i1 > 255 || i2 < 0 || i2 > 255 || i3 < 0 || i3 > 255 || i4 < 0 || i4 > 255) {
-	      Alarm(EXIT, "-I expects a logical IPv4 interface identifier second!\r\n");
-	    }
+                if (sscanf(*argv, "%d.%d.%d.%d", &i1, &i2, &i3, &i4) != 4 ||
+                    i1 < 0 || i1 > 255 || i2 < 0 || i2 > 255 ||
+                    i3 < 0 || i3 > 255 || i4 < 0 || i4 > 255) {
+                      Alarm(EXIT, "-I expects a logical IPv4 interface identifier second!\r\n");
+                }
 
-	    My_Interface_IDs[Num_Local_Interfaces] = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
-	  }
+                My_Interface_IDs[Num_Local_Interfaces] = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
+            }
 
-	  ++Num_Local_Interfaces;
+            ++Num_Local_Interfaces;
 
-	}else if(!strncmp(*argv, "-d", 3)) {
-	    sscanf(argv[1], "%s", ip_str);
-	    sscanf(ip_str ,"%d.%d.%d.%d",&i1, &i2, &i3, &i4);
-	    Discovery_Address[Num_Discovery_Addresses++] = 
-		( (i1 << 24 ) | (i2 << 16) | (i3 << 8) | i4 );
-	    argc--; argv++;
-	    if (Num_Discovery_Addresses > MAX_DISCOVERY_ADDR) {
-		Alarm(EXIT, "too many discovery addresses...\n");
-	    }
-	}else if((!strncmp(*argv, "-w", 3))&&(!strncmp(*(argv+1), "distance", 9))) {
-	    Route_Weight = DISTANCE_ROUTE;
-	    argc--; argv++;
-	}else if((!strncmp(*argv, "-w", 3))&&(!strncmp(*(argv+1), "latency", 8))) {
-	    Route_Weight = LATENCY_ROUTE;
-	    argc--; argv++;
-	}else if((!strncmp(*argv, "-w", 3))&&(!strncmp(*(argv+1), "loss", 5))) {
-	    Route_Weight = LOSSRATE_ROUTE;
-	    argc--; argv++;
-	}else if((!strncmp(*argv, "-w", 3))&&(!strncmp(*(argv+1), "explat", 7))) {
-	    Route_Weight = AVERAGE_ROUTE;
-	    argc--; argv++;
+        }else if(!strncmp(*argv, "-d", 3)) {
+            argc--; argv++;
+            if (argc == 0)
+                Alarm(EXIT, "-d requires an IP parameter\n");
 
-	} else if (!strncmp(*argv, "-a", 3)) {
+            sscanf(*(argv), "%s", ip_str);
+            sscanf(ip_str ,"%d.%d.%d.%d",&i1, &i2, &i3, &i4);
 
-	  if (Num_Legs == MAX_NETWORK_LEGS) {
-	    Alarm(EXIT, "Too many network legs specified!\r\n");
-	  }
+            Discovery_Address[Num_Discovery_Addresses++] = 
+                ( (i1 << 24 ) | (i2 << 16) | (i3 << 8) | i4 );
 
-	  --argc; ++argv;
+            if (Num_Discovery_Addresses > MAX_DISCOVERY_ADDR) {
+                Alarm(EXIT, "too many discovery addresses...\n");
+            }
+        }else if (!strncmp(*argv, "-w", 3)) {
+            argc--; argv++;
+            if (argc == 0)
+                Alarm(EXIT, "-w requires a route type parameter\n");
 
-	  if (argc == 0) {
-	    Alarm(EXIT, "-a requires at least one parameter!\r\n");
-	  }
+            if (!strncmp(*(argv), "distance", 9))
+                Route_Weight = DISTANCE_ROUTE;
+            else if (!strncmp(*(argv), "latency", 8))
+                Route_Weight = LATENCY_ROUTE;
+            else if (!strncmp(*(argv), "loss", 5))
+                Route_Weight = LOSSRATE_ROUTE;
+            else if (!strncmp(*(argv), "explat", 7))
+                Route_Weight = AVERAGE_ROUTE;
+            else if (!strncmp(*(argv), "problem", 8))
+                Route_Weight = PROBLEM_ROUTE;
+        } else if (!strncmp(*argv, "-a", 3)) {
 
-	  if (sscanf(*argv, "%d.%d.%d.%d", &i1, &i2, &i3, &i4) != 4 ||
-	      i1 < 0 || i1 > 255 || i2 < 0 || i2 > 255 || i3 < 0 || i3 > 255 || i4 < 0 || i4 > 255) {
-	    Alarm(EXIT, "-a expects an IPv4 remote network address first!\r\n");
-	  }
+            if (Num_Legs == MAX_NETWORK_LEGS) {
+                Alarm(EXIT, "Too many network legs specified!\r\n");
+            }
 
-	  Remote_Interface_Addresses[Num_Legs] = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
+            --argc; ++argv;
 
-	  if (argc > 1 && argv[1][0] != '-') {
+            if (argc == 0) {
+                Alarm(EXIT, "-a requires at least one parameter!\r\n");
+            }
 
-	    --argc; ++argv;
+            if (sscanf(*argv, "%d.%d.%d.%d", &i1, &i2, &i3, &i4) != 4 ||
+                i1 < 0 || i1 > 255 || i2 < 0 || i2 > 255 ||
+                i3 < 0 || i3 > 255 || i4 < 0 || i4 > 255) {
+                  Alarm(EXIT, "-a expects an IPv4 remote network address first!\r\n");
+            }
 
-	    if (sscanf(*argv, "%d.%d.%d.%d", &i1, &i2, &i3, &i4) != 4 ||
-		i1 < 0 || i1 > 255 || i2 < 0 || i2 > 255 || i3 < 0 || i3 > 255 || i4 < 0 || i4 > 255) {
-	      Alarm(EXIT, "-a expects an IPv4 interface identifier second!\r\n");
-	    }
+            Remote_Interface_Addresses[Num_Legs] = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
 
-	    Remote_Interface_IDs[Num_Legs] = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
-	  }
+            if (argc > 1 && argv[1][0] != '-') {
 
-	  if (argc > 1 && argv[1][0] != '-') {
+                --argc; ++argv;
 
-	    --argc; ++argv;
+                if (sscanf(*argv, "%d.%d.%d.%d", &i1, &i2, &i3, &i4) != 4 ||
+                    i1 < 0 || i1 > 255 || i2 < 0 || i2 > 255 ||
+                    i3 < 0 || i3 > 255 || i4 < 0 || i4 > 255) {
+                      Alarm(EXIT, "-a expects an IPv4 interface identifier second!\r\n");
+                }
 
-	    if (sscanf(*argv, "%d.%d.%d.%d", &i1, &i2, &i3, &i4) != 4 ||
-		i1 < 0 || i1 > 255 || i2 < 0 || i2 > 255 || i3 < 0 || i3 > 255 || i4 < 0 || i4 > 255) {
-	      Alarm(EXIT, "-a expects an IPv4 node identifier third!\r\n");
-	    }
+                Remote_Interface_IDs[Num_Legs] = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
+            }
 
-	    Remote_Node_IDs[Num_Legs] = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
-	  }
+            if (argc > 1 && argv[1][0] != '-') {
 
-	  if (argc > 1 && argv[1][0] != '-') {
+                --argc; ++argv;
 
-	    --argc; ++argv;
+                if (sscanf(*argv, "%d.%d.%d.%d", &i1, &i2, &i3, &i4) != 4 ||
+                    i1 < 0 || i1 > 255 || i2 < 0 || i2 > 255 ||
+                    i3 < 0 || i3 > 255 || i4 < 0 || i4 > 255) {
+                      Alarm(EXIT, "-a expects an IPv4 node identifier third!\r\n");
+                }
 
-	    if (sscanf(*argv, "%d.%d.%d.%d", &i1, &i2, &i3, &i4) != 4 ||
-		i1 < 0 || i1 > 255 || i2 < 0 || i2 > 255 || i3 < 0 || i3 > 255 || i4 < 0 || i4 > 255) {
-	      Alarm(EXIT, "-a expects an IPv4 local interface identifier fourth!\r\n");
-	    }
+                Remote_Node_IDs[Num_Legs] = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
+            }
 
-	    Local_Interface_IDs[Num_Legs] = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
-	  }
+            if (argc > 1 && argv[1][0] != '-') {
 
-	  ++Num_Legs;
+                --argc; ++argv;
 
-	} else if(!(strncmp(*argv, "-k", 3))) { 
-	    sscanf(argv[1], "%d", (int*)&tmp);
-	    if (tmp == 0) KR_Flags |= KR_OVERLAY_NODES;
-	    if (tmp == 1) KR_Flags |= KR_CLIENT_ACAST_PATH;
-	    if (tmp == 2) KR_Flags |= KR_CLIENT_MCAST_PATH;
-	    if (tmp == 3) KR_Flags |= KR_CLIENT_WITHOUT_EDGE;
-	    argc--; argv++;
-	}else if(!(strncmp(*argv, "-lf", 4))) {
- 	    strncpy(Log_Filename,argv[1],LOG_FILE_NAME_LEN);
-	    Log_Filename[LOG_FILE_NAME_LEN-1] = 0;
-	    Use_Log_File = 1;
-	    argc--; argv++;
-	}else if(!(strncmp(*argv, "-c", 3))) {
-        ++argv;
-	    --argc;
-	    if (argc == 0) {
-	        Alarm(EXIT, "-c requires a parameter!\r\n");
-	    }
-        /* Check room for length of "data" suffix and NULL byte */
-        s_len = MAXPATHLEN - 1;
-        ret = snprintf( Config_file, s_len, "%s", *argv );
-        if (ret > s_len) {
-            Alarm(EXIT, "-c: config file name too long (%d), max allowed is %u\n", ret, s_len);
-        }
-    }else if(!(strncmp(*argv, "-ud", 4))) {
-        ++argv;
-        --argc;
-        if (argc == 0) {
-            Alarm(EXIT, "-ud requres a parameter!\r\n");
-        }
+                if (sscanf(*argv, "%d.%d.%d.%d", &i1, &i2, &i3, &i4) != 4 ||
+                    i1 < 0 || i1 > 255 || i2 < 0 || i2 > 255 ||
+                    i3 < 0 || i3 > 255 || i4 < 0 || i4 > 255) {
+                      Alarm(EXIT, "-a expects an IPv4 local interface identifier fourth!\r\n");
+                }
+
+                Local_Interface_IDs[Num_Legs] = ((i1 << 24) | (i2 << 16) | (i3 << 8) | i4);
+            }
+
+            ++Num_Legs;
+
+        } else if(!(strncmp(*argv, "-k", 3))) { 
+            sscanf(argv[1], "%d", (int*)&tmp);
+            if (tmp == 0) KR_Flags |= KR_OVERLAY_NODES;
+            if (tmp == 1) KR_Flags |= KR_CLIENT_ACAST_PATH;
+            if (tmp == 2) KR_Flags |= KR_CLIENT_MCAST_PATH;
+            if (tmp == 3) KR_Flags |= KR_CLIENT_WITHOUT_EDGE;
+            argc--; argv++;
+        }else if(!(strncmp(*argv, "-lf", 4))) {
+            strncpy(Log_Filename,argv[1],LOG_FILE_NAME_LEN);
+            Log_Filename[LOG_FILE_NAME_LEN-1] = 0;
+            Use_Log_File = 1;
+            argc--; argv++;
+        }else if(!(strncmp(*argv, "-c", 3))) {
+            ++argv;
+            --argc;
+            if (argc == 0) {
+                Alarm(EXIT, "-c requires a parameter!\r\n");
+            }
+            /* Check room for length of "data" suffix and NULL byte */
+            s_len = MAXPATHLEN - 1;
+            ret = snprintf( Config_file, s_len, "%s", *argv );
+            if (ret > s_len) {
+                Alarm(EXIT, "-c: config file name too long (%d), max allowed is %u\n", ret, s_len);
+            }
+        }else if(!(strncmp(*argv, "-ud", 4))) {
+            ++argv;
+            --argc;
+            if (argc == 0) {
+                Alarm(EXIT, "-ud requres a parameter!\r\n");
+            }
 #ifndef ARCH_PC_WIN95
-        /* Check room for length of "data" suffix and NULL byte */
-        s_len = SUN_PATH_LEN - strlen(SPINES_UNIX_DATA_SUFFIX) - 1;
-        ret = snprintf( Unix_Domain_Prefix, s_len, "%s", *argv );
-        if (ret > s_len) {
-            Alarm(EXIT, "-ud: path name too long (%d), max allowed is %u\n", ret, s_len);
-        }
-        Unix_Domain_Use_Default = 0;
+            /* Check room for length of "data" suffix and NULL byte */
+            s_len = SUN_PATH_LEN - strlen(SPINES_UNIX_DATA_SUFFIX) - 1;
+            ret = snprintf( Unix_Domain_Prefix, s_len, "%s", *argv );
+            if (ret > s_len) {
+                Alarm(EXIT, "-ud: path name too long (%d), max allowed is %u\n", ret, s_len);
+            }
+            Unix_Domain_Use_Default = 0;
 #endif
-	}else{
+        }else{
+            Alarm(PRINT, "ERR: %d | %s\r\n", argc, *argv);
 
-		Alarm(PRINT, "ERR: %d | %s\r\n", argc, *argv);
-		
-		Alarm(PRINT,
-		      "Usage:\r\n"
-		      "\t[-p <port>]                    : base port on which to send, default is 8100\r\n"
-		      "\t[-l <IP>]                      : the logical ID of this node\r\n"
-		      "\t[-I <IP> [<IP>]]               : a local network address mapped to an interface ID to use for communication\r\n"
-		      "\t[-a <IP> [<IP> [<IP> [<IP>]]]] : a remote network address, remote interface ID, remote node ID and local interface ID that define a connection\r\n"
-		      "\t[-d <IP address>]              : auto-discovery multicast address\r\n"
-		      "\t[-w <Route_Type>]              : [distance, latency, loss, explat], default: distance\r\n"
-		      "\t[-sf]                          : stream based fairness (for reliable links)\r\n"
-		      "\t[-m]                           : accept monitor commands for setting loss rates\r\n"
-		      "\t[-x <seconds>]                 : time until exit\r\n"
-		      "\t[-U]                           : Unicast only: no multicast capabilities\r\n"
-		      "\t[-W]                           : Wireless Mode\r\n"
-		      "\t[-k <level>]                   : kernel routing on data packets\r\n"
-		      "\t[-lf <file>]                   : log file name\r\n"
+            Alarm(PRINT,
+              "Usage:\r\n"
+              "\t[-p <port>]                    : base port on which to send, default is 8100\r\n"
+              "\t[-l <IP>]                      : the logical ID of this node\r\n"
+              "\t[-I <IP> [<IP>]]               : a local network address mapped to an interface ID to\n"
+              "\t                                 use for communication\r\n"
+              "\t[-a <IP> [<IP> [<IP> [<IP>]]]] : a remote network address, remote interface ID,\n"
+              "\t                                 remote node ID and local interface ID that\n"
+              "\t                                 define a connection\r\n"
+              "\t[-d <IP address>]              : auto-discovery multicast address\r\n"
+              "\t[-w <Route_Type>]              : [distance, latency, loss, explat, problem],\n"
+              "\t                                 default: distance\r\n"
+              "\t[-tf]                          : turn on TCP fairness (was default prior to 5.3)\r\n"
+              "\t[-sf]                          : stream based fairness (for reliable links)\r\n"
+              "\t[-m]                           : accept monitor commands for setting loss rates\r\n"
+              "\t[-x <seconds>]                 : time until exit\r\n"
+              "\t[-U]                           : Unicast only: no multicast capabilities\r\n"
+              "\t[-W]                           : Wireless Mode\r\n"
+              "\t[-k <level>]                   : kernel routing on data packets\r\n"
+              "\t[-lf <file>]                   : log file name\r\n"
               "\t[-ud <path>]                   : unix domain socket path prefix, default is %s<port>\r\n"
+              "\t[-pc]                          : print cost statistics\r\n"
+              "\t[-rl <rate (kbps)>]            : per-leg rate limit (default 500,000 kbps, -1 for no limit)\r\n"
               "\t[-c <file>]                    : configuration file name, default is spines.conf\r\n",
                                                 SPINES_UNIX_SOCKET_PATH);
-		Alarm(EXIT, "Bye...\r\n");
-	}
+            Alarm(EXIT, "Bye...\r\n");
+        }
     }
 
     /* Alarm_enable_timestamp("%m/%d/%y %H:%M:%S"); */
 
     if (Use_Log_File) {
-	Alarm_set_output(Log_Filename);
+        Alarm_set_output(Log_Filename);
     }
 }

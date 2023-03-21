@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -767,7 +768,8 @@ void Session_Read(int sk, int dummy, void *dummy_p)
                 Flip_udp_hdr(u_hdr);
             }
             
-            if (ses->routing_used == MIN_WEIGHT_ROUTING) {
+            if (ses->routing_used == MIN_WEIGHT_ROUTING ||
+                ses->routing_used == SOURCE_BASED_ROUTING) {
                 if(ses->frag_num > 1) {
                     if(ses->frag_idx == 0) {
                         memcpy((void*)(&ses->save_hdr), (void*)u_hdr, sizeof(udp_header));
@@ -1634,9 +1636,6 @@ int Process_Session_Packet(Session *ses)
                 ses->scat->num_elements++;
                 i++;
             }
-            /* if (ses->scat->num_elements > 3)
-                Alarm(PRINT, "session pkt: read_len = %d, num_elements == %d\n", ses->read_len,
-                     ses->scat->num_elements); */
             
             /* Setup the type field in the Spines packet_header for the signature */
             phdr = (packet_header*) ses->scat->elements[0].buf;
@@ -1684,8 +1683,10 @@ int Session_Send_Message(Session *ses)
     packet_header *phdr;
     prio_flood_header *f_hdr;
     rel_flood_header *r_hdr;
+    sb_header *s_hdr;
     rel_flood_tail *rt;
     EVP_MD_CTX md_ctx;
+    int cr_ret;
 
     if (ses->scat == NULL)
         return NO_ROUTE;
@@ -1702,9 +1703,28 @@ int Session_Send_Message(Session *ses)
     else if (routing == SOURCE_BASED_ROUTING) {
         i = ses->scat->num_elements;
         if ((ses->scat->elements[i].buf = new_ref_cnt(PACK_BODY_OBJ)) == NULL)
-            Alarm(EXIT, "Session_Send_Message: Could not allocate packet body for f_hdr\r\n");
-        ses->scat->elements[i].len = 0;
+            Alarm(EXIT, "Session_Send_Message: Could not allocate packet body for s_hdr\r\n");
+        ses->scat->elements[i].len = sizeof(sb_header);
         ses->scat->num_elements++;
+
+        /* Set up source-based sequence number for duplicate detection */
+        s_hdr = (sb_header *) ses->scat->elements[i].buf;
+        if (routing == SOURCE_BASED_ROUTING) {
+            My_Source_Seq++;
+            /* Handle wraparound by increasing the incarnation. Since
+             * incarnation is based on the seconds part of the current time to
+             * handle crash/recoveries, this means we can't send more than 2^32
+             * messages per second, but that's not feasible anyway */
+            if (My_Source_Seq == 0) {
+                My_Source_Seq++;
+                My_Source_Incarnation++;
+                Alarm(PRINT, "Session_Send_Message: My_Source_Seq rolled over! "
+                      "Incrementing incarnation to %u\n", My_Source_Incarnation);
+            }
+            Alarm(DEBUG, "Sending with source seq %u, incarnation %u\n", My_Source_Seq, My_Source_Incarnation);
+            s_hdr->source_seq = My_Source_Seq;
+            s_hdr->source_incarnation = My_Source_Incarnation;
+        }
 
         /* Look for the destination (target) of the message in the lookup table */
         if(Is_mcast_addr(hdr->dest) || Is_acast_addr(hdr->dest)) {
@@ -1727,7 +1747,7 @@ int Session_Send_Message(Session *ses)
         }
 
         if (MultiPath_Stamp_Bitmask(dst_id, ses->disjoint_paths, 
-                (unsigned char*)ses->scat->elements[i].buf) == 0)
+                (unsigned char*)((char*)s_hdr + sizeof(sb_header))) == 0)
         {
             Cleanup_Scatter(ses->scat); ses->scat = NULL;
             return NO_ROUTE;
@@ -1749,11 +1769,6 @@ int Session_Send_Message(Session *ses)
 
         if (Path_Stamp_Debug == 1)
             path = ((unsigned char *)ses->scat->elements[1].buf) + sizeof(udp_header) + 16;
-
-        /* ~~~~~~~~ SCADA timing check ~~~~~~~~~~~~ */
-        /* now = E_get_time();
-        hdr->reserved32 = now.usec; */
-        /* ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ */
 
         Fill_Packet_Header( (char*)f_hdr, routing, ses->disjoint_paths );
         f_hdr->priority    = ses->priority_lvl;
@@ -1869,6 +1884,8 @@ int Session_Send_Message(Session *ses)
     if ( (routing == IT_RELIABLE_ROUTING && Conf_Rel.Crypto  == 1)  ||
          (routing == IT_PRIORITY_ROUTING && Conf_Prio.Crypto == 1) )
     {
+        cr_ret = BUFF_OK;
+
         if (routing == IT_RELIABLE_ROUTING)
             prot_sig_len = Rel_Signature_Len;
         else /* routing == IT_PRIORITY_ROUTING */
@@ -1887,7 +1904,7 @@ int Session_Send_Message(Session *ses)
         if (ret != 1) {
             Alarm(PRINT, "Session_Send_Message: SignInit failed\r\n");
             Cleanup_Scatter(ses->scat); ses->scat = NULL;
-            return(NO_ROUTE);
+            return NO_ROUTE;
         }
         /* Add each part of the message to be signed into the md_ctx */
         /*      Sign over the type in the packet_header */
@@ -1898,20 +1915,23 @@ int Session_Send_Message(Session *ses)
             if (ret != 1) {
                 Alarm(PRINT, "Session_Send_Message: SignUpdate failed\r\n");
                 Cleanup_Scatter(ses->scat); ses->scat = NULL;
-                return(NO_ROUTE);
+                cr_ret = NO_ROUTE;
+                goto cr_return;
             }
         }
         ret = EVP_SignFinal(&md_ctx, sign_ptr, &sign_len, Priv_Key);
         if (ret != 1) {
             Alarm(PRINT, "Session_Send_Message: SignFinal failed\r\n");
             Cleanup_Scatter(ses->scat); ses->scat = NULL;
-            return(NO_ROUTE);
+            cr_ret = NO_ROUTE;
+            goto cr_return;
         }
         if (sign_len != prot_sig_len) {
             Alarm(PRINT, "Session_Send_Message: sign_len (%d) != Key_Len (%d)\r\n",
                             sign_len, prot_sig_len);
             Cleanup_Scatter(ses->scat); ses->scat = NULL;
-            return(NO_ROUTE);
+            cr_ret = NO_ROUTE;
+            goto cr_return;
         }
         ses->scat->elements[ses->scat->num_elements-1].len += prot_sig_len;
         hdr->ttl = temp_ttl;
@@ -1920,6 +1940,10 @@ int Session_Send_Message(Session *ses)
                 path[i] = temp_path[i];
             }
         }
+
+        cr_return:
+            EVP_MD_CTX_cleanup(&md_ctx);
+            if (cr_ret != BUFF_OK) return cr_ret;
     }
 
     /* For Reliable, Add the Hop-By-Hop Tail */
@@ -1968,9 +1992,6 @@ int Deliver_UDP_Data(sys_scatter *scat, int32u type) {
     Group_State *g_state;
     char *msg = NULL;
     char *write_ptr;
-    /* sp_time now;
-    double diff;
-    prio_flood_header *f_hdr; */
 
     if ((msg = (char*) new_ref_cnt(MESSAGE_OBJ)) == NULL) {
         Alarm(EXIT, "Deliver_Data(): Cannot allocate message_object\n");
@@ -2001,18 +2022,6 @@ int Deliver_UDP_Data(sys_scatter *scat, int32u type) {
 
     hdr = (udp_header*)(msg);
     dummy_port = (int32)hdr->dest_port;
-
-    /* ~~~~~~~~~~ SCADA timing check ~~~~~~~~~~~~ */
-    /* if (type == (int32u)IT_PRIORITY_ROUTING) {
-        f_hdr = (prio_flood_header*)(scat->elements[scat->num_elements-1].buf);
-        now = E_get_time();
-        if ((int)now.usec < (int)hdr->reserved32)
-            now.usec += 1000000;
-        diff = (now.usec - hdr->reserved32)/1000.0;
-        if (diff >= 10.0) {
-            Alarm(PRINT, "From "IPF". Prio = %d, %f ms\n", IP(hdr->source), f_hdr->priority, diff);
-        }
-    } */
 
     /* Check if this is a multicast message */
     if(Is_mcast_addr(hdr->dest) || Is_acast_addr(hdr->dest)) {
@@ -2160,110 +2169,108 @@ int Session_Deliver_Data(Session *ses, char* buff, int16u len, int32u type, int 
           u_hdr->frag_num, u_hdr->frag_idx);
 #endif
 
-    if(ses->routing_used == MIN_WEIGHT_ROUTING) {
+    if(ses->routing_used == MIN_WEIGHT_ROUTING || ses->routing_used == SOURCE_BASED_ROUTING) {
         if(u_hdr->frag_num > 1) {
-        /* This is a fragmented packet */
+            /* This is a fragmented packet */
 
-        
-        now = E_get_time();
-        
-        /* Search for other fragments of the same packet */
-        found_frag_packet = FALSE;
-        cnt = 0;
-        frag_pkt = ses->frag_pkts;
-        while(frag_pkt != NULL) {
-            if(now.sec - frag_pkt->timestamp_sec > FRAG_TTL) {
-            /* This is an old incomplete packet. Discard it */
+            now = E_get_time();
+
+            /* Search for other fragments of the same packet */
+            found_frag_packet = FALSE;
+            cnt = 0;
+            frag_pkt = ses->frag_pkts;
+            while(frag_pkt != NULL) {
+                if(now.sec - frag_pkt->timestamp_sec > FRAG_TTL) {
+                    /* This is an old incomplete packet. Discard it */
             
-            Alarm(DEBUG, "Old incomplete packet. Delete it\n");
+                    Alarm(DEBUG, "Old incomplete packet. Delete it\n");
 
-            frag_pkt = Delete_Frag_Element(&ses->frag_pkts, frag_pkt);
-            continue;
-            }
-            
-            /* This is not an expired packet */
-
-            cnt++;
-            if((frag_pkt->sess_id == u_hdr->sess_id)&&
-               (frag_pkt->sender == u_hdr->source)&&
-               (frag_pkt->snd_port == u_hdr->source_port)&&
-               (frag_pkt->seq_no == u_hdr->seq_no)) {
-
-            /* This is a fragmented packet that we were looking for */
-
-            Alarm(DEBUG, "Found the packet\n");
-
-            if((frag_pkt->scat.num_elements != u_hdr->frag_num)||
-               (frag_pkt->scat.elements[(int)(u_hdr->frag_idx)].buf != NULL)) {
-
-                Alarm(DEBUG, "Corrupt packet. Delete it\n");
-
-                Delete_Frag_Element(&ses->frag_pkts, frag_pkt);
-                return(BUFF_DROP);
-            }
-            
-            /* Insert the fragment into the packet */
-            
-            frag_pkt->scat.elements[(int)(u_hdr->frag_idx)].buf = buff;
-            inc_ref_cnt(buff);
-            frag_pkt->scat.elements[(int)(u_hdr->frag_idx)].len = u_hdr->len + sizeof(udp_header);
-            frag_pkt->recv_elements++;
-            frag_pkt->timestamp_sec = now.sec;
-            found_frag_packet = TRUE;
-            break;
-            }
-            frag_pkt = frag_pkt->next;
-        }
-
-        if(found_frag_packet == FALSE) {
-            Alarm(DEBUG, "Couldn't find a fragmented packet. Total: %d; Create a new one\n", cnt);
-
-            cnt++;
-            if((frag_pkt = new(FRAG_PKT)) == NULL) {
-            Alarm(EXIT, "Could not allocate memory\n");
-            }
-            
-            frag_pkt->scat.num_elements = u_hdr->frag_num;
-
-            for(i=0; i<u_hdr->frag_num; i++) {
-            frag_pkt->scat.elements[i].buf = NULL;
-            }
-            frag_pkt->scat.elements[(int)(u_hdr->frag_idx)].buf = buff;
-            inc_ref_cnt(buff);
-            frag_pkt->scat.elements[(int)(u_hdr->frag_idx)].len = u_hdr->len + sizeof(udp_header);
-
-            frag_pkt->recv_elements = 1;
-            frag_pkt->sess_id = u_hdr->sess_id;
-            frag_pkt->seq_no = u_hdr->seq_no;
-            frag_pkt->snd_port = u_hdr->source_port;
-            frag_pkt->sender = u_hdr->source;
-            frag_pkt->timestamp_sec = now.sec;
-            
-            /* Insert the fragmented packet into the linked list */
-            if(ses->frag_pkts != NULL) {
-            ses->frag_pkts->prev = frag_pkt;
-            }
-            frag_pkt->next = ses->frag_pkts;
-            frag_pkt->prev = NULL;
-            ses->frag_pkts = frag_pkt;
-        }
-            
-        /* Deliver the packet if it is complete */
-        if(frag_pkt->recv_elements == frag_pkt->scat.num_elements) {
-            Alarmp(SPLOG_DEBUG, SESSION, "Session_Deliver_Data: Fragmented Packet complete\n");
-
-                /* Calculate total non-fragmented message/packet length */
-            sum_len = sizeof(udp_header);
-            for(i=0; i<frag_pkt->scat.num_elements; i++) {
-            sum_len += (frag_pkt->scat.elements[i].len - sizeof(udp_header));
+                    frag_pkt = Delete_Frag_Element(&ses->frag_pkts, frag_pkt);
+                    continue;
                 }
 
+                /* This is not an expired packet */
 
-            Alarmp(SPLOG_DEBUG, SESSION, "Total length of fragmented packet: sum_len: %d\n", sum_len);
+                cnt++;
+                if((frag_pkt->sess_id == u_hdr->sess_id)&&
+                   (frag_pkt->sender == u_hdr->source)&&
+                   (frag_pkt->snd_port == u_hdr->source_port)&&
+                   (frag_pkt->seq_no == u_hdr->seq_no)) {
 
-            /* Deliver the packet */
-            if((ses->udp_port != -1)&&(flags != 3)) {
-            /* The session communicates via UDP */
+                    /* This is a fragmented packet that we were looking for */
+
+                    Alarm(DEBUG, "Found the packet\n");
+
+                    if((frag_pkt->scat.num_elements != u_hdr->frag_num)||
+                       (frag_pkt->scat.elements[(int)(u_hdr->frag_idx)].buf != NULL)) {
+
+                        Alarm(DEBUG, "Corrupt packet. Delete it\n");
+
+                        Delete_Frag_Element(&ses->frag_pkts, frag_pkt);
+                        return(BUFF_DROP);
+                    }
+
+                    /* Insert the fragment into the packet */
+
+                    frag_pkt->scat.elements[(int)(u_hdr->frag_idx)].buf = buff;
+                    inc_ref_cnt(buff);
+                    frag_pkt->scat.elements[(int)(u_hdr->frag_idx)].len = u_hdr->len + sizeof(udp_header);
+                    frag_pkt->recv_elements++;
+                    frag_pkt->timestamp_sec = now.sec;
+                    found_frag_packet = TRUE;
+                    break;
+                }
+                frag_pkt = frag_pkt->next;
+            }
+
+            if(found_frag_packet == FALSE) {
+                Alarm(DEBUG, "Couldn't find a fragmented packet. Total: %d; Create a new one\n", cnt);
+
+                cnt++;
+                if((frag_pkt = new(FRAG_PKT)) == NULL) {
+                    Alarm(EXIT, "Could not allocate memory\n");
+                }
+            
+                frag_pkt->scat.num_elements = u_hdr->frag_num;
+
+                for(i=0; i<u_hdr->frag_num; i++) {
+                    frag_pkt->scat.elements[i].buf = NULL;
+                }
+                frag_pkt->scat.elements[(int)(u_hdr->frag_idx)].buf = buff;
+                inc_ref_cnt(buff);
+                frag_pkt->scat.elements[(int)(u_hdr->frag_idx)].len = u_hdr->len + sizeof(udp_header);
+
+                frag_pkt->recv_elements = 1;
+                frag_pkt->sess_id = u_hdr->sess_id;
+                frag_pkt->seq_no = u_hdr->seq_no;
+                frag_pkt->snd_port = u_hdr->source_port;
+                frag_pkt->sender = u_hdr->source;
+                frag_pkt->timestamp_sec = now.sec;
+                
+                /* Insert the fragmented packet into the linked list */
+                if(ses->frag_pkts != NULL) {
+                    ses->frag_pkts->prev = frag_pkt;
+                }
+                frag_pkt->next = ses->frag_pkts;
+                frag_pkt->prev = NULL;
+                ses->frag_pkts = frag_pkt;
+            }
+     
+            /* Deliver the packet if it is complete */
+            if(frag_pkt->recv_elements == frag_pkt->scat.num_elements) {
+                Alarmp(SPLOG_DEBUG, SESSION, "Session_Deliver_Data: Fragmented Packet complete\n");
+
+                /* Calculate total non-fragmented message/packet length */
+                sum_len = sizeof(udp_header);
+                for(i=0; i<frag_pkt->scat.num_elements; i++) {
+                    sum_len += (frag_pkt->scat.elements[i].len - sizeof(udp_header));
+                }
+
+                Alarmp(SPLOG_DEBUG, SESSION, "Total length of fragmented packet: sum_len: %d\n", sum_len);
+
+                /* Deliver the packet */
+                if((ses->udp_port != -1)&&(flags != 3)) {
+                    /* The session communicates via UDP */
 
                     /* Build UDP scatter to send */
                     /* Scatter layout:
@@ -2293,171 +2300,164 @@ int Session_Deliver_Data(Session *ses, char* buff, int16u len, int32u type, int 
 
                     /* Send message and unref message body */
 
-            ret = DL_send(Ses_UDP_Channel,  ses->udp_addr, ses->udp_port,  &scat);
+                    ret = DL_send(Ses_UDP_Channel,  ses->udp_addr, ses->udp_port,  &scat);
 
-            Alarm(DEBUG,
+                    Alarm(DEBUG,
                             "|||||||||||||||||||| Sending packet for dest (%d.%d.%d.%d) to client addr (%d@%d.%d.%d.%d)!\r\n",
-                  IP1(u_hdr->dest), IP2(u_hdr->dest), IP3(u_hdr->dest), IP4(u_hdr->dest),
-                  ses->udp_port, IP1(ses->udp_addr), IP2(ses->udp_addr), IP3(ses->udp_addr), IP4(ses->udp_addr));
+                      IP1(u_hdr->dest), IP2(u_hdr->dest), IP3(u_hdr->dest), IP4(u_hdr->dest),
+                      ses->udp_port, IP1(ses->udp_addr), IP2(ses->udp_addr), IP3(ses->udp_addr), IP4(ses->udp_addr));
 
-            Delete_Frag_Element(&ses->frag_pkts, frag_pkt);
+                    Delete_Frag_Element(&ses->frag_pkts, frag_pkt);
                     dec_ref_cnt(scat.elements[0].buf);
-            return(BUFF_EMPTY);
-            }
-            else {
-            /* The session communicates via TCP */
+                    return(BUFF_EMPTY);
+                }
+                else {
+                    /* The session communicates via TCP */
 
-            Alarmp(SPLOG_DEBUG, SESSION, "Session_Deliver_Data: TCP-based session\n");
+                    Alarmp(SPLOG_DEBUG, SESSION, "Session_Deliver_Data: TCP-based session\n");
 
-            for(i=0; i<frag_pkt->scat.num_elements; i++) {
-                /* Try to deliver all the fragments, one by one */
+                    for(i=0; i<frag_pkt->scat.num_elements; i++) {
+                        /* Try to deliver all the fragments, one by one */
 
-                /* If there is already something in the buffer, put this one too */
-                if(!stdcarr_empty(&ses->rel_deliver_buff)) {
+                        /* If there is already something in the buffer, put this one too */
+                        if(!stdcarr_empty(&ses->rel_deliver_buff)) {
 
-                Alarmp(SPLOG_DEBUG, SESSION, "Session_Deliver_Data: (TCP) There are (%d) packets in the session buffer already\n",
-                      stdcarr_size(&ses->rel_deliver_buff));
+                            Alarmp(SPLOG_DEBUG, SESSION, "Session_Deliver_Data: (TCP) There are (%d) packets in the session buffer already\n",
+                                   stdcarr_size(&ses->rel_deliver_buff));
 
-                if(i == 0) {
-                    if(stdcarr_size(&ses->rel_deliver_buff) >= 3*MAX_BUFF_SESS) {
-                    /* disconnect the session or drop the packet */
-                    if (flags == 1) {
+                            if(i == 0) {
+                                if(stdcarr_size(&ses->rel_deliver_buff) >= 3*MAX_BUFF_SESS) {
+                                    /* disconnect the session or drop the packet */
+                                    if (flags == 1) {
                         
-                        Alarmp(SPLOG_ERROR, SESSION, "Session_Deliver_Data: (TCP) === Drop packet because session buffer full\n");
+                                        Alarmp(SPLOG_ERROR, SESSION, "Session_Deliver_Data: (TCP) === Drop packet because session buffer full\n");
 
-                        Delete_Frag_Element(&ses->frag_pkts, frag_pkt);
-                        return(BUFF_DROP);
-                    } 
-                    else if ((flags == 2)||(flags == 3)) {
-                        /* disconnect */
-                        Session_Close(ses->sess_id, SES_BUFF_FULL);
-                        return(NO_BUFF);
-                    }
-                    }			
-                }
+                                        Delete_Frag_Element(&ses->frag_pkts, frag_pkt);
+                                        return(BUFF_DROP);
+                                    } 
+                                    else if ((flags == 2)||(flags == 3)) {
+                                        /* disconnect */
+                                        Session_Close(ses->sess_id, SES_BUFF_FULL);
+                                        return(NO_BUFF);
+                                    }
+                                }			
+                            }
                 
-                if((u_cell = (UDP_Cell*) new(UDP_CELL))==NULL) {
-                    Alarmp(SPLOG_FATAL, SESSION, "Session_Deliver_Data(): Cannot allocate udp cell\n");
-                }
-                u_cell->len = frag_pkt->scat.elements[i].len;
+                            if((u_cell = (UDP_Cell*) new(UDP_CELL))==NULL) {
+                                Alarmp(SPLOG_FATAL, SESSION, "Session_Deliver_Data(): Cannot allocate udp cell\n");
+                            }
+                            u_cell->len = frag_pkt->scat.elements[i].len;
                             u_cell->total_len = sum_len;
-                u_cell->buff = frag_pkt->scat.elements[i].buf;
-                stdcarr_push_back(&ses->rel_deliver_buff, &u_cell);
-                inc_ref_cnt(frag_pkt->scat.elements[i].buf);
+                            u_cell->buff = frag_pkt->scat.elements[i].buf;
+                            stdcarr_push_back(&ses->rel_deliver_buff, &u_cell);
+                            inc_ref_cnt(frag_pkt->scat.elements[i].buf);
 
-                Alarmp(SPLOG_DEBUG, SESSION, "Session_Deliver_Data: (TCP) Inserted fragment into session buffer\n");
-                continue;
-                }
+                            Alarmp(SPLOG_DEBUG, SESSION, "Session_Deliver_Data: (TCP) Inserted fragment into session buffer\n");
+                            continue;
+                        }
 
-                /* There is nothing in the buffer. Try to deliver the fragment */
-                total_bytes = frag_pkt->scat.elements[i].len + sizeof(int32);
-                if(i == 0) {
-                ses->sent_bytes = 0;
+                        /* There is nothing in the buffer. Try to deliver the fragment */
+                        total_bytes = frag_pkt->scat.elements[i].len + sizeof(int32);
+                        if(i == 0) {
+                            ses->sent_bytes = 0;
                             if ((first_frag_udp_hdr = (udp_header*) new_ref_cnt(PACK_BODY_OBJ)) == NULL) {
                                 Alarm(EXIT, "Session_Deliver_Data: Failed to allocate packet_body to hold copy of udp_header for fragmentd delivery.\n");
                             }
                             Copy_udp_header((udp_header *)frag_pkt->scat.elements[0].buf, first_frag_udp_hdr );
                             first_frag_udp_hdr->len = sum_len - sizeof(udp_header);
-                }
-                else {
-                ses->sent_bytes = sizeof(udp_header) + sizeof(int32);
-                }
-                stop_flag = 0;
-                while((ses->sent_bytes < total_bytes)&&(stop_flag == 0)) {
-                if(ses->sent_bytes < sizeof(int32)) {
-                    scat.num_elements = 3;
-                    scat.elements[0].len = sizeof(int32) - ses->sent_bytes;
-                    scat.elements[0].buf = ((char*)(&sum_len)) + ses->sent_bytes;
-                    scat.elements[1].len = sizeof(udp_header);
-                    scat.elements[1].buf = (char *) first_frag_udp_hdr;
-                    scat.elements[2].len = frag_pkt->scat.elements[0].len - sizeof(udp_header);
-                    scat.elements[2].buf = frag_pkt->scat.elements[0].buf + sizeof(udp_header);
-                }
-                else if (ses->sent_bytes < (sizeof(udp_header) + sizeof(int32)) ) {
-                    scat.num_elements = 2;
-                    scat.elements[0].len = sizeof(udp_header) - (ses->sent_bytes- sizeof(int32));
-                    scat.elements[0].buf = ((char*)(first_frag_udp_hdr)) + (ses->sent_bytes - sizeof(int32));
-                    scat.elements[1].len = frag_pkt->scat.elements[0].len - sizeof(udp_header);
-                    scat.elements[1].buf = frag_pkt->scat.elements[0].buf + sizeof(udp_header);
-                } else {
-                    scat.num_elements = 1;
-                    scat.elements[0].len = frag_pkt->scat.elements[i].len - 
-                    (ses->sent_bytes - sizeof(int32));
-                    scat.elements[0].buf = frag_pkt->scat.elements[i].buf + 
-                    (ses->sent_bytes - sizeof(int32));
-                }
+                        }
+                        else {
+                            ses->sent_bytes = sizeof(udp_header) + sizeof(int32);
+                        }
+                        stop_flag = 0;
+                        while((ses->sent_bytes < total_bytes)&&(stop_flag == 0)) {
+                            if(ses->sent_bytes < sizeof(int32)) {
+                                scat.num_elements = 3;
+                                scat.elements[0].len = sizeof(int32) - ses->sent_bytes;
+                                scat.elements[0].buf = ((char*)(&sum_len)) + ses->sent_bytes;
+                                scat.elements[1].len = sizeof(udp_header);
+                                scat.elements[1].buf = (char *) first_frag_udp_hdr;
+                                scat.elements[2].len = frag_pkt->scat.elements[0].len - sizeof(udp_header);
+                                scat.elements[2].buf = frag_pkt->scat.elements[0].buf + sizeof(udp_header);
+                            }
+                            else if (ses->sent_bytes < (sizeof(udp_header) + sizeof(int32)) ) {
+                                scat.num_elements = 2;
+                                scat.elements[0].len = sizeof(udp_header) - (ses->sent_bytes- sizeof(int32));
+                                scat.elements[0].buf = ((char*)(first_frag_udp_hdr)) + (ses->sent_bytes - sizeof(int32));
+                                scat.elements[1].len = frag_pkt->scat.elements[0].len - sizeof(udp_header);
+                                scat.elements[1].buf = frag_pkt->scat.elements[0].buf + sizeof(udp_header);
+                            } else {
+                                scat.num_elements = 1;
+                                scat.elements[0].len = frag_pkt->scat.elements[i].len - (ses->sent_bytes - sizeof(int32));
+                                scat.elements[0].buf = frag_pkt->scat.elements[i].buf + (ses->sent_bytes - sizeof(int32));
+                            }
 
-                /* The session communicates via TCP */
-                ret = DL_send_connected(ses->sk,  &scat);
-                
-                Alarm(DEBUG,"Session_deliver_data(): %d %d %d %d\n",
-                      ret, ses->sk, ses->port, frag_pkt->scat.elements[i].len);
+                            /* The session communicates via TCP */
+                            ret = DL_send_connected(ses->sk,  &scat);
 
-                if(ret < 0) {
-                            Alarm(DEBUG, "Session_Deliver_Data(): write err %d %d '%s'\n", 
+                            Alarm(DEBUG,"Session_deliver_data(): %d %d %d %d\n",
+                                  ret, ses->sk, ses->port, frag_pkt->scat.elements[i].len);
+
+                            if(ret < 0) {
+                                Alarm(PRINT, "Session_Deliver_Data(): write err %d %d '%s'\n", 
                                                     ret, errno, strerror(errno));
 #ifndef	ARCH_PC_WIN95
-                    if((ret == -1)&&
-                       ((errno == EWOULDBLOCK)||(errno == EAGAIN)))
+                                if((ret == -1)&&((errno == EWOULDBLOCK)||(errno == EAGAIN)))
 #else
 #ifndef _WIN32_WCE
-                    if((ret == -1)&&
-                       ((errno == WSAEWOULDBLOCK)||(errno == EAGAIN)))
+                                if((ret == -1)&&((errno == WSAEWOULDBLOCK)||(errno == EAGAIN)))
 #else
-                        int sk_errno = WSAGetLastError();
-                    if((ret == -1)&&
-                       ((sk_errno == WSAEWOULDBLOCK)||(sk_errno == EAGAIN)))
+                                int sk_errno = WSAGetLastError();
+                                if((ret == -1)&&((sk_errno == WSAEWOULDBLOCK)||(sk_errno == EAGAIN)))
 #endif /* Windows CE */
 #endif
-                    {
-                    if((u_cell = (UDP_Cell*) new(UDP_CELL))==NULL) {
-                        Alarm(EXIT, "Deliver_UDP_Data(): Cannot allocate udp cell\n");
-                    }
-                    u_cell->len = frag_pkt->scat.elements[i].len;
-                    u_cell->buff = frag_pkt->scat.elements[i].buf;
+                                {
+                                    if((u_cell = (UDP_Cell*) new(UDP_CELL))==NULL) {
+                                        Alarm(EXIT, "Deliver_UDP_Data(): Cannot allocate udp cell\n");
+                                    }
+                                    u_cell->len = frag_pkt->scat.elements[i].len;
+                                    u_cell->buff = frag_pkt->scat.elements[i].buf;
                                     u_cell->total_len = sum_len;
-                    stdcarr_push_back(&ses->rel_deliver_buff, &u_cell);
-                    inc_ref_cnt(frag_pkt->scat.elements[i].buf);
+                                    stdcarr_push_back(&ses->rel_deliver_buff, &u_cell);
+                                    inc_ref_cnt(frag_pkt->scat.elements[i].buf);
 
-                    E_attach_fd(ses->sk, WRITE_FD, Session_Write, ses->sess_id,
-                            NULL, HIGH_PRIORITY );
-                    ses->fd_flags = ses->fd_flags | WRITE_DESC;
-                    stop_flag = 1;
-                    break;
-                    }
-                    else {
+                                    E_attach_fd(ses->sk, WRITE_FD, Session_Write, ses->sess_id, NULL, HIGH_PRIORITY);
+                                    ses->fd_flags = ses->fd_flags | WRITE_DESC;
+                                    stop_flag = 1;
+                                    break;
+                                }
+                                else {
                                     if (i == 0)
                                         dec_ref_cnt(first_frag_udp_hdr); /* free udp_header */
-                    Session_Close(ses->sess_id, SOCK_ERR);
-                    return(NO_BUFF);
-                    }
-                }
-                if(ret == 0) {
-                    Alarm(PRINT, "Error: ZERO write 1; sent: %d, total: %d\n",
-                      ses->sent_bytes, total_bytes);
-                }
-                ses->sent_bytes += ret;
-                }
-                if(stop_flag == 0) {
-                if(i == frag_pkt->scat.num_elements - 1) {	
-                    ses->sent_bytes = 0;
-                }
-                else {
-                    ses->sent_bytes = sizeof(udp_header) + sizeof(int32);
-                }
-                }
+                                    Session_Close(ses->sess_id, SOCK_ERR);
+                                    return(NO_BUFF);
+                                }
+                            }
+                            if(ret == 0) {
+                                Alarm(PRINT, "Error: ZERO write 1; sent: %d, total: %d\n", ses->sent_bytes, total_bytes);
+                            }
+                            ses->sent_bytes += ret;
+                        }
+                        if(stop_flag == 0) {
+                            if(i == frag_pkt->scat.num_elements - 1) {	
+                                ses->sent_bytes = 0;
+                            }
+                            else {
+                                ses->sent_bytes = sizeof(udp_header) + sizeof(int32);
+                            }
+                        }
                         if (i == 0)
                             dec_ref_cnt(first_frag_udp_hdr); /* free udp_header */
+                    }
+                }
+                Delete_Frag_Element(&ses->frag_pkts, frag_pkt);
             }
+            if(stdcarr_empty(&ses->rel_deliver_buff)) {
+                return(BUFF_EMPTY);
             }
-            Delete_Frag_Element(&ses->frag_pkts, frag_pkt);
-        }
-        if(stdcarr_empty(&ses->rel_deliver_buff)) {
-            return(BUFF_EMPTY);
-        }
-        else {
-            return(BUFF_OK);	
-        }
+            else {
+                return(BUFF_OK);	
+            }
         }
 
     }
@@ -2473,7 +2473,7 @@ int Session_Deliver_Data(Session *ses, char* buff, int16u len, int32u type, int 
             return(NO_BUFF);
         }
 
-        t1  = (sp_time*)(buff+sizeof(udp_header)+2*sizeof(int32));
+        t1 = (sp_time*)(buff+sizeof(udp_header)+2*sizeof(int32));
         send_time = *t1;
         now = E_get_time();
         diff = E_sub_time(now, send_time);

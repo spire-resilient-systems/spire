@@ -1,4 +1,4 @@
-AC_INIT(Spines, 4.0)
+AC_INIT(Spines, 5.3)
 
 AC_CONFIG_AUX_DIR(buildtools)
 AC_CONFIG_HEADER(daemon/config.h)

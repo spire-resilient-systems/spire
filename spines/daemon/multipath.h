@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -46,6 +47,11 @@
 #define MULTIPATH_BITMASK_SIZE_DEFAULT 64   /* in Bits */
 #define MULTIPATH_MAX_K                5    /* Max # of node-disjoint paths supported */
 #define DIRECTED_EDGES_DEFAULT         0    /* Bidirectional edges by default */
+
+#define DG_K_FLAG (MULTIPATH_MAX_K + 1) /* If number of disjoint paths
+                                           requested == DG_K_FLAG, use
+                                           dissemination graphs with src/dst
+                                           redundancy */
 
 struct Flow_Node_d;
 struct Flow_Edge_d;
@@ -95,7 +101,7 @@ ext Flow_Edge Flow_Edge_Head;
 void   MultiPath_Pre_Conf_Setup(void);
 void   Init_MultiPath(void);
 void   MultiPath_Clear_Cache(void);
-int    MultiPath_Compute(int16u dest_id, int16u k); 
+int    MultiPath_Compute(int16u dest_id, int16u k, unsigned char **ret_mask, int use_base_cost, int require_reverse); 
 int    MultiPath_Stamp_Bitmask(int16u dest_id, int16u k, unsigned char *mask);
 int    MultiPath_Neighbor_On_Path(unsigned char* mask, int16u ngbr_iter);
 int    MultiPath_Is_Superset(unsigned char* old_mask, unsigned char* new_mask);

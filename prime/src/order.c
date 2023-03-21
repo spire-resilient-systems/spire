@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -56,7 +56,9 @@
 #include "signature.h"
 #include "erasure.h"
 #include "recon.h"
+#include "suspect_leader.h"
 #include "view_change.h"
+#include "catchup.h"
 #include "proactive_recovery.h"
 
 /* Global variables */
@@ -66,8 +68,6 @@ extern server_data_struct DATA;
 extern benchmark_struct   BENCH;
 
 /* Local functions */
-void   ORDER_Periodically                (int dummy, void *dummyp);
-void   ORDER_Periodic_Retrans            (int d1, void *d2);
 void   ORDER_Execute_Update              (signed_message *mess, int32u ord, 
                                             int32u e_idx, int32u e_tot);
 void   ORDER_Flood_Pre_Prepare           (signed_message *mess);
@@ -85,16 +85,26 @@ void   ORDER_Move_Commit_Certificate   (ord_slot *slot);
 //int32u ORDER_Commit_Matches_Pre_Prepare(signed_message *commit,
 //                    complete_pre_prepare_message *pp);
 
-int32u ORDER_Pre_Prepare_Backward_Progress(complete_pre_prepare_message *pp);
+//int32u ORDER_Pre_Prepare_Backward_Progress(complete_pre_prepare_message *pp);
+void ORDER_Flood_PP_Wrapper(int d, void *message);
 
 void ORDER_Initialize_Data_Structure()
 {
   DATA.ORD.ARU                    = 0;
   DATA.ORD.ppARU                  = 0;
-  DATA.ORD.high_seq               = 0;
+  DATA.ORD.high_prepared          = 0;
+  DATA.ORD.high_committed         = 0;
   DATA.ORD.events_ordered         = 0;
   DATA.ORD.seq                    = 1;
   DATA.ORD.should_send_pp         = 0;
+  DATA.ORD.forwarding_white_line  = 0;
+  DATA.ORD.recon_white_line       = 0;
+  DATA.ORD.stable_catchup         = 0;
+
+  if (CATCHUP_HISTORY > 0)
+    DATA.ORD.gc_width = CATCHUP_HISTORY;
+  else
+    DATA.ORD.gc_width = 1;
 
   stdhash_construct(&DATA.ORD.History, sizeof(int32u), 
 		    sizeof(ord_slot *), NULL, NULL, 0);
@@ -107,27 +117,66 @@ void ORDER_Initialize_Data_Structure()
   Alarm(DEBUG, "Initialized Ordering data structure.\n");
 
   /* If I'm the leader, try to start sending Pre-Prepares */
-  if (UTIL_I_Am_Leader())
+  /* PRTODO - move these to when finishing recovery (or rest) */
+  /* if (UTIL_I_Am_Leader())
     ORDER_Periodically(0, NULL);
 
-  ORDER_Periodic_Retrans(0, NULL);
+  ORDER_Periodic_Retrans(0, NULL); */
+}
+
+void ORDER_Upon_Reset()
+{
+    ord_slot *o_slot;
+    stdit it;
+
+    stdhash_begin(&DATA.ORD.History, &it);
+    while (!stdhash_is_end(&DATA.ORD.History, &it)) {
+        o_slot = *(ord_slot**)stdit_val(&it);
+        ORDER_Garbage_Collect_ORD_Slot(o_slot, 0);
+        stdhash_erase(&DATA.ORD.History, &it);
+    }
+    stdhash_destruct(&DATA.ORD.History);
+
+    /* DATA.ORD.Pending_Execution is already cleared in GC, but needs destruction */
+    stdhash_destruct(&DATA.ORD.Pending_Execution);
 }
 
 void ORDER_Periodically(int dummy, void *dummyp)
 {
   sp_time t;
+  float elap;
+
+  if (!UTIL_I_Am_Leader())
+    return;
 
   ORDER_Send_One_Pre_Prepare(TIMEOUT_CALLER);
   t.sec  = PRE_PREPARE_SEC; 
   t.usec = PRE_PREPARE_USEC;
+
+  if (DATA.ORD.delay_attack == 1) {
+    UTIL_Stopwatch_Stop(&DATA.ORD.leader_duration_sw);
+    elap = UTIL_Stopwatch_Elapsed(&DATA.ORD.leader_duration_sw);
+
+    t.usec += ((int)(elap/DATA.ORD.step_duration)) * DATA.ORD.microseconds_delayed;
+    if (t.usec >= 1000000) {
+      t.sec += (t.usec / 1000000);
+      t.usec = (t.usec % 1000000);
+    }  
+  }
+
   E_queue(ORDER_Periodically, 0, NULL, t);
 }
 
 int32u ORDER_Send_One_Pre_Prepare(int32u caller)
 {
   signed_message *mset[NUM_SERVERS];
+  signed_message *pp;
+  pre_prepare_message *pp_specific;
+  po_aru_signed_message *cum_acks;
+  po_seq_pair ps;
   int32u num_parts, i;
   double time;
+  ord_slot *slot;
 
   /* Make sure enough time has elapsed since we've sent a Pre-Prepare */
   UTIL_Stopwatch_Stop(&DATA.ORD.pre_prepare_sw);
@@ -148,8 +197,8 @@ int32u ORDER_Send_One_Pre_Prepare(int32u caller)
   }
 #endif
 
-  //if (DATA.ORD.seq == 1 && PRE_ORDER_Latest_Proof_Sent())
   //if(PRE_ORDER_Latest_Proof_Sent())
+  //if(!PRE_ORDER_Latest_Proof_Updated())
   if (DATA.ORD.should_send_pp == 0)
     return 0;
   
@@ -170,14 +219,86 @@ int32u ORDER_Send_One_Pre_Prepare(int32u caller)
     printf("\n");
   } */
  
-  PRE_ORDER_Update_Latest_Proof_Sent();
+  //PRE_ORDER_Update_Latest_Proof_Sent();
+  PRE_ORDER_Latest_Proof_Updated();
   DATA.ORD.should_send_pp = 0;
 
-  for(i = 1; i <= num_parts; i++) {
-    Alarm(DEBUG, "Add: Pre-Prepare part %d \n", i);
-    SIG_Add_To_Pending_Messages(mset[i], BROADCAST, 
-				UTIL_Get_Timeliness(PRE_PREPARE));
-    dec_ref_cnt(mset[i]);
+  UTIL_Stopwatch_Stop(&DATA.ORD.leader_duration_sw);
+  if (DATA.ORD.inconsistent_pp_attack == 1 &&
+        (UTIL_Stopwatch_Elapsed(&DATA.ORD.leader_duration_sw) > DATA.ORD.inconsistent_delay)) 
+  {
+    int32u dest_bits, cutoff;
+    signed_message *attack_mess;
+
+    cutoff = 0;
+    if (DATA.ORD.inconsistent_pp_type == 2) {
+        Alarm(PRINT, "Launching Inconsistent PP Attack #2. seq = %u\n", DATA.ORD.seq - 1);
+        cutoff = NUM_SERVERS/2;
+    }
+    else if (DATA.ORD.inconsistent_pp_type == 3) {
+        Alarm(PRINT, "Launching Inconsistent PP Attack #3. seq = %u\n", DATA.ORD.seq - 1);
+        cutoff = NUM_SERVERS - 2;
+    }
+    else {
+        Alarm(EXIT, "Invalid PP attack. Must be -a 2 or -a 3 on CMD line\n");
+    }
+
+    DATA.ORD.inconsistent_pp_attack = 0;
+    DATA.ORD.inconsistent_pp_type = 0;
+
+    attack_mess = UTIL_New_Signed_Message();
+    memcpy(attack_mess, mset[1], UTIL_Message_Size(mset[1]));
+
+    pp = (signed_message *)(attack_mess);
+    pp_specific = (pre_prepare_message *)(pp + 1);
+    cum_acks = (po_aru_signed_message *)(pp_specific + 1);
+    
+    memset(cum_acks[VAR.My_Server_ID - 1].cum_ack.ack_for_server, 0, sizeof(po_seq_pair) * NUM_SERVERS);
+    UTIL_RSA_Sign_Message(&cum_acks[VAR.My_Server_ID - 1].header);
+
+    dest_bits = 0;
+    for (i = 1; i <= cutoff; i++)
+        UTIL_Bitmap_Set(&dest_bits, i);
+    SIG_Add_To_Pending_Messages(mset[1], dest_bits, UTIL_Get_Timeliness(PRE_PREPARE));
+
+    dest_bits = 0;
+    for (i = cutoff + 1; i <= NUM_SERVERS; i++) 
+        UTIL_Bitmap_Set(&dest_bits, i);
+    SIG_Add_To_Pending_Messages(attack_mess, dest_bits, UTIL_Get_Timeliness(PRE_PREPARE));
+
+    dec_ref_cnt(mset[1]);
+    dec_ref_cnt(attack_mess);
+  }
+  else {
+    for(i = 1; i <= num_parts; i++) {
+      Alarm(DEBUG, "Add: Pre-Prepare part %d \n", i);
+      SIG_Add_To_Pending_Messages(mset[i], BROADCAST, 
+                  UTIL_Get_Timeliness(PRE_PREPARE));
+      dec_ref_cnt(mset[i]);
+    }
+  }
+
+  /* We need to make sure this slot is created with made_eligible filled in. 
+   * Most of the time, we will Process our own message after the SIG Batch
+   * fires. But it may not. This ensures that at the cost of calling
+   * PRE_ORDER_Proof_ARU now, rather than later), made eligible always exists */
+  /* Note - this again uses the fact that the whole PP message fits in one
+   * large signed message */
+  pp = (signed_message *)(mset[1]);
+  pp_specific = (pre_prepare_message *)(pp + 1);
+  cum_acks = (po_aru_signed_message *)(pp_specific + 1);
+
+  slot = UTIL_Get_ORD_Slot(pp_specific->seq_num);
+  if (!slot->populated_eligible) {
+    slot->populated_eligible = 1; 
+    slot->view = pp_specific->view;
+    for (i = 0; i < NUM_SERVERS; i++) {
+      ps = PRE_ORDER_Proof_ARU(i+1, cum_acks);
+      if (PRE_ORDER_Seq_Compare(ps, pp_specific->last_executed[i]) > 0) 
+        slot->made_eligible[i] = ps;
+      else 
+        slot->made_eligible[i] = pp_specific->last_executed[i];
+    }    
   }
 
   //UTIL_Stopwatch_Start(&DATA.ORD.pre_prepare_sw);
@@ -227,16 +348,14 @@ void ORDER_Periodic_Retrans(int d1, void *d2)
 
 void ORDER_Process_Pre_Prepare(signed_message *mess)
 {
-  ord_slot *slot, *tslot;
+  ord_slot *slot, *t_slot;
   pre_prepare_message *pp_specific;
   complete_pre_prepare_message *complete_pp;
   po_aru_signed_message *cum_acks;
-  int32u covered, lower, higher;
-  int32u i, j, index, part_num, num_acks_per_message;
-  stdit it;
-  tat_challenge *tatc;
-  util_stopwatch sw;
-  sp_time start;
+  int32u i, index, part_num, num_acks_per_message;
+  signed_message *commit, *new_leader;
+  //util_stopwatch sw;
+  //sp_time start;
 
   Alarm(DEBUG, "%d Process Pre-Prepare\n", VAR.My_Server_ID);
 
@@ -244,16 +363,25 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
   part_num    = pp_specific->part_num;
 
   /* We should only get Pre-Prepares that originate from the leader */
-  if (mess->machine_id != UTIL_Leader()) {
+  /* if (mess->machine_id != UTIL_Leader()) {
     Alarm(PRINT, "ORDER_Process_Pre_Prepare: got pre-prepare from "
-            "non-leader (%d), ignoring\n", mess->machine_id);
+            "non-leader (%d) w/ seq = %u, ignoring\n", 
+            mess->machine_id, pp_specific->seq_num);
+    return;
+  } */
+
+  //Alarm(DEBUG, "PP info. seq = %d, ARU = %d, forw_white_line = %d\n",
+  //      pp_specific->seq_num, DATA.ORD.ARU, DATA.ORD.forwarding_white_line);
+
+  /* Check if the digest of the proposal message matches my own */
+  if (!OPENSSL_RSA_Digests_Equal(pp_specific->proposal_digest, DATA.PR.proposal_digest)) {
+    Alarm(PRINT, "Process_Pre_Prepare: PP proposal digest != My stored version\n");
     return;
   }
 
-  Alarm(DEBUG, "PP info. seq = %d, ARU = %d, forw_white_line = %d\n",
-        pp_specific->seq_num, DATA.ORD.ARU, DATA.ORD.forwarding_white_line);
-  
-  if (!DATA.VIEW.view_change_done) Alarm(PRINT, "Got pre-prepare before finishing view change! seq = %d, aru = %d\n", pp_specific->seq_num, DATA.ORD.ARU);
+  if (!DATA.VIEW.view_change_done && pp_specific->view == DATA.View) 
+    Alarm(PRINT, "Got pre-prepare before finishing view change! seq = %d, aru = %d\n", 
+        pp_specific->seq_num, DATA.ORD.ARU);
 
   /* If we're done forwarding for this slot, and we've already reconciled
    * on this slot and the next, and we've already executed this slot and
@@ -265,9 +393,36 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
     return;
 
   /* Check the view on the pre-prepare?  */
-  if (pp_specific->view != DATA.View) 
+  /* if (pp_specific->view != DATA.View) 
+    return; */
+  if (pp_specific->view > DATA.View)
     return;
+  else if (pp_specific->view < DATA.View) {
+    if (DATA.VIEW.view_change_done == 1)
+      return;
+    if (DATA.ORD.ARU > 0) {
+        t_slot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ARU);
+        assert(t_slot);
+        if (pp_specific->view < t_slot->view)
+          return;
+    }
+  }
+
+  /* Now that the view is sound, make sure the correct replica who is the leader
+   * of that view originated this pre-prepare */
+  if (mess->machine_id != UTIL_Leader_Of_View(pp_specific->view)) {
+    Alarm(PRINT, "ORDER_Process_PP: View %u. got pre-prepare from "
+            "non-leader (%d) w/ seq = %u, ignoring. Should be from %u\n", 
+            pp_specific->view, mess->machine_id, pp_specific->seq_num, 
+            UTIL_Leader_Of_View(pp_specific->view));
+    return;
+  }
   
+  /* Print statement for debugging */
+  if (pp_specific->view < DATA.View)
+    Alarm(PRINT, "Process_Pre_Prepare: Accept PP %u from view %u while installing %u\n",
+            pp_specific->seq_num, pp_specific->view, DATA.View);
+
   //slot = UTIL_Get_ORD_Slot_If_Exists(pp_specific->seq_num);
   slot = UTIL_Get_ORD_Slot(pp_specific->seq_num);
   //if (slot == NULL) {
@@ -280,13 +435,43 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
     slot->total_parts = pp_specific->total_parts;
     slot->complete_pre_prepare.seq_num = slot->seq_num;
     slot->complete_pre_prepare.view    = slot->view;
+    memcpy(&slot->complete_pre_prepare.proposal_digest, &pp_specific->proposal_digest, 
+            DIGEST_SIZE);
+    memcpy(&slot->complete_pre_prepare.last_executed, &pp_specific->last_executed, 
+            sizeof(pp_specific->last_executed));
   }
-  else if (slot->view != pp_specific->view ||
-            slot->total_parts != pp_specific->total_parts)
-  {
-    Alarm(PRINT, "Malformed PP part. Should Flood it and suspect leader: seq %d, slot view %d, pp view %d, slot parts %d, pp parts %d, cpp seq %d, cpp view %d\n", pp_specific->seq_num, slot->view, pp_specific->view, slot->total_parts, pp_specific->total_parts, slot->complete_pre_prepare.seq_num, slot->complete_pre_prepare.view);
-    /* ORDER_Flood_Pre_Prepare(mess);
-    Suspect_Leader or New_Leader message; */
+  else {
+    /* If from a different view, just ignore for view. One of us may be behind and
+     * are still going through a VC to catch up */
+    if (slot->view != pp_specific->view) {
+        Alarm(PRINT, "PP already stored from view %u. Ignoring one from view %u\n",
+                slot->view, pp_specific->view);
+        return;
+    }
+    
+    /* This is from the same leader. Check that tht content is the same. Only check
+     * the view that the message is in in also our installed view. */
+    if (slot->view == DATA.View && 
+        memcmp(slot->pre_prepare_parts_msg[1], mess, UTIL_Message_Size(mess)) != 0) 
+    {
+        printf(" mess_len = %u, stored_len = %u\n", UTIL_Message_Size(mess), 
+                UTIL_Message_Size(slot->pre_prepare_parts_msg[1]));
+        Alarm(PRINT, "Inconsistent PP! Suspecting leader! Should flood this proof\n");
+        Alarm(PRINT, "  seq %d, view %d, cpp seq %d, cpp view %d\n", 
+                        pp_specific->seq_num, pp_specific->view, 
+                        slot->complete_pre_prepare.seq_num, slot->complete_pre_prepare.view);
+
+        /* ORDER_Flood_Pre_Prepare(mess); */
+        if (DATA.SUSP.leader_suspected == 0) {
+            DATA.SUSP.leader_suspected = 1;
+            new_leader = SUSPECT_Construct_New_Leader();
+            UTIL_RSA_Sign_Message(new_leader);
+            SUSPECT_Process_New_Leader(new_leader);
+            SUSPECT_New_Leader_Periodically(0, NULL);
+            dec_ref_cnt(new_leader);
+        }   
+        return;
+    }
   }
 
   /* If we've already collected all of the parts, ignore */
@@ -299,10 +484,10 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
     return;
 
   /* timing tests */
-  start.sec  = pp_specific->sec;
-  start.usec = pp_specific->usec;
-  sw.start = start;
-  UTIL_Stopwatch_Stop(&sw);
+  //start.sec  = pp_specific->sec;
+  //start.usec = pp_specific->usec;
+  //sw.start = start;
+  //UTIL_Stopwatch_Stop(&sw);
   //if (UTIL_Stopwatch_Elapsed(&sw) > 0.004)
   //  Alarm(PRINT, "  PP w/ lat = %f ms\n", UTIL_Stopwatch_Elapsed(&sw) * 1000);
 
@@ -336,6 +521,10 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
    * I never go and forward them. Then, all replicas update the
    * forwarded flag and check if white line should move up. */
   ORDER_Flood_Pre_Prepare(mess);
+  /* sp_time delay;
+  delay.sec  = 0;
+  delay.usec = 15000;
+  E_queue(ORDER_Flood_PP_Wrapper, 0, (void *)mess, delay); */
 
   if (slot->num_parts_collected < slot->total_parts)
     return;
@@ -344,8 +533,18 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
 
   /* A Prepare certificate could be ready if we get some Prepares
    * before we get the Pre-Prepare. */
-  if(ORDER_Prepare_Certificate_Ready(slot))
+  if(!slot->prepare_certificate_ready && !slot->ordered && 
+      ORDER_Prepare_Certificate_Ready(slot)) 
+  {
     ORDER_Move_Prepare_Certificate(slot);
+    if (DATA.VIEW.view_change_done == 1) {
+        commit = ORDER_Construct_Commit(&slot->prepare_certificate.pre_prepare);
+        Alarm(DEBUG, "Add: Commit for %d\n", slot->seq_num);
+        SIG_Add_To_Pending_Messages(commit, BROADCAST, UTIL_Get_Timeliness(COMMIT));
+        dec_ref_cnt(commit);
+        slot->sent_commit = 1;
+    }
+  }
 
   /* We now have the complete Pre-Prepare for the first time, do the 
    * following:
@@ -369,7 +568,7 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
     PRE_ORDER_Process_PO_ARU(m); 
   }
 
-  /* ESTCP: Should only update knowledge of what has made it into a valid
+  /* Should only update knowledge of what has made it into a valid
    * pre-prepare and send prepare if I actually have the previous pre-prepare
    * AND can verify that this pre-prepare does not make "backward progress"
    * relative to that one. Means that I may need to send multiple prepares if I
@@ -377,25 +576,125 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
   if (complete_pp->seq_num != DATA.ORD.ppARU + 1) {
     // Not yet ready to say whether this is valid. Will need to check when I
     // fill in a hole
-    Alarm(DEBUG, "ORDER_Process_Pre_Prepare: Don't have valid PP to calculate "
+    Alarm(PRINT, "ORDER_Process_Pre_Prepare: Don't have valid PP to calculate "
                  "delta for %u\n", complete_pp->seq_num);
     return;
   }
+
+  /* Since you have the previous PP, we can update the made_eligible based on
+   * the current matrix and last_executed and also send prepares */
   ORDER_Send_Prepares();
+
 #if 0
-  tslot = slot;
-  while (tslot != NULL && tslot->collected_all_parts)
+  /* Try to reconcile on the current slot, then try to reconcile on the
+   * next one in case it was waiting for a Pre-Prepare to fill the hole. */
+  RECON_Do_Recon(slot);
+  if (slot->reconciled == 0) {
+    Alarm(PRINT, "RECON failed! slot->seq_num = %d, slot->view = %d\n", slot->seq_num, slot->view);
+  }
+
+  //int seq = pp_specific->seq_num + 1;
+  slot = UTIL_Get_ORD_Slot_If_Exists(pp_specific->seq_num + 1);
+  //while (slot != NULL)
+  //{
+  //  RECON_Do_Recon(slot);
+  //  seq++;
+  //  slot = UTIL_Get_ORD_Slot_If_Exists(seq);
+  //  if (!slot->reconciled) {
+  //      Alarm(PRINT, "Done trying to reconcile for now...seq %d\n", seq);
+  //      break;
+  //  }
+  //}
+  if(slot != NULL)
+    RECON_Do_Recon(slot);
+#endif
+}
+
+void ORDER_Send_Prepares(void)
+{
+  ord_slot *slot, *prev_slot;
+  complete_pre_prepare_message *complete_pp;
+  po_aru_signed_message *cum_acks;
+  signed_message *m, *prepare;
+  po_seq_pair ps, zero_ps = {0, 0};
+  int32u i, j, covered, lower, higher;
+  stdit it;
+  tat_challenge *tatc;
+
+  slot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ppARU + 1);
+
+  while (slot != NULL && slot->collected_all_parts)
   {
-      complete_pp = (complete_pre_prepare_message *)&tslot->complete_pre_prepare;
+      if (slot->type != SLOT_COMMIT || DATA.VIEW.view_change_done == 0) {
+        DATA.ORD.ppARU++;
+        slot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ppARU + 1);
+        continue;
+      }
+
+      complete_pp = (complete_pre_prepare_message *)&slot->complete_pre_prepare;
       cum_acks = (po_aru_signed_message *)complete_pp->cum_acks;
       Alarm(DEBUG, "CHECKING Pre-prepare %u, ppARU %u\n", complete_pp->seq_num, DATA.ORD.ppARU);
 
-      if (ORDER_Pre_Prepare_Backward_Progress(complete_pp)) {
-        Alarm(PRINT, "ORDER_Process_Pre_Prepare: Pre-prepare (%u) goes backward in "
+      /* Make sure this PP is not making backwards progress. If so we cannot prepare it */
+      /* if (ORDER_Pre_Prepare_Backward_Progress(complete_pp)) {
+        Alarm(PRINT, "ORDER_Send_Prepares: Pre-prepare (%u) goes backward in "
                      "terms of what is eligible for execution -- refusing to send "
                      "pre-prepare!\n", complete_pp->seq_num);
         // Invalid PP -- don't send prepare
-        break;
+        return;
+      } */
+
+      /* For now, we are making the requirement that you only send a prepare if you
+       * personally have installed all of the incarnations on the PO_ARUs that 
+       * appear in the message. If at least one po_aru is from an incarnation that
+       * I have yet to install, do not send a prepare. */
+      for (i = 1; i <= NUM_SERVERS; i++) {
+        if (DATA.PR.installed_incarnations[i] < cum_acks[i-1].header.incarnation) {
+            Alarm(PRINT, "ORDER_Send_Prepares: po_aru incarnation > my_installed for %u\n", i);
+            return;
+        }
+        /* This may be the first time we got a chance to process this PO_ARU if we recently
+         * installed the incarnation it is from. Note that duplicate PO_ARUs are discarded,
+         * so there is no harm (other than small processing hit) */
+        else {
+            m = (signed_message *)&cum_acks[i-1];
+            PRE_ORDER_Process_PO_ARU(m); 
+        }
+      }
+
+      /* Make sure this PP last_executed matches the previous ordinal slot's made_eligible.
+       * This is ensuring that there is no backwards progress, as we calculate the
+       * delta from last_executed now (rather than the previous slot's matrix), which CAN
+       * actually go backwards due to recovering previously compromised replicas */
+      prev_slot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ppARU);
+      if (prev_slot == NULL) {
+        assert(DATA.ORD.ppARU == 0);
+        for (i = 0; i < NUM_SERVERS; i++)
+            if (PRE_ORDER_Seq_Compare(complete_pp->last_executed[i], zero_ps) != 0) {
+                Alarm(PRINT, "ORDER_Send_Prepares: complete_pp->last_executed != all 0s for first ord\n");
+                return;
+            }
+      }
+      else {
+        if (memcmp(&prev_slot->made_eligible, &complete_pp->last_executed, 
+                sizeof(prev_slot->made_eligible)) != 0)
+        {
+            Alarm(PRINT, "ORDER_Send_Prepares: prev_slot->made_eligible != complete_pp->last_executed\n");
+            return;
+        }
+      }
+
+      /* Now that the last executed vectors check out, calculate the made eligible for this
+       * ordinal slot */
+      if (!slot->populated_eligible) {
+          slot->populated_eligible = 1;
+          for (i = 0; i < NUM_SERVERS; i++) {
+            ps = PRE_ORDER_Proof_ARU(i+1, cum_acks);
+            if (PRE_ORDER_Seq_Compare(ps, complete_pp->last_executed[i]) > 0)
+                slot->made_eligible[i] = ps;
+            else
+                slot->made_eligible[i] = complete_pp->last_executed[i];
+          }
       }
 
       /* If we know the leader now has received a PO request from a replica
@@ -403,7 +702,7 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
        * we don't think we are required to send a PO ARU with it - cause
        * no progress would actually be made if we did. */
       for(i = 1; i <= NUM_SERVERS; i++) {
-        ps = PRE_ORDER_Proof_ARU(i, cum_acks);
+        ps = slot->made_eligible[i-1];
         if (PRE_ORDER_Seq_Compare(ps, DATA.PO.max_num_sent_in_proof[i]) > 0) 
             DATA.PO.max_num_sent_in_proof[i] = ps;
       }
@@ -412,30 +711,37 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
       if(!UTIL_I_Am_Leader()) {
 
         /* Construct a Prepare Message based on the Pre-Prepare */
-        prepare = ORDER_Construct_Prepare(&tslot->complete_pre_prepare);
+        prepare = ORDER_Construct_Prepare(&slot->complete_pre_prepare);
 
-        Alarm(DEBUG, "Add: Prepare\n");
-        SIG_Add_To_Pending_Messages(prepare, BROADCAST, 
-              UTIL_Get_Timeliness(PREPARE));
+        Alarm(DEBUG, "Add: Prepare for slot %d\n", slot->seq_num);
+        SIG_Add_To_Pending_Messages(prepare, BROADCAST, UTIL_Get_Timeliness(PREPARE));
         dec_ref_cnt(prepare);
 
       }
-      tslot->sent_prepare = 1;
+      slot->sent_prepare = 1;
       DATA.ORD.ppARU++;
 
       /* Try to reconcile on the slot */
-      RECON_Do_Recon(tslot);
-      if (tslot->reconciled == 0) {
-        Alarm(PRINT, "RECON failed! slot->seq_num = %d, slot->view = %d\n", tslot->seq_num, tslot->view);
+      RECON_Do_Recon(slot);
+      if (slot->reconciled == 0) {
+        Alarm(PRINT, "RECON failed! slot->seq_num = %d, slot->view = %d\n", slot->seq_num, slot->view);
       }
 
-      tslot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ppARU + 1);
+      slot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ppARU + 1);
   }
-#endif
 
-  tslot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ppARU);
-  assert(tslot != NULL);
-  complete_pp = (complete_pre_prepare_message *)&tslot->complete_pre_prepare;
+  slot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ppARU);
+  if (slot == NULL) {
+    Alarm(PRINT, "ORDER_Send_Prepares: ARU = %u, ppARU = %u, ppARU slot is NULL\n",
+            DATA.ORD.ARU, DATA.ORD.ppARU);
+    assert(slot);
+  }
+
+  /* Don't check for coverage if this slot is during the view change */
+  if (slot->type != SLOT_COMMIT || DATA.VIEW.view_change_done == 0)
+    return;
+
+  complete_pp = (complete_pre_prepare_message *)&slot->complete_pre_prepare;
   cum_acks = (po_aru_signed_message *)complete_pp->cum_acks;
 
   /* If this is not the next expected pre-prepare sequence number, don't try to
@@ -469,7 +775,7 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
             covered = 0;
         }
         else if (lower && higher) {
-            Alarm(PRINT, "Process_Pre_Prepare: Warning - received inconsistent "
+            Alarm(PRINT, "Send_Prepares: Warning - received inconsistent "
                     "vector from leader in PP, but may not be their fault!\n");
         }
       }
@@ -477,10 +783,6 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
       if (covered == 1) {
         /* Stop the stopwatch, measure the TAT, store if new max_tat in this view */
         UTIL_Stopwatch_Stop(&tatc->turnaround_time);
-        if (UTIL_Stopwatch_Elapsed(&tatc->turnaround_time) > TAT_PRINT_THRESH) {
-            Alarm(DEBUG, "  ** > Thresh in Order: %f s\n", 
-                    UTIL_Stopwatch_Elapsed(&tatc->turnaround_time));
-        }
         if (DATA.SUSP.max_tat < UTIL_Stopwatch_Elapsed(&tatc->turnaround_time)) {
           DATA.SUSP.max_tat = UTIL_Stopwatch_Elapsed(&tatc->turnaround_time);
           DATA.SUSP.tat_max_change = 1;
@@ -490,91 +792,9 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
       }
   }
   /* printf("    stddll after = %u\n", stddll_size(&DATA.SUSP.turnaround_times)); */
+}
 
 #if 0
-  /* Try to reconcile on the current slot, then try to reconcile on the
-   * next one in case it was waiting for a Pre-Prepare to fill the hole. */
-  RECON_Do_Recon(slot);
-  if (slot->reconciled == 0) {
-    Alarm(PRINT, "RECON failed! slot->seq_num = %d, slot->view = %d\n", slot->seq_num, slot->view);
-  }
-
-  //int seq = pp_specific->seq_num + 1;
-  slot = UTIL_Get_ORD_Slot_If_Exists(pp_specific->seq_num + 1);
-  //while (slot != NULL)
-  //{
-  //  RECON_Do_Recon(slot);
-  //  seq++;
-  //  slot = UTIL_Get_ORD_Slot_If_Exists(seq);
-  //  if (!slot->reconciled) {
-  //      Alarm(PRINT, "Done trying to reconcile for now...seq %d\n", seq);
-  //      break;
-  //  }
-  //}
-  if(slot != NULL)
-    RECON_Do_Recon(slot);
-#endif
-}
-
-void ORDER_Send_Prepares(void)
-{
-  ord_slot *slot;
-  complete_pre_prepare_message *complete_pp;
-  po_aru_signed_message *cum_acks;
-  signed_message *prepare;
-  po_seq_pair ps;
-  int32u i;
-
-  slot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ppARU + 1);
-
-  while (slot != NULL && slot->collected_all_parts)
-  {
-      complete_pp = (complete_pre_prepare_message *)&slot->complete_pre_prepare;
-      cum_acks = (po_aru_signed_message *)complete_pp->cum_acks;
-      Alarm(DEBUG, "CHECKING Pre-prepare %u, ppARU %u\n", complete_pp->seq_num, DATA.ORD.ppARU);
-
-      if (ORDER_Pre_Prepare_Backward_Progress(complete_pp)) {
-        Alarm(PRINT, "ORDER_Send_Prepares: Pre-prepare (%u) goes backward in "
-                     "terms of what is eligible for execution -- refusing to send "
-                     "pre-prepare!\n", complete_pp->seq_num);
-        // Invalid PP -- don't send prepare
-        break;
-      }
-
-      /* If we know the leader now has received a PO request from a replica
-       * that is greater than what we've sent, update our records so that
-       * we don't think we are required to send a PO ARU with it - cause
-       * no progress would actually be made if we did. */
-      for(i = 1; i <= NUM_SERVERS; i++) {
-        ps = PRE_ORDER_Proof_ARU(i, cum_acks);
-        if (PRE_ORDER_Seq_Compare(ps, DATA.PO.max_num_sent_in_proof[i]) > 0) 
-            DATA.PO.max_num_sent_in_proof[i] = ps;
-      }
-
-      /* Non-leaders should send a Prepare */
-      if(!UTIL_I_Am_Leader()) {
-
-        /* Construct a Prepare Message based on the Pre-Prepare */
-        prepare = ORDER_Construct_Prepare(&slot->complete_pre_prepare);
-
-        Alarm(DEBUG, "Add: Prepare for slot %d\n", slot->seq_num);
-        SIG_Add_To_Pending_Messages(prepare, BROADCAST, UTIL_Get_Timeliness(PREPARE));
-        dec_ref_cnt(prepare);
-
-      }
-      slot->sent_prepare = 1;
-      DATA.ORD.ppARU++;
-
-      /* Try to reconcile on the slot */
-      RECON_Do_Recon(slot);
-      if (slot->reconciled == 0) {
-        Alarm(PRINT, "RECON failed! slot->seq_num = %d, slot->view = %d\n", slot->seq_num, slot->view);
-      }
-
-      slot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ppARU + 1);
-  }
-}
-
 int32u ORDER_Pre_Prepare_Backward_Progress(complete_pre_prepare_message *pp)
 {
   po_seq_pair prev_pop[NUM_SERVER_SLOTS];
@@ -630,10 +850,12 @@ int32u ORDER_Pre_Prepare_Backward_Progress(complete_pre_prepare_message *pp)
 
   return 0;
 }
+#endif
 
 void ORDER_Process_Prepare(signed_message *mess) 
 {
-  ord_slot *slot;
+  int32u *vector_ptr; //, i;
+  ord_slot *slot, *t_slot;
   prepare_message *prepare_specific;
   signed_message *commit;
 
@@ -641,33 +863,84 @@ void ORDER_Process_Prepare(signed_message *mess)
 
   prepare_specific = (prepare_message*)(mess+1);
 
+  /* TEST: forcing NO_OP and PC_SET messages for testing */
+  /* if (DATA.View == 1 && (prepare_specific->seq_num == 96 || prepare_specific->seq_num == 97 ||
+        prepare_specific->seq_num == 99))
+    return; */
+
   /* If the view does not match, discard */
-  if (prepare_specific->view != DATA.View) {
+  /* if (prepare_specific->view != DATA.View) {
     Alarm(PRINT, "  DROPPING PREPARE: prep->view = %d, seq = %d, My_View = %d\n",
             prepare_specific->view, prepare_specific->seq_num, DATA.View);
     return;
-  }
-
-  /* If this is from the leader, ignore - he can't be counted twice, once
-   *    for the prepare and pre-prepare */
-  if (mess->machine_id == UTIL_Leader())
-    return;
+  }  */
 
   /* If we've already executed this seq, discard */
   if(prepare_specific->seq_num <= DATA.ORD.ARU)
+    return;
+
+  if (prepare_specific->view > DATA.View)
+    return;
+  else if (prepare_specific->view < DATA.View) {
+    if (DATA.VIEW.view_change_done == 1)
+      return;
+    if (DATA.ORD.ARU > 0) {
+        t_slot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ARU);
+        assert(t_slot);
+        if (prepare_specific->view < t_slot->view)
+          return;
+    }
+  }
+  
+  /* Print statement for debugging */
+  if (prepare_specific->view < DATA.View)
+    Alarm(PRINT, "Process_Prepare: Prepare from view %u while installing %u\n",
+            prepare_specific->view, DATA.View);
+
+  /* If this is from the leader, ignore - he can't be counted twice, once
+   *    for the prepare and pre-prepare */
+  //if (mess->machine_id == UTIL_Leader())
+  if (mess->machine_id == UTIL_Leader_Of_View(prepare_specific->view))
     return;
 
   /* Get the slot */
   slot = UTIL_Get_ORD_Slot(prepare_specific->seq_num);
   assert(slot->seq_num == prepare_specific->seq_num);
 
-  /* If I don't already have a Prepare from this server, store it */
-
+  /* If I already have a Prepare from this server, ignore this one */
   /* We compare digests of the prepare compared with the preprepare at the end,
    * since there is no guarantee that we'll have a preprepare to check with 
    * at this point (see ORDER_Prepare_Certificate_Ready).  */
   if(slot->prepare[mess->machine_id] != NULL)
     return;
+
+  if (slot->snapshot == 0)
+    vector_ptr = DATA.PR.preinstalled_incarnations + 1;
+  else
+    vector_ptr = slot->preinstalled_snapshot + 1;
+
+  /* Check that the preinstalled vector on this prepare matches
+   * my knowledge of the preinstalled incarnations of each of the replicas.
+   * Only accept this message if this check succeeds */
+  if (memcmp(prepare_specific->preinstalled_incarnations, 
+              vector_ptr,
+              //DATA.PR.preinstalled_incarnations+1,
+              NUM_SERVERS * sizeof(int32u)) != 0) 
+  {
+      Alarm(DEBUG, "Process_Prepare: mismatch preinstall vector from %u. snap=%u:\n", 
+                mess->machine_id, slot->snapshot);
+      /* printf("\t\tmine = [");
+      for (i = 1; i <= NUM_SERVERS; i++) {
+          printf("%u, ", DATA.PR.preinstalled_incarnations[i]);
+      }
+      printf("]\n");
+      printf("\t\tprep = [");
+      for (i = 0; i < NUM_SERVERS; i++) {
+          printf("%u, ", prepare_specific->preinstalled_incarnations[i]);
+      }
+      printf("]\n"); */
+      return;
+  }
 
   inc_ref_cnt(mess);
   slot->prepare[mess->machine_id] = mess;
@@ -686,10 +959,13 @@ void ORDER_Process_Prepare(signed_message *mess)
   if(ORDER_Prepare_Certificate_Ready(slot)) {
     ORDER_Move_Prepare_Certificate(slot);
     assert(slot->collected_all_parts);
-    commit = ORDER_Construct_Commit(&slot->prepare_certificate.pre_prepare);
-    Alarm(DEBUG, "Add: Commit for %d\n", slot->seq_num);
-    SIG_Add_To_Pending_Messages(commit, BROADCAST, UTIL_Get_Timeliness(COMMIT));
-    dec_ref_cnt(commit);
+    if (DATA.VIEW.view_change_done == 1) {
+      commit = ORDER_Construct_Commit(&slot->prepare_certificate.pre_prepare);
+      Alarm(DEBUG, "Add: Commit for %d\n", slot->seq_num);
+      SIG_Add_To_Pending_Messages(commit, BROADCAST, UTIL_Get_Timeliness(COMMIT));
+      dec_ref_cnt(commit);
+      slot->sent_commit = 1;
+    }
   }
 }
 
@@ -739,8 +1015,8 @@ int32u ORDER_Prepare_Matches_Pre_Prepare(signed_message *prepare,
   prepare_specific = (prepare_message*)(prepare+1);
 
   if(view != prepare_specific->view) {
-    Alarm(DEBUG,"v %d %d %d\n", view, prepare_specific->view,
-          prepare_specific->seq_num);
+    Alarm(PRINT, "v %d: pp view,seq = %d,%d. prep view,seq = %d,%d\n", 
+        view, view, seq_num, prepare_specific->view, prepare_specific->seq_num);
     return 0;
   }
 
@@ -762,13 +1038,11 @@ int32u ORDER_Prepare_Matches_Pre_Prepare(signed_message *prepare,
 
 void ORDER_Move_Prepare_Certificate(ord_slot *slot)
 {
-  int32u pcount;
   int32u sn;
   signed_message **prepare_src;
 
   Alarm(DEBUG, "Made Prepare Certificate\n");
   
-  pcount      = 0;
   prepare_src = (signed_message **)slot->prepare;
 
   /*Copy the completed Pre-Prepare into the Prepare Certificate */
@@ -793,13 +1067,14 @@ void ORDER_Move_Prepare_Certificate(ord_slot *slot)
 
   /* Mark that we have a Prepare Certificate.*/
   slot->prepare_certificate_ready = 1;
-  if (DATA.ORD.high_seq < slot->seq_num)
-    DATA.ORD.high_seq = slot->seq_num;
+  if (DATA.ORD.high_prepared < slot->seq_num)
+    DATA.ORD.high_prepared = slot->seq_num;
 }
 
 void ORDER_Process_Commit(signed_message *mess)
 {
-  ord_slot *slot;
+  int32u *vector_ptr; //, i;
+  ord_slot *slot, *t_slot;
   commit_message *commit_specific;
 
   Alarm(DEBUG, "%d ORDER_COMMIT\n",VAR.My_Server_ID);
@@ -807,15 +1082,33 @@ void ORDER_Process_Commit(signed_message *mess)
   commit_specific = (commit_message*)(mess+1);
 
   /* If the view doesn't match ours, discard */
-  if (commit_specific->view != DATA.View) {
+  /* if (commit_specific->view != DATA.View) {
     Alarm(PRINT, "  DROPPING COMMIT: comm->view = %d, seq = %d, My_View = %d\n",
             commit_specific->view, commit_specific->seq_num, DATA.View);
     return;
-  }
+  } */
 
   /* If we've already globally executed this seq, discard */
-  if(commit_specific->seq_num <= DATA.ORD.ARU)
+  if (commit_specific->seq_num <= DATA.ORD.ARU)
     return;
+
+  if (commit_specific->view > DATA.View)
+    return;
+  else if (commit_specific->view < DATA.View) {
+    if (DATA.VIEW.view_change_done == 1)
+      return;
+    if (DATA.ORD.ARU > 0) {
+        t_slot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ARU);
+        assert(t_slot);
+        if (commit_specific->view < t_slot->view)
+          return;
+    }
+  }
+  
+  /* Print statement for debugging */
+  if (commit_specific->view < DATA.View)
+    Alarm(PRINT, "Process_Commit: Commit from view %u while installing %u\n",
+            commit_specific->view, DATA.View);
 
   /* Get the slot */
   slot = UTIL_Get_ORD_Slot(commit_specific->seq_num);
@@ -823,6 +1116,34 @@ void ORDER_Process_Commit(signed_message *mess)
   /* If I have already received a commit from this server, return */
   if(slot->commit[mess->machine_id] != NULL)
     return;
+
+  if (slot->snapshot == 0)
+    vector_ptr = DATA.PR.preinstalled_incarnations + 1;
+  else
+    vector_ptr = slot->preinstalled_snapshot + 1;
+
+  /* Check that the preinstalled vector on this commit matches
+   * my knowledge of the preinstalled incarnations of each of the replicas.
+   * Only accept this message if this check succeeds */
+  if (memcmp(commit_specific->preinstalled_incarnations, 
+              vector_ptr,
+              //DATA.PR.preinstalled_incarnations+1,
+              NUM_SERVERS * sizeof(int32u)) != 0) 
+  {
+      Alarm(DEBUG, "Process_Commit: mismatch preinstall vector from %u. snap=%u:\n", 
+                mess->machine_id, slot->snapshot);
+      /* printf("\t\tmine = [");
+      for (i = 1; i <= NUM_SERVERS; i++) {
+          printf("%u, ", DATA.PR.preinstalled_incarnations[i]);
+      }
+      printf("]\n");
+      printf("\t\tcomm = [");
+      for (i = 0; i < NUM_SERVERS; i++) {
+          printf("%u, ", commit_specific->preinstalled_incarnations[i]);
+      }
+      printf("]\n"); */
+      return;
+  }
 
   /* Otherwise, store it and see if a commit certificate is ready. */
   inc_ref_cnt(mess);
@@ -904,24 +1225,23 @@ int32u ORDER_Commit_Matches_Pre_Prepare(signed_message *commit,
 
 void ORDER_Move_Commit_Certificate(ord_slot *slot)
 {
-  int32u pcount;
-  int32u sn;
+  int32u sn, i;
+  po_seq_pair ps;
   signed_message **commit_src;
   complete_pre_prepare_message *pp;
 
   Alarm(DEBUG, "Made commit certificate.\n");
 
-  pcount     = 0;
   commit_src = (signed_message **)slot->commit;
-  
+
+  if(slot->prepare_certificate_ready)
+    pp = &slot->prepare_certificate.pre_prepare;
+  else
+    pp = &slot->complete_pre_prepare;
+
   for(sn = 1; sn <= NUM_SERVERS; sn++) {
     if((commit_src)[sn] != NULL) {
       Alarm(DEBUG,"ORDER_Move_Commit_Certificate %d\n", commit_src[sn]);
-
-      if(slot->prepare_certificate_ready)
-        pp = &slot->prepare_certificate.pre_prepare;
-      else
-        pp = &slot->complete_pre_prepare;
 
       if(ORDER_Commit_Matches_Pre_Prepare(commit_src[sn], pp)) {
         slot->commit_certificate.commit[sn] = commit_src[sn];
@@ -935,13 +1255,41 @@ void ORDER_Move_Commit_Certificate(ord_slot *slot)
     }
   }
 
+  /* Create the preinstalled_incarnation snapshot, which should be my own knowledge */
+  if (slot->snapshot == 0) {
+    for (i = 1; i <= NUM_SERVERS; i++) 
+      slot->preinstalled_snapshot[i] = DATA.PR.preinstalled_incarnations[i];
+    slot->snapshot = 1;
+  }
+
   slot->ordered = 1;
+  if (DATA.ORD.high_committed < slot->seq_num)
+    DATA.ORD.high_committed = slot->seq_num;
+
+  /* If we did not send a prepare personally for this slot yet, we may still need to update
+  * the made_eligible vector. This comparison (made_eligible - last_executed)
+  * replaces the prior loops that determined what is eligible. We put this now so that
+  * all checks can leverage from made_eligible being setup. This is safe to do now, even
+  * if we are not ready to execute, since we already have 2f+k+1 commits on the pre-prepare, 
+  * so the content will not be changing. */
+  if (!slot->populated_eligible) {
+    slot->populated_eligible = 1;
+    for(i = 0; i < NUM_SERVERS; i++) {
+        ps = PRE_ORDER_Proof_ARU(i+1, pp->cum_acks);
+    
+        if (PRE_ORDER_Seq_Compare(ps, pp->last_executed[i]) > 0)
+            slot->made_eligible[i] = ps;
+        else
+            slot->made_eligible[i] = pp->last_executed[i];
+    }
+  }
+
 }
 
 int32u ORDER_Ready_To_Execute(ord_slot *o_slot)
 {
   complete_pre_prepare_message *pp;
-  complete_pre_prepare_message *prev_pp;
+  //complete_pre_prepare_message *prev_pp;
   ord_slot *prev_ord_slot;
   po_slot *p_slot;
   int32u gseq, i, j;
@@ -980,6 +1328,27 @@ int32u ORDER_Ready_To_Execute(ord_slot *o_slot)
     return 0;
   }
 
+  /* See which PO-Requests are now eligible for execution by
+   * comparing made_eligible - last_executed. First, setup
+   * prev_pop as either last_executed or (0,0) if first ORD */
+  if(prev_ord_slot == NULL) {
+    assert(gseq == 1);
+
+    for(i = 1; i <= NUM_SERVERS; i++)
+      prev_pop[i] = zero_ps;
+  }
+  else {
+    for(i = 1; i <= NUM_SERVERS; i++)
+      prev_pop[i] = pp->last_executed[i-1];
+  }
+
+  /* Second, setup cur_pop as made_eligible, which should be setup
+   * by now either when we sent our prepare or when we ordered 
+   * (collected 2f+k+1 commits) */
+  for (i = 1; i <= NUM_SERVERS; i++)
+    cur_pop[i] = o_slot->made_eligible[i-1];
+
+#if 0
   /* See which PO-Requests are now eligible for execution. */
   if(prev_ord_slot == NULL) {
     assert(gseq == 1);
@@ -1002,6 +1371,7 @@ int32u ORDER_Ready_To_Execute(ord_slot *o_slot)
 
   for(i = 1; i <= NUM_SERVERS; i++)
     cur_pop[i] = PRE_ORDER_Proof_ARU(i, pp->cum_acks);
+#endif
 
   for(i = 1; i <= NUM_SERVERS; i++) {
 
@@ -1016,9 +1386,12 @@ int32u ORDER_Ready_To_Execute(ord_slot *o_slot)
       ps.seq_num = j;
       p_slot = UTIL_Get_PO_Slot_If_Exists(i, ps);
 
-      if(p_slot == NULL || p_slot->po_request == NULL) {
-        Alarm(PRINT, "Seq %d not ready, missing: %d %d %d\n", gseq, i, 
-                ps.incarnation, ps.seq_num);
+      if(p_slot == NULL || p_slot->po_request == NULL || 
+            PRE_ORDER_Seq_Compare(DATA.PO.cum_aru[i], ps) < 0) 
+      {
+        Alarm(PRINT, "Seq %d not ready, missing: %d [%d,%d], cum_aru = [%u,%u]\n", 
+                gseq, i, ps.incarnation, ps.seq_num, DATA.PO.cum_aru[i].incarnation,
+                DATA.PO.cum_aru[i].seq_num);
 
         o_slot->num_remaining_for_execution++;
         Alarm(DEBUG, "Setting ord_slots num_remaining to %d\n",
@@ -1044,11 +1417,10 @@ int32u ORDER_Ready_To_Execute(ord_slot *o_slot)
 
 void ORDER_Execute_Commit(ord_slot *o_slot)
 {
-  complete_pre_prepare_message *prev_pp;
+  //complete_pre_prepare_message *prev_pp;
   signed_message *po_request, *up_contents;
   signed_update_message *up, no_op;
   po_request_message *po_request_specific;
-  ord_certificate_message *ord_cert;
   ord_slot *prev_ord_slot;
   po_slot *p_slot;
   po_id pid;
@@ -1062,7 +1434,7 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
   complete_pre_prepare_message *pp;
   stddll eventq;
   stdit it;
-  sp_time t;
+  //sp_time t;
 
   assert(o_slot);
 
@@ -1078,15 +1450,9 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
   if (gseq == 0) Alarm(PRINT, "Order Execute commit, seq 0: slot seq == %d!\n", o_slot->seq_num);
   if(!ORDER_Ready_To_Execute(o_slot)) {
     Alarm(DEBUG, "Not yet ready to execute seq %d\n", gseq);
-    /*if (gseq > DATA.ORD.ARU + GC_LAG) {
-        Alarm(EXIT, "Fell too far behind: seq %d, ARU %d, GC_LAG %d\n", gseq, DATA.ORD.ARU, GC_LAG);
-    } 
-    if (DATA.PR.catchup_target < DATA.ORD.ARU + 1)
-        DATA.PR.catchup_target = DATA.ORD.ARU + 1;
-    if (DATA.PR.recovery_in_progress == 0) {
-        DATA.PR.recovery_in_progress = 1;
-        PR_Catchup_Periodically(0, NULL);
-    } */
+
+    Alarm(PRINT, "Schedule Catchup from Execute_Commit\n");
+    CATCH_Schedule_Catchup();
     return;
   }
 
@@ -1096,6 +1462,27 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
    * then this better be the first sequence number! */
   prev_ord_slot = UTIL_Get_ORD_Slot_If_Exists(gseq - 1);
 
+  /* See which PO-Requests are now eligible for execution by
+   * comparing made_eligible - last_executed. First, setup
+   * prev_pop as either last_executed or (0,0) if first ORD */
+  if(prev_ord_slot == NULL) {
+    assert(gseq == 1);
+
+    for(i = 1; i <= NUM_SERVERS; i++)
+      prev_pop[i] = zero_ps;
+  }
+  else {
+    for(i = 1; i <= NUM_SERVERS; i++)
+      prev_pop[i] = pp->last_executed[i-1];
+  }
+
+  /* Second, setup cur_pop as made_eligible, which should be setup
+   * by now either when we sent our prepare or when we ordered 
+   * (collected 2f+k+1 commits) */
+  for (i = 1; i <= NUM_SERVERS; i++)
+    cur_pop[i] = o_slot->made_eligible[i-1];
+
+#if 0
   if(prev_ord_slot == NULL) {
     assert(gseq == 1);
     
@@ -1116,9 +1503,10 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
       prev_pop[i] = PRE_ORDER_Proof_ARU(i, prev_pp->cum_acks);
   }
   
-  for(i = 1; i <= NUM_SERVERS; i++)
-    cur_pop[i] = PRE_ORDER_Proof_ARU(i, pp->cum_acks);
-
+  for (i = 1; i <= NUM_SERVERS; i++)
+    cur_pop[i] = o_slot->made_eligible[i-1];
+#endif
+  
   /* printf("++++++++++ EXECUTING MATRIX %u++++++++++\n", pp->seq_num);
   for (i = 0; i < NUM_SERVERS; i++)
   {
@@ -1154,8 +1542,23 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
   assert(gseq == (DATA.ORD.ARU + 1));
   DATA.ORD.ARU++;
 
+  /* HACK used for normal exit to profile Prime */
+  /* if (DATA.ORD.ARU == 20000 && VAR.My_Server_ID == 4)
+    exit(EXIT_SUCCESS); */
+  
+  /* Special case for initial stable catchup place */
+  if (DATA.ORD.ARU == 1)
+    DATA.ORD.stable_catchup = 1;
+
   if (DATA.ORD.ARU % PRINT_PROGRESS == 0)
     Alarm(PRINT, "Executed through ordinal %u\n", DATA.ORD.ARU);
+  /* if (DATA.ORD.ARU % (PRINT_PROGRESS*10) == 0) {
+    Alarm(PRINT, "Profiling since start!\n");
+    Alarm(PRINT, "  Messages with process > 0.002 s\n");
+    for (i = 1; i < MAX_MESS_TYPE; i++) {
+        printf("    %25s: %8u\n", UTIL_Type_To_String(i), BENCH.profile_count[i]);
+    }
+  } */
 
   event_tot = 0;
   stddll_construct(&eventq, sizeof(signed_message *));
@@ -1218,12 +1621,12 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
         /* If this event corresponds to a new client update that we've never
          * executed (or delivered), enqueue to be sent at the end of this loop.
          * Otherwise, ignore it as duplicate */
-        ps_update.incarnation = up->update.incarnation;
+        ps_update.incarnation = up->header.incarnation;
         ps_update.seq_num = up->update.seq_num;
         up_contents = (signed_message *)(up->update_contents);
-        if (up_contents->type == CLIENT_STATE_TRANSFER) {
+        /* if (up_contents->type == CLIENT_STATE_TRANSFER) {
             Alarm(DEBUG, "  STATE TRANSFER! [%u,%u]\n", ps_update.incarnation, ps_update.seq_num);
-        }
+        } */
         /* if (PRE_ORDER_Seq_Compare(DATA.PO.exec_client_seq[up->update.server_id],
                     ps_update) < 0)
         { */
@@ -1269,6 +1672,30 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
 
         DATA.PO.po_seq_executed = ps;
       }
+
+      /* Check if we are about to execute the first "special" update from a RECOVERING
+       * replica, make them as now being NORMAL state */
+      if (ps.incarnation > DATA.PO.last_executed_po_reqs[i].incarnation &&
+          ps.seq_num == 1)
+      {
+            if (DATA.PR.recovery_status[i] == PR_STARTUP) {
+                Alarm(PRINT, "STRANGE: Changing %u from STARTUP to NORMAL in execute_commit.\n", i);
+                DATA.PR.num_startup--;
+            }
+            if (DATA.PR.preinstalled_incarnations[i] <= ps.incarnation) {
+                DATA.PR.recovery_status[i] = PR_NORMAL;
+                Alarm(PRINT, "Setting %u to PR_NORMAL in Execute_Commit\n", i);
+                DATA.PR.preinstalled_incarnations[i] = ps.incarnation;
+            }
+            DATA.PR.installed_incarnations[i] = ps.incarnation;
+            if (i == VAR.My_Server_ID && 
+                  DATA.PR.preinstalled_incarnations[i] == DATA.PR.installed_incarnations[i])
+            {
+                Alarm(PRINT, "RESUME NORMAL from Execute_Commit\n");
+                PR_Resume_Normal_Operation();
+                //PR_Resume_Normal_Operation(NO_RESET_APPLICATION);
+            }
+      }
       DATA.PO.last_executed_po_reqs[i] = ps;
       Alarm(DEBUG, "Executed %u %u for %u\n", DATA.PO.last_executed_po_reqs[i].incarnation, 
                 DATA.PO.last_executed_po_reqs[i].seq_num, i);
@@ -1285,6 +1712,11 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
    * and deliver to client. However, if the queue is empty, indicating that this
    * was an "empty" pre-prepare, create a special No-Op message to send to the
    * client to keep sequential delivery in tact. */
+  DATA.SIG.ipc_send_agg = 0;
+  memset(DATA.SIG.ipc_send_msg, 0, sizeof(DATA.SIG.ipc_send_msg));
+  DATA.SIG.ipc_count = 0;
+  util_stopwatch ipc_timer;
+  UTIL_Stopwatch_Start(&ipc_timer);
   event_idx = 0;
   if (event_tot > 0) {
     for (stddll_begin(&eventq, &it); !stddll_is_end(&eventq, &it); stdit_next(&it)) {
@@ -1300,10 +1732,11 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
 
     event->machine_id = VAR.My_Server_ID;
     event->type = UPDATE;
+    event->incarnation = DATA.PR.new_incarnation_val[VAR.My_Server_ID];
     event->len = sizeof(signed_update_message) - sizeof(signed_message);
 
     up->update.server_id = VAR.My_Server_ID;
-    up->update.incarnation = DATA.PO.intro_client_seq[VAR.My_Server_ID].incarnation;
+    up->header.incarnation = DATA.PO.intro_client_seq[VAR.My_Server_ID].incarnation;
     up->update.seq_num = 0;
 
     up_contents->machine_id = VAR.My_Server_ID;
@@ -1312,40 +1745,69 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
     ORDER_Execute_Event(event, pp->seq_num, 1, 1); 
   }
   stddll_destruct(&eventq);
+  UTIL_Stopwatch_Stop(&ipc_timer);
+  /* if (UTIL_Stopwatch_Elapsed(&ipc_timer) >= 0.002) {
+    Alarm(DEBUG, "%u IPC messages. %f s total, %f s send\n", event_tot,
+            UTIL_Stopwatch_Elapsed(&ipc_timer), DATA.SIG.ipc_send_agg);
+    Alarm(DEBUG, "Breakdown:\n");
+    for (i = 0; i < DATA.SIG.ipc_count; i++) 
+        Alarm(DEBUG, "\tipc [%u] --> %f s\n", i, DATA.SIG.ipc_send_msg[i]);
+  } */
 
   RECON_Do_Recon(o_slot);
   /* Garbage collect gseq-1 when I commit gseq */
   //ORDER_Attempt_To_Garbage_Collect_ORD_Slot(gseq-1);
 
   /* Create the certificate for this Ordinal */
-  o_slot->ord_certificate = PR_Construct_ORD_Certificate(o_slot);
+  /* o_slot->ord_certificate = CATCH_Construct_ORD_Certificate(o_slot);
+  UTIL_RSA_Sign_Message(o_slot->ord_certificate); */
+
+  /* Use MT Batching for these certs as well */
+  /* cert = CATCH_Construct_ORD_Certificate(o_slot);
+  dest_bits = 0;
+  SIG_Add_To_Pending_Messages(cert, dest_bits, UTIL_Get_Timeliness(ORD_CERT));
+  dec_ref_cnt(cert); */
+
+  /* This will be signed later if needed by a replica for catchup */
+  o_slot->ord_certificate = CATCH_Construct_ORD_Certificate(o_slot);
 
   /* Only replace the periodic ord cert that we send (which
    * replicas may jump to) if its a commit */
+#if 0
   if (o_slot->type == SLOT_COMMIT) {
 
     /* Store this as our latest cert, update flag for periodic,
      *    and start periodic sending (if not already) */
-    if (DATA.PR.last_ord_cert[VAR.My_Server_ID] != NULL) {
-      dec_ref_cnt(DATA.PR.last_ord_cert[VAR.My_Server_ID]);
+    if (DATA.CATCH.last_ord_cert[VAR.My_Server_ID] != NULL) {
+      dec_ref_cnt(DATA.CATCH.last_ord_cert[VAR.My_Server_ID]);
     }
-    DATA.PR.last_ord_cert[VAR.My_Server_ID] = UTIL_New_Signed_Message();
-    memcpy(DATA.PR.last_ord_cert[VAR.My_Server_ID], o_slot->ord_certificate,
+    DATA.CATCH.last_ord_cert[VAR.My_Server_ID] = UTIL_New_Signed_Message();
+    memcpy(DATA.CATCH.last_ord_cert[VAR.My_Server_ID], o_slot->ord_certificate,
               sizeof(signed_message) + o_slot->ord_certificate->len);
-    ord_cert = (ord_certificate_message *)(DATA.PR.last_ord_cert[VAR.My_Server_ID] + 1);
-    ord_cert->flag = CERT_PERIODIC;
-    if (!E_in_queue(PR_Send_ORD_Cert_Periodically, 0, NULL)) {
+    if (!E_in_queue(CATCH_Send_ORD_Cert_Periodically, 0, NULL)) {
       t.sec  = ORD_CERT_PERIODICALLY_SEC;
       t.usec = ORD_CERT_PERIODICALLY_USEC;
-      E_queue(PR_Send_ORD_Cert_Periodically, 0, NULL, t);
+      E_queue(CATCH_Send_ORD_Cert_Periodically, 0, NULL, t);
     }
   }
+#endif
 
   /* If we are still working on a view change, check if we now
    *    have collected complete state from any one */
-  if (DATA.VIEW.view_change_done == 0)
+  if (DATA.VIEW.view_change_done == 0) {
     for (i = 1; i <= NUM_SERVERS; i++) 
       VIEW_Check_Complete_State(i);
+
+    /* If we missed some view change messages, but not ORD messages and 
+     * others already executed at least one ordinal, they will not be 
+     * sending the end of view change messages. But since I cannot
+     * send prepares/commits while in a view change, I know this came
+     * from at least enough correct replicas. I can finish the view here */
+    /* if (o_slot->view == DATA.View) {
+        DATA.VIEW.view_change_done = 1;
+        Alarm(PRINT, "Finished View Change from Execute_Commit\n");
+    } */
+  }
 
   /* If the view change is done, and this is the first ord that we
    * are about to execute in the view, set the flag, which will 
@@ -1355,9 +1817,13 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
     DATA.VIEW.executed_ord = 1;
   }
 
+  /* Send any prepares that we can now send by installing incarnations */
+  ORDER_Send_Prepares();
+
   /* Garbage collect gseq-GC_LAG when I commit gseq */
-  if (gseq > GC_LAG)
-    ORDER_Attempt_To_Garbage_Collect_ORD_Slot(gseq - GC_LAG);
+  /* if (gseq > GC_LAG)
+    ORDER_Attempt_To_Garbage_Collect_ORD_Slot(gseq - GC_LAG); */
+  ORDER_Attempt_To_Garbage_Collect_ORD_Slots();
   
   //t.sec = 0;
   //t.usec = 1000;
@@ -1393,7 +1859,7 @@ void ORDER_Execute_Event(signed_message *event, int32u ord_num, int32u event_idx
 
   Alarm(DEBUG, "Executing an update: %d (%d %d)\n",
     ((signed_update_message *)event)->update.server_id,
-	((signed_update_message *)event)->update.incarnation,
+	((signed_update_message *)event)->header.incarnation,
 	((signed_update_message *)event)->update.seq_num);
   ORDER_Execute_Update(event, ord_num, event_idx, event_tot);
 }
@@ -1409,12 +1875,12 @@ void ORDER_Execute_Update(signed_message *mess, int32u ord_num, int32u event_idx
     UTIL_Stopwatch_Start(&BENCH.test_stopwatch);
 
   //if(BENCH.updates_executed % 50 == 0)
-  if(BENCH.updates_executed % (BENCHMARK_END_RUN/100) == 0)
-    Alarm(PRINT, "Executed %d updates\n", BENCH.updates_executed);
+  /* if(BENCH.updates_executed % (BENCHMARK_END_RUN/100) == 0)
+    Alarm(PRINT, "Executed %d updates\n", BENCH.updates_executed); */
 
   u = (signed_update_message *)mess;
   Alarm(DEBUG, "Ordered update with timestamp %d %d\n", 
-            u->update.incarnation, u->update.seq_num);
+            u->header.incarnation, u->update.seq_num);
 
   /* For Benchmarking Prime, we only send ACKs back to clients that
    * are connected to this server, and record ordered updates as
@@ -1425,14 +1891,19 @@ void ORDER_Execute_Update(signed_message *mess, int32u ord_num, int32u event_idx
 
   UTIL_State_Machine_Output(u); */
 
-  UTIL_Respond_To_Client(mess->machine_id, u->update.incarnation, 
+  UTIL_Respond_To_Client(mess->machine_id, u->header.incarnation, 
             u->update.seq_num, ord_num, event_idx, event_tot, 
             u->update_contents);
 
-  if(BENCH.updates_executed == BENCHMARK_END_RUN) {
+  /* if(BENCH.updates_executed == BENCHMARK_END_RUN) {
     ORDER_Cleanup();
     exit(0);
-  }
+  } */
+}
+
+void ORDER_Flood_PP_Wrapper(int d1, void *message)
+{
+    ORDER_Flood_Pre_Prepare((signed_message *)message);
 }
 
 void ORDER_Flood_Pre_Prepare(signed_message *mess)
@@ -1474,6 +1945,54 @@ void ORDER_Flood_Pre_Prepare(signed_message *mess)
     ORDER_Update_Forwarding_White_Line();
 }
 
+void ORDER_Adjust_High_Committed()
+{
+    if (DATA.ORD.high_committed < DATA.ORD.ARU)
+        DATA.ORD.high_committed = DATA.ORD.ARU;
+}
+
+void ORDER_Adjust_High_Prepared()
+{
+    int32u seq;
+    ord_slot *slot;
+
+    if (DATA.ORD.high_prepared <= DATA.ORD.ARU) {
+        DATA.ORD.high_prepared = DATA.ORD.ARU;
+        return;
+    }
+
+    for (seq = DATA.ORD.high_prepared; seq > DATA.ORD.ARU; seq--) {
+
+        slot = UTIL_Get_ORD_Slot_If_Exists(seq);
+        if (slot != NULL && slot->prepare_certificate_ready == 1)
+            break;
+    }
+
+    /* This should result in high_prepared getting set >= ARU */
+    DATA.ORD.high_prepared = seq;
+}
+
+void ORDER_Adjust_ppARU()
+{
+    int32u seq;
+    ord_slot *slot;
+
+    if (DATA.ORD.ppARU <= DATA.ORD.ARU) {
+        DATA.ORD.ppARU = DATA.ORD.ARU;
+        return;
+    }
+
+    for (seq = DATA.ORD.ppARU; seq > DATA.ORD.ARU; seq--) {
+
+        slot = UTIL_Get_ORD_Slot_If_Exists(seq);
+        if (slot != NULL && slot->sent_prepare == 1)
+            break;
+    }
+
+    /* This should result in ppARU getting set >= ARU */
+    DATA.ORD.ppARU = seq;
+}
+
 void ORDER_Update_Forwarding_White_Line()
 {
   ord_slot *slot;
@@ -1489,17 +2008,54 @@ void ORDER_Update_Forwarding_White_Line()
        slot->collected_all_parts && 
        slot->num_forwarded_parts == slot->total_parts) {
       
-      ORDER_Attempt_To_Garbage_Collect_ORD_Slot(seq);
       DATA.ORD.forwarding_white_line++;
+      //ORDER_Attempt_To_Garbage_Collect_ORD_Slot(seq);
     }
     else
       break;
   }
 }
 
+void ORDER_Attempt_To_Garbage_Collect_ORD_Slots()
+{
+  ord_slot *slot;
+  int32u i;
+
+  /* First, check if we have enough of a catchup history to clear out a chunk */
+  if (DATA.ORD.ARU - DATA.ORD.stable_catchup < 2 * DATA.ORD.gc_width) {
+    Alarm(DEBUG, "Can't garbage collect yet: ARU %d < stable %u + 2*CatchupHistory %u\n", 
+            DATA.ORD.ARU, DATA.ORD.stable_catchup, 2 * DATA.ORD.gc_width);
+    return;
+  }
+
+  /* Success: Remove the fixed-size chunk */
+  for (i = DATA.ORD.stable_catchup; i < DATA.ORD.ARU - DATA.ORD.gc_width; i++) {
+    slot = UTIL_Get_ORD_Slot(i);
+    Alarm(DEBUG, "ORD GC slot %u\n", i);
+
+    /* 2 Sanity Checks */
+    /* Make sure we got all of the pre-prepare parts and flooded them */
+    if (slot->collected_all_parts == 0 || DATA.ORD.forwarding_white_line < slot->seq_num) {
+        Alarm(EXIT, "ORD GC issue: can't gc slot %d: collected_all_parts = %d, forwarding_white_line = %d\n", 
+                slot->seq_num, slot->collected_all_parts, DATA.ORD.forwarding_white_line);
+    }
+    /* Make sure we did recon on this slot as well */
+    if(DATA.ORD.recon_white_line < (slot->seq_num+1)) {
+        Alarm(EXIT, "ORD gc issue: Can't gc slot %d: recon_white_line %d < seq+1 %d\n", 
+                slot->seq_num, DATA.ORD.recon_white_line, slot->seq_num+1);
+    }
+    ORDER_Garbage_Collect_ORD_Slot(slot, 1);
+  }
+
+  /* Set the new stable catchup ordinal */
+  DATA.ORD.stable_catchup = DATA.ORD.ARU - DATA.ORD.gc_width;
+}
+
+#if 0
 void ORDER_Attempt_To_Garbage_Collect_ORD_Slot(int32u seq)
 {
   ord_slot *slot;
+  int32u i;
 
   slot = UTIL_Get_ORD_Slot_If_Exists(seq);
 
@@ -1509,7 +2065,6 @@ void ORDER_Attempt_To_Garbage_Collect_ORD_Slot(int32u seq)
   /* Need to have received and forwarded all parts of the Pre-Prepare */
   if(slot->collected_all_parts == 0 || DATA.ORD.forwarding_white_line < seq)
   {
-    //if (DATA.ORD.forwarding_white_line < seq-1)
         Alarm(DEBUG, "Can't garbage collect slot %d: collected_all_parts = %d, forwarding_white_line = %d\n", seq, slot->collected_all_parts, DATA.ORD.forwarding_white_line);
     return;
   }
@@ -1519,6 +2074,8 @@ void ORDER_Attempt_To_Garbage_Collect_ORD_Slot(int32u seq)
   if(DATA.ORD.ARU < (seq+GC_LAG))
   {
     Alarm(DEBUG, "Can't garbage collect slot %d: ARU %d < seq+1 %d\n", seq, DATA.ORD.ARU, seq+1);
+    //Alarm(PRINT, "Can't garbage collect slot %d: ARU %d < stable %u + 2*CatchupHistory %u\n", 
+    //            seq, DATA.ORD.ARU, DATA.ORD.stable_catchup, 2 * CATCHUP_HISTORY);
     return;
   }
 
@@ -1531,6 +2088,7 @@ void ORDER_Attempt_To_Garbage_Collect_ORD_Slot(int32u seq)
 
   ORDER_Garbage_Collect_ORD_Slot(slot, 1);
 }
+#endif
 
 void ORDER_Garbage_Collect_ORD_Slot(ord_slot *slot, int erase)
 {
@@ -1630,6 +2188,7 @@ void ORDER_Cleanup()
 
   UTIL_DLL_Clear(&DATA.PO.po_request_dll);
   UTIL_DLL_Clear(&DATA.PO.proof_matrix_dll);
+  UTIL_DLL_Clear(&DATA.PO.ack_batch_dll);
 
   UTIL_DLL_Clear(&DATA.SIG.pending_messages_dll);
 

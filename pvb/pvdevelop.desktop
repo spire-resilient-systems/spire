@@ -1,0 +1,15 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Comment=pvserver development for pvbrowser HMI/SCADA
+Encoding=UTF-8
+Exec=pvdevelop
+GenericName=pvdevelop
+Icon=/opt/pvb/logo1.png
+MimeType=
+Name=pvdevelop
+Path=
+StartupNotify=true
+Terminal=false
+TerminalOptions=
+Type=Application
+Categories=Development;

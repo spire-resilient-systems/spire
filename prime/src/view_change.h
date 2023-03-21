@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -46,6 +46,7 @@
 
 void VIEW_Initialize_Data_Structure(void);
 void VIEW_Initialize_Upon_View_Change(void);
+void VIEW_Upon_Reset(void);
 void VIEW_Periodic_Retrans(int d1, void *d2);
 
 void VIEW_Start_View_Change(void);

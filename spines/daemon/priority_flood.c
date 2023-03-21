@@ -16,9 +16,10 @@
  * License.
  *
  * The Creators of Spines are:
- *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, and Thomas Tantillo.
+ *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
+ *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2017 The Johns Hopkins University.
+ * Copyright (c) 2003 - 2018 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -406,13 +407,15 @@ int Priority_Flood_Disseminate(Link *src_link, sys_scatter *scat, int mode)
         if (scat->elements[scat->num_elements-1].len - sizeof(prio_flood_header) - MultiPath_Bitmask_Size < sign_len)
         {
             Alarm(PRINT, "Priority_Flood: sign_len is too small\r\n");
-            return NO_ROUTE;
+            ret = NO_ROUTE;
+            goto cr_return;
         }
 
         crypto_ret = EVP_VerifyInit(&md_ctx, EVP_sha256()); 
         if (crypto_ret != 1) { 
             Alarm(PRINT, "Priority_Flood: VerifyInit failed\r\n");
-            return NO_ROUTE;
+            ret = NO_ROUTE;
+            goto cr_return;
         }
 
         phdr = (packet_header*)scat->elements[0].buf;
@@ -427,7 +430,8 @@ int Priority_Flood_Disseminate(Link *src_link, sys_scatter *scat, int mode)
                 
             if (crypto_ret != 1) {
                 Alarm(PRINT, "Priority_Flood: VerifyUpdate failed\r\n");
-                return NO_ROUTE;
+                ret = NO_ROUTE;
+                goto cleanup;
             }
         }
 
@@ -443,9 +447,15 @@ int Priority_Flood_Disseminate(Link *src_link, sys_scatter *scat, int mode)
                             sign_len, Pub_Keys[src_id]);
         if (crypto_ret != 1) {
             Alarm(PRINT, "Priority_Flood: VerifyFinal failed\r\n");
-            return NO_ROUTE;
+            ret = NO_ROUTE;
+            goto cleanup;
         }
         hdr->ttl = temp_ttl;
+
+        cleanup:
+            EVP_MD_CTX_cleanup(&md_ctx);
+        cr_return:
+            if (ret != BUFF_OK) return ret;
     }
 
     if (Path_Stamp_Debug == 1) {

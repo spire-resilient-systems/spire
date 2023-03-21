@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -49,6 +49,9 @@
 extern server_variables     VAR;
 extern server_data_struct   DATA;
 
+/* Local Functions */
+void RB_Clear_Slots(void);
+
 /* TODO - Merge 1st half of each process RB function into a common one,
  * then split off the bottom half with switch statements and count
  * checks to their own functions */
@@ -63,15 +66,12 @@ void RB_Initialize_Data_Structure()
     }
 
     /* Reset specific data structures on every view change */
+    /* PRTODO: moved to when done recovering (or reset) */
     RB_Initialize_Upon_View_Change();
 }
 
 void RB_Initialize_Upon_View_Change()
 {
-    int32u i, j;
-    stdit it;
-    rb_slot *r_slot;
-
     DATA.RB.rb_seq = 1;
 
     /*      Garbage collecting the slots only upon the new view change
@@ -80,31 +80,18 @@ void RB_Initialize_Upon_View_Change()
      *      but it is a little tricky to prevent processing an old message
      *      as new. BUT - this may be needed for periodic retrans, or at
      *      least it makes it very convenient */
-    for (i = 1; i <= NUM_SERVERS; i++) {
-        for (stdhash_begin(&DATA.RB.instances[i], &it); 
-            !stdhash_is_end(&DATA.RB.instances[i], &it); stdit_next(&it))
-        {
-            r_slot = *(rb_slot **)stdit_val(&it);
-            if (r_slot->rb_msg)
-                dec_ref_cnt(r_slot->rb_msg);
-            if (r_slot->rb_init)
-                dec_ref_cnt(r_slot->rb_init);
-            for (j = 1; j <= NUM_SERVERS; j++) {
-                if (r_slot->rb_echo[j])
-                    dec_ref_cnt(r_slot->rb_echo[j]);
-                if (r_slot->rb_ready[j])
-                    dec_ref_cnt(r_slot->rb_ready[j]);
-            }
-            dec_ref_cnt(r_slot);
-        }
-        stdhash_clear(&DATA.RB.instances[i]);
-    }
-   
-    /* Start periodic retransmissions until we finish the view change
-     * and at least one ordinal thereafter */
-    RB_Periodic_Retrans(0, NULL);
+    RB_Clear_Slots();   
 }
 
+void RB_Upon_Reset()
+{
+    int32u i;
+
+    RB_Clear_Slots();
+    for (i = 1; i <= NUM_SERVERS; i++) {
+        stdhash_destruct(&DATA.RB.instances[i]);
+    }
+}
 
 void RB_Periodic_Retrans(int d1, void *d2)
 {
@@ -113,7 +100,7 @@ void RB_Periodic_Retrans(int d1, void *d2)
     sp_time t;
     rb_slot *r_slot;
 
-    if (DATA.VIEW.executed_ord == 1)
+    if (DATA.VIEW.executed_ord == 1 && DATA.PR.startup_finished == 1)
         return;
 
     for (i = 1; i <= NUM_SERVERS; i++) {
@@ -350,4 +337,31 @@ void RB_Process_Ready(signed_message *mess)
         return;
 
     PROCESS_Message(r_slot->rb_msg);
+}
+
+void RB_Clear_Slots()
+{
+    int32u i, j;
+    stdit it;
+    rb_slot *r_slot;
+
+    for (i = 1; i <= NUM_SERVERS; i++) {
+        for (stdhash_begin(&DATA.RB.instances[i], &it); 
+            !stdhash_is_end(&DATA.RB.instances[i], &it); stdit_next(&it))
+        {
+            r_slot = *(rb_slot **)stdit_val(&it);
+            if (r_slot->rb_msg)
+                dec_ref_cnt(r_slot->rb_msg);
+            if (r_slot->rb_init)
+                dec_ref_cnt(r_slot->rb_init);
+            for (j = 1; j <= NUM_SERVERS; j++) {
+                if (r_slot->rb_echo[j])
+                    dec_ref_cnt(r_slot->rb_echo[j]);
+                if (r_slot->rb_ready[j])
+                    dec_ref_cnt(r_slot->rb_ready[j]);
+            }
+            dec_ref_cnt(r_slot);
+        }
+        stdhash_clear(&DATA.RB.instances[i]);
+    }
 }

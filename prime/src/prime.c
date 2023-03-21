@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2017
+ * Copyright (c) 2008 - 2018
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -53,10 +53,12 @@
 #include "error_wrapper.h"
 #include "recon.h"
 #include "tc_wrapper.h"
+#include "proactive_recovery.h"
 
 /* Externally defined global variables */
-extern server_variables  VAR;
-extern network_variables NET;
+extern server_variables   VAR;
+extern network_variables  NET;
+extern server_data_struct DATA;
 
 /* Local Function Definitions */
 void Usage(int argc, char **argv);
@@ -72,7 +74,7 @@ int main(int argc, char** argv)
 
   Alarm( PRINT, "/===========================================================================\\\n");
   Alarm( PRINT, "| Prime                                                                     |\n");
-  Alarm( PRINT, "| Copyright (c) 2010 - 2017 Johns Hopkins University                        |\n"); 
+  Alarm( PRINT, "| Copyright (c) 2010 - 2018 Johns Hopkins University                        |\n"); 
   Alarm( PRINT, "| All rights reserved.                                                      |\n");
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| Prime is licensed under the Prime Open-Source License.                    |\n");
@@ -94,7 +96,7 @@ int main(int argc, char** argv)
   Alarm( PRINT, "| WWW:     www.dsn.jhu/prime   www.dsn.jhu.edu                              |\n");
   Alarm( PRINT, "| Contact: prime@dsn.jhu.edu                                                |\n");
   Alarm( PRINT, "|                                                                           |\n");
-  Alarm( PRINT, "| Version 3.0, Built May 17, 2017                                           |\n"); 
+  Alarm( PRINT, "| Version 3.1, Built March 14, 2018                                         |\n"); 
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use       |\n");
   Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                 |\n");
@@ -119,6 +121,7 @@ int main(int argc, char** argv)
   Init_Network();
   
   /* Initialize RSA Keys */
+  /* PRTODO: eventually change this to loading TPM public keys from ROM */
   OPENSSL_RSA_Init();
   OPENSSL_RSA_Read_Keys(VAR.My_Server_ID, RSA_SERVER);
   TC_Read_Public_Key();
@@ -128,6 +131,9 @@ int main(int argc, char** argv)
 
   /* Initialize this server's data structures */
   DAT_Initialize();  
+
+  /* Start the proactive recovery process for this replica */
+  PR_Start_Recovery();
 
   /* Start the server's main event loop */
   E_handle_events();
@@ -154,6 +160,7 @@ void Init_Memory_Objects(void)
 void Usage(int argc, char **argv)
 {
   int tmp;
+  float tmp2;
 
   if(NUM_SERVERS != (3*NUM_F + 2*NUM_K + 1)) {
     Alarm(PRINT, "Configuration error: NUM_SERVERS must equal 3f+2k+1\n");
@@ -163,6 +170,13 @@ void Usage(int argc, char **argv)
   VAR.My_Server_ID         = 1;
   VAR.F                    = NUM_F;
   VAR.K                    = NUM_K;
+
+  DATA.ORD.delay_attack           = 0;
+  DATA.ORD.microseconds_delayed   = 0;
+  DATA.ORD.step_duration          = 30.0;
+  DATA.ORD.inconsistent_pp_attack = 0;
+  DATA.ORD.inconsistent_pp_type   = 0;
+  DATA.ORD.inconsistent_delay     = 30.0;
 
   while(--argc > 0) {
     argv++;
@@ -175,6 +189,36 @@ void Usage(int argc, char **argv)
 	Alarm(PRINT,"Invalid server id: %d.  Index must be between 1 and %d.\n",
 	      VAR.My_Server_ID, NUM_SERVERS);
 	exit(0);
+      }
+      argc--; argv++;
+    }
+    else if( (argc > 2) && (!strncmp(*argv, "-d", 2)) ) {
+      DATA.ORD.delay_attack = 1;
+      sscanf(argv[1], "%d", &tmp);
+      DATA.ORD.microseconds_delayed = tmp;
+      argc--; argv++;
+      sscanf(argv[1], "%f", &tmp2);
+      DATA.ORD.step_duration = tmp2;
+      if (tmp2 == 0) {
+        Alarm(PRINT, "Invalid step duration %f. Must be > 0\n" , tmp2);
+        exit(0);
+      }
+      argc--; argv++;
+    }
+    else if ( (argc > 2) && (!strncmp(*argv, "-a", 2)) ) {
+      DATA.ORD.inconsistent_pp_attack = 1;
+      sscanf(argv[1], "%d", &tmp);
+      DATA.ORD.inconsistent_pp_type = tmp;
+      if (tmp < 1 || tmp > 3) {
+        Alarm(PRINT, "Invalid type %d to attack w/ inconsistent PP. 1, 2, or 3 is valid\n", tmp);
+        exit(0);
+      }
+      argc--; argv++;
+      sscanf(argv[1], "%f", &tmp2);
+      DATA.ORD.inconsistent_delay = tmp2;
+      if (tmp2 == 0) {
+        Alarm(PRINT, "Invalid inconsistent PP delay %f. Must be > 0\n" , tmp2);
+        exit(0);
       }
       argc--; argv++;
     }

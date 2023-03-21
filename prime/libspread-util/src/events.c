@@ -437,6 +437,17 @@ void	E_delay( sp_time t )
 
 }
 
+void    E_dequeue_all_time_events() 
+{
+	time_event *t_ptr;
+
+    while (Time_queue != NULL) 
+    {
+		t_ptr = Time_queue;
+		Time_queue = Time_queue->next;
+		dispose( t_ptr );
+    }
+}
 
 void    E_print_slow_event( struct event_record *ev )
 {
