@@ -1,0 +1,35 @@
+This is the v1.1.3 (January 2012) distribution of the StdUtil library.
+
+DESCRIPTION:
+
+The StdUtil library is a toolkit of C data structures and functions.
+
+LICENSE: 
+
+The license for use of the StdUtil library and/or its code is 
+contained in the file STDUTIL_LICENSE found in the root of this 
+distribution.
+
+DOCUMENTATION:
+
+Documentation is currently incomplete but will be available in a
+subsequent release in HTML format in the docs directory.  The
+documentation will also be available at:
+
+http://www.stdutil.org
+
+BUILDING: 
+
+StdUtil uses the standard configure/make process for building on unix 
+type systems, although it builds in place and does not have a make install
+option.
+
+PROBLEMS:
+
+Please report bugs and/or bug fixes to jschultz@spreadconcepts.com with a
+gdb compatible core (if possible) and any information that could help
+fix the problem.
+
+Enjoy,
+John Schultz <jschultz@spreadconcepts.com>
+January 2012

@@ -1,0 +1,140 @@
+Note: how to use management system to create problems on links:
+Run all the spines daemons with the -m parameter.
+Run setlink on the machine hosting the receiver side of the given link.
+./setlink 1000000 0 30 0 128.220.221.21 128.220.221.22 128.220.221.22 8100
+1000000 - bandwidth
+0 - latency
+30 - loss rate
+0 - burstiness
+first ip - source of the link we're changing
+second ip - dest of the link we're changing
+third ip - location of relevant spines daemon (easiest if
+            it's the same as the second ip)
+8100 - port that the daemon listens on
+
+Now, still on the machine hosting the receiver side of the link,
+you can cause delays in the other direction.
+./setlink 1000000 200 0 0 128.220.221.22 128.220.221.21 128.220.221.21 8100
+
+================================================================================
+
+(I) Low-Level
+
+(b) fairness w/ DL_Send
+    -each of the links to neighboring nodes should be fair
+        in terms of the messages they get to actually send
+        via the Link_Send (DL_send) function, since we are
+        only using 1 real connection out of this logical 
+        node. 
+    -We proposed using a leaky-bucket idea, where each link
+        puts messages into a queue that is managed by 
+        something at the DL_send level (below the links),
+        and thus will ensure that there is fairness between
+        any links that are trying to send.
+    -How efficient is this? Does it hit latency? Would it
+        tell the link that the message was successfully 
+        sent when it accepts that message into the queue,
+        or when it ACTUALLY gets sent?
+
+(d) interface with high-level
+    -mini leaky-bucket type idea, where the link maintains
+        a spot in the bucket for each possible dissemination
+        algorithm that stores messages if the link is full.
+        In this case, its the two flooding variants. Then,
+        the link needs to be able to tell which dissemination
+        algorithm tried to send a message on this link when it
+        was full, and set a flag to TRUE (if FALSE) as well
+        as register a callback function to call to tell the
+        upper-level that it now has room to send.
+
+    -The low-level has a variable that it maintains that will
+        rotate in a round-robin fashion between the different
+        dissemination schemes. Also, it will need to keep
+        track of a callback function (each high-level's send
+        function), that it can call when space opens up.
+        Baring future optimizations, each time an ACK is received
+        (no matter why), the low-level starts calling these
+        callback functions (starting at the saved variable). 
+        We must make sure that each callback function only 
+        gives exactly 1 (or 0) new messages. If a message was
+        inserted (dictated by a change in low-level's window
+        size), keep this dissemination as active (for the next
+        round). If not (no new message was sent), mark it
+        as inactive and don't consider it for the next round.
+        At the end of all this, remember the dissemination
+        scheme that last inserted a new packet (plus one) for
+        fairness (and save it in the variable).
+
+(f) What about flow control issues with/without TCP fairness?
+    -Currently, have timeouts on retransmissions, and also have
+        flow control to only send X=15 per time period
+    -For regular messages, we used to only send them if there
+        were no Retransmissions queued up. Should we still
+        do this?
+    -If TCP fairness is on, should this change?
+
+
+(II) Priority Flooding
+
+(b) We may need to include a "type" (for endianess check)
+    field on the prio_flood_header. This would represent
+    the endianess of the source (originating) node for that
+    message, so that the intermediate nodes would know how
+    to parse the header information and can put it back to
+    this endianess before passing on. This would ensure that
+    the signature checking always works out as well.
+
+(c) Garbage collection actually causes a small burst of loss
+    (we think on the receiver side). Is this because the 
+    OS recv buffers are being overwhelmed? What else could it
+    be due to?
+
+
+(IV) Red Team Attacks
+
+(a) AllNodes hash
+(b) hello protocol
+(c) control link (SetLoss_SeqNo function)
+
+All need to avoid using these, go around them if you will.
+
+The intrusion-tolerant link protocol doesn't need the "while" loop that is in
+priority_flood and reliable_flood. The link protocol has probing that takes
+care of this. However, if you want to do either flooding over a different
+link, which doesn't have the probing, you need the while loop. We should
+unify these at some point and stick to one (most likely the probing).
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Things to talk about with John and Jonathan
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+(A) Data Structures / Protocols that are not intrusion tolerant
+    AllNodes
+    Hello Protocol - can't destroy control link
+    Control Link - things break when this is not there
+    
+(B) Priority Level of some Events
+    Reading from session (HIGH), causes starvation of
+        reading from link protocols (MEDIUM)
+
+(C) Configuration Files
+    everything else that was command line (IP, Topology, etc)
+    HMAC length
+    DH Key length
+    RSA length
+    Where the key files are
+    public keys of everyone else (separate file?)
+    DH parameters (especially p)
+
+(D) Session Blocking?
+
+    (1) do we enforce one session to only go to one dst?
+        if not, do you only block as soon as they try to
+        send to a flow that is blocked then they get
+        stuck. Then, you can only unblock them when that
+        dst flow is unblocked.
+
+    (2) what if two sessions connected to same daemon 
+        trying to send to the same destination? need
+        to think about fairness between the two. one
+        can be malicious and drown out the other and
+        force them both to be blocked.

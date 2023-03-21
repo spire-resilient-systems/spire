@@ -1,0 +1,111 @@
+Version 5.2 - May 17, 2017
+    * Added configuration option to encrypt messages sent on intrusion-tolerant data link
+    * Added configuration option to enable or disable remote client connections to daemons
+    * Hardened code (security-wise) that is responsible for receiving messages from other daemons
+    * Added site multicast for Intrusion-Tolerant Messaging (Priority and Reliable Messaging):
+        - Messages sent with a specific destination port, when received at the destination daemon,
+          are delivered to all clients of that daemon that have joined the multicast group
+    * Added session option to specify behavior when the buffer between a daemon and its client fills
+        - Default option maintains connection but drops new packets that do not fit
+        - Other option closes the client connection when the buffer overflows
+    * Initial separation of K-paths from Intrusion-Tolerant Messaging - *EXPERIMENTAL*
+    * Added high resolution timestamps to Alarm logging
+    * Some minor bug fixes, including:
+        - Specific erroneous client connections are now cleaned up and do not cause daemon to exit
+        - Multi-path routing now correctly delivers messages to local clients in a multicast group 
+          even if the destination daemon cannot be reached
+
+Version 5.1 - May 17, 2016
+    * Added support for Inter-Process Communication (UNIX Domain Sockets)
+        - Daemon binds to default filepath, non-default path can be specified on cmd line or in config file
+        - Changes to libspines to support AF_UNIX connections (on UNIX architectures)
+        - Testprogs and Controlprogs updated - IPC is new default, can connect via non-default path or AF_INET
+                - Testprogs: sp_bflooder, sp_uflooder, sp_tflooder, port2spines, spines2port, sp_ping, sp_xcast
+                - Controlprogs: setlink
+    * New design (and improvements) for session blocking in Reliable Messaging
+    * Added DL_send_connected() to send scatter gather using send_msg function for connection-based AF_INET 
+            and AF_UNIX sockets
+    * Added new session semantics (chosen by application) needed for IT reliable communication:
+        - RELIABLE_STREAM: Block session when flow buffers become full toward any destination
+        - RELIABLE_DGRAM_NO_BACKPRESSURE: Silently drop messages that do not fit, no blocking
+                *Experimental* (May be subject to change)
+        - RELIABLE_DGRAM_WITH_BACKPRESSURE: Explicit feedback indicating which messages are accepted, no blocking
+                *Experimental* (Not in open source yet)
+    * Renamed both of the intrusion-tolerant messaging semantics to more accurately match behavior:
+        - Changed BEST_EFFORT_FLOOD_ROUTING to IT_PRIORITY_ROUTING
+        - Changed RELIABLE_FLOOD_ROUTING TO IT_RELIABLE_ROUTING
+    * Several minor bug fixes, including:
+        - Reliable Messaging - fairness in the presence of a certain attack
+        - Large bitmask support - for bitmasks larger than 64 bits
+        - Reliable Session - now correctly uses the routing notion
+
+Version 5.0 - January 26, 2015
+    * Added support for a configuration file (spines.conf) to specify:
+        - Network topology (nodes and edges)
+        - Parameters for new link and dissemination protocols
+        - Cryptographic options
+        - Intrusion Tolerance Mode - a new ability to harden Spines against potential insider attacks
+    * Support for multiple dissemination methods - each message now has both a dissemination and a link protocol
+    * New link protocol - Intrusion Tolerant Link
+    * New dissemination protocol - Priority Messaging with Source Fairness
+    * New dissemination protocol - Reliable Messaging with Flow Fairness
+    * Source-based routing, including node disjoint paths, using a bitmask per message
+    * Integrated with OpenSSL functions to provide cryptographic authentication in the new protocols above
+    * New test program (sp_bflooder), which functionally resembles sp_uflooder, but supports the new protocols above
+
+Version 4.0 - August, 2013
+    * Upgraded to use StdUtil 1.1.3
+    * Reorganized to use LibSpreadUtil 4.2.0
+    * Common forwarding and routing logic factored out and concentrated in route.c
+    * Minor improvements in state flood and hello protocols
+    * Minor improvements in build system; general code clean up
+    * Node, Interface, Leg and Edge ID's virtualized -- dissociated from network addresses (prepare for IPv6)
+    * Experimental SSL code removed
+
+Version 3.2 - May 15, 2009
+    * New package directory layout and organization.
+    * Mac OS X updated support.
+    * Win32 updated support.
+    * Updated Wireless code, so it is not compiled in unless -WIRELESS_SUPPORT option is enabled on the configure command line.
+    * SPINES_IP_TTL and SPINES_IP_MULTICAST_TTL time-to-live options on spines_setsockopt now available and supported.
+    * Added errno error reporting on client library errors.
+    * Upgraded to use StdUtil 1.1
+    * Several minor bug fixes.
+
+Version 3.1 - Mar 21, 2008
+    * Added spines_setsockopt() options to control Time-to-Live (ttl) value on overlay unicast/multicast/anycast packets.
+    * Added ability to retrieve overlay membership information through a spines_ioctl() call.
+    * Added ability to retrieve overlay network topology/distance/cost information through a spines_ioctl() call.
+    * Added ability to retrieve average network cost from any node to the members of a group through a spines_ioctl() call.
+    * Added wireless monitor capability to retrieve signal strength (RSSI) and other parameters in wireless environments.
+    * Several minor bug fixes. 
+
+Version 3.0 - May 31, 2007
+    * Added neighbor autodiscovery through IP-Multicast or broadcast.
+    * Added unicast kernel routing between daemons.
+    * Added kernel routing based on Multicast/Anycast group membership.
+    * Added Anycast group membership service.
+    * Added wireless option for setting different timers and behavior on wireless environments.
+    * Added multicast Loop option for setsockopt.
+    * Added endianess support for cross-platform deployments.
+    * Added SSL-based security on point-to-point communication between the daemons (experimental). 
+
+Version 2.2 - Dec 20, 2005
+    * Added support for creating custom topologies with dynamic link characteristics.
+    * Several minor bug fixes. 
+
+Version 2.1 - Jan 18, 2005
+    * Changed the API to closely resemble the regular socket interface.
+    * Added option for UDP communication between the applications and overlay nodes.
+    * New Real-Time link and routing protocol for use in time-sensitive applications such as VoIP.
+    * Added support for large data packets, up to 64KB for datagram communication and virtually unlimited for stream-based communication.
+    * Added end-to-end application flow control for stream-based communication. 
+
+Version 2.0 - Dec 14, 2003
+    * Added Multicast capabilities.
+    * Routing based on distance, latency or loss rate of the links.
+    * Stream based fairness option for the reliable link congestion control.
+    * Added setloss monitor command for setting loss and burstiness on overlay links. 
+
+Version 1.0 - Jan 17, 2003
+    * Initial release.

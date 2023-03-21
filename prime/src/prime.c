@@ -1,0 +1,191 @@
+/*
+ * Prime.
+ *     
+ * The contents of this file are subject to the Prime Open-Source
+ * License, Version 1.0 (the ``License''); you may not use
+ * this file except in compliance with the License.  You may obtain a
+ * copy of the License at:
+ *
+ * http://www.dsn.jhu.edu/prime/LICENSE.txt
+ *
+ * or in the file ``LICENSE.txt'' found in this distribution.
+ *
+ * Software distributed under the License is distributed on an AS IS basis, 
+ * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License 
+ * for the specific language governing rights and limitations under the 
+ * License.
+ *
+ * Creators:
+ *   Yair Amir            yairamir@cs.jhu.edu
+ *   Jonathan Kirsch      jak@cs.jhu.edu
+ *   John Lane            johnlane@cs.jhu.edu
+ *   Marco Platania       platania@cs.jhu.edu
+ *   Amy Babay            babay@cs.jhu.edu
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
+ *
+ * Major Contributors:
+ *   Brian Coan           Design of the Prime algorithm
+ *   Jeff Seibert         View Change protocol
+ *      
+ * Copyright (c) 2008 - 2017
+ * The Johns Hopkins University.
+ * All rights reserved.
+ * 
+ * Partial funding for Prime research was provided by the Defense Advanced 
+ * Research Projects Agency (DARPA) and the National Science Foundation (NSF).
+ * Prime is not necessarily endorsed by DARPA or the NSF.  
+ *
+ */
+
+#include <string.h>
+#include <stdlib.h>
+#include <signal.h>
+#include "arch.h"
+#include "spu_alarm.h"
+#include "spu_events.h"
+#include "spu_memory.h"
+#include "spu_data_link.h"
+#include "net_types.h"
+#include "objects.h"
+#include "network.h"
+#include "data_structs.h"
+#include "utility.h"
+#include "error_wrapper.h"
+#include "recon.h"
+#include "tc_wrapper.h"
+
+/* Externally defined global variables */
+extern server_variables  VAR;
+extern network_variables NET;
+
+/* Local Function Definitions */
+void Usage(int argc, char **argv);
+void Print_Usage(void);
+void Init_Memory_Objects(void);
+
+int main(int argc, char** argv) 
+{
+  setlinebuf(stdout);
+  Usage(argc, argv);
+  Alarm_set_types(NONE);
+  Alarm_enable_timestamp_high_res(NULL);
+
+  Alarm( PRINT, "/===========================================================================\\\n");
+  Alarm( PRINT, "| Prime                                                                     |\n");
+  Alarm( PRINT, "| Copyright (c) 2010 - 2017 Johns Hopkins University                        |\n"); 
+  Alarm( PRINT, "| All rights reserved.                                                      |\n");
+  Alarm( PRINT, "|                                                                           |\n");
+  Alarm( PRINT, "| Prime is licensed under the Prime Open-Source License.                    |\n");
+  Alarm( PRINT, "| You may only use this software in compliance with the License.            |\n");
+  Alarm( PRINT, "| A copy of the License can be found at http://www.prime.org/LICENSE.txt    |\n");
+  Alarm( PRINT, "|                                                                           |\n");
+  Alarm( PRINT, "| Creators:                                                                 |\n");
+  Alarm( PRINT, "|    Yair Amir                 yairamir@cs.jhu.edu                          |\n");
+  Alarm( PRINT, "|    Jonathan Kirsch           jak@cs.jhu.edu                               |\n");
+  Alarm( PRINT, "|    John Lane                 johnlane@cs.jhu.edu                          |\n");
+  Alarm( PRINT, "|    Marco Platania            platania@cs.jhu.edu                          |\n");
+  Alarm( PRINT, "|    Amy Babay                 babay@cs.jhu.edu                             |\n");
+  Alarm( PRINT, "|    Thomas Tantillo           tantillo@cs.jhu.edu                          |\n");
+  Alarm( PRINT, "|                                                                           |\n");
+  Alarm( PRINT, "| Major Contributors:                                                       |\n");
+  Alarm( PRINT, "|    Brian Coan                Design of the Prime algorithm                |\n");
+  Alarm( PRINT, "|    Jeff Seibert              View Change protocol                         |\n");
+  Alarm( PRINT, "|                                                                           |\n");
+  Alarm( PRINT, "| WWW:     www.dsn.jhu/prime   www.dsn.jhu.edu                              |\n");
+  Alarm( PRINT, "| Contact: prime@dsn.jhu.edu                                                |\n");
+  Alarm( PRINT, "|                                                                           |\n");
+  Alarm( PRINT, "| Version 3.0, Built May 17, 2017                                           |\n"); 
+  Alarm( PRINT, "|                                                                           |\n");
+  Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use       |\n");
+  Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                 |\n");
+  Alarm( PRINT, "| see http://www.spread.org                                                 |\n");
+  Alarm( PRINT, "\\===========================================================================/\n\n");  
+
+  /* This is the server program */
+  NET.program_type = NET_SERVER_PROGRAM_TYPE;  
+  
+  Alarm(PRINT,"Running Server %d\n", VAR.My_Server_ID);
+
+  // Ignore the SIGPIPE signal, handle manually with socket send error
+  signal(SIGPIPE, SIG_IGN);
+
+  /* Load server addresses from configuration file */
+  UTIL_Load_Addresses(); 
+  
+  ERROR_WRAPPER_Initialize(); 
+
+  E_init(); 
+  Init_Memory_Objects();
+  Init_Network();
+  
+  /* Initialize RSA Keys */
+  OPENSSL_RSA_Init();
+  OPENSSL_RSA_Read_Keys(VAR.My_Server_ID, RSA_SERVER);
+  TC_Read_Public_Key();
+  TC_Read_Partial_Key(VAR.My_Server_ID, 1); /* only "1" site */
+
+  Alarm(PRINT, "Finished reading keys.\n");
+
+  /* Initialize this server's data structures */
+  DAT_Initialize();  
+
+  /* Start the server's main event loop */
+  E_handle_events();
+
+  return 0;
+}
+
+void Init_Memory_Objects(void)
+{
+  /* Initilize memory object types  */
+  Mem_init_object_abort(PACK_BODY_OBJ,    "packet",         sizeof(packet),           100,  1);
+  Mem_init_object_abort(SYS_SCATTER,      "sys_scatter",    sizeof(sys_scatter),      100,  1);
+  Mem_init_object_abort(DLL_NODE_OBJ,     "dll_node_obj",   sizeof(dll_node_struct),  200, 20);
+  Mem_init_object_abort(PO_SLOT_OBJ,      "po_slot",        sizeof(po_slot),          200, 20);
+  Mem_init_object_abort(ORD_SLOT_OBJ,     "ord_slot",       sizeof(ord_slot),         200, 20);
+  Mem_init_object_abort(ERASURE_NODE_OBJ, "erasure_node",   sizeof(erasure_node),     200, 20);
+  Mem_init_object_abort(ERASURE_PART_OBJ, "erasure_part",   sizeof(erasure_part_obj), 200, 20);
+  Mem_init_object_abort(RECON_SLOT_OBJ,   "recon_slot",     sizeof(recon_slot),       200, 20);
+  Mem_init_object_abort(NET_STRUCT_OBJ,   "net_struct",     sizeof(net_struct),       200, 20);
+  Mem_init_object_abort(RB_SLOT_OBJ,      "rb_slot",        sizeof(rb_slot),          200, 20);
+  Mem_init_object_abort(MSG_ARRAY_OBJ,    "msg_array",      sizeof(signed_message *) * NUM_SERVER_SLOTS,          200, 20);
+}
+
+void Usage(int argc, char **argv)
+{
+  int tmp;
+
+  if(NUM_SERVERS != (3*NUM_F + 2*NUM_K + 1)) {
+    Alarm(PRINT, "Configuration error: NUM_SERVERS must equal 3f+2k+1\n");
+    exit(0);
+  }
+
+  VAR.My_Server_ID         = 1;
+  VAR.F                    = NUM_F;
+  VAR.K                    = NUM_K;
+
+  while(--argc > 0) {
+    argv++;
+
+    /* [-i server_id] */
+    if( (argc > 1) && (!strncmp(*argv, "-i", 2)) ) {
+      sscanf(argv[1], "%d", &tmp);
+      VAR.My_Server_ID = tmp;
+      if(VAR.My_Server_ID > NUM_SERVERS || VAR.My_Server_ID <= 0) {
+	Alarm(PRINT,"Invalid server id: %d.  Index must be between 1 and %d.\n",
+	      VAR.My_Server_ID, NUM_SERVERS);
+	exit(0);
+      }
+      argc--; argv++;
+    }
+    else
+      Print_Usage();
+  }
+}
+
+void Print_Usage()
+{
+  Alarm(PRINT, "Usage: ./server\n"
+	"\t[-i local_id, indexed base 1, default 1]\n");
+  exit(0);
+}

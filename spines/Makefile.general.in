@@ -1,0 +1,31 @@
+CC=@CC@
+LD=@LD@
+AR=@AR@
+RANLIB=@RANLIB@
+LEX=@LEX@
+INSTALL=@INSTALL@
+SOFTLINK=@LN_S@
+
+prefix=@prefix@
+exec_prefix=@exec_prefix@
+bindir=@bindir@
+sbindir=@sbindir@
+datarootdir=@datarootdir@
+libdir=@libdir@
+includedir=@includedir@
+mandir=@mandir@
+mansubdir=@mansubdir@
+sysconfdir=@sysconfdir@
+piddir=@piddir@
+buildtoolsdir=$(top_srcdir)/buildtools
+host=@host@
+
+include_dirs=../stdutil/include ../libspread-util/include ../libspines ../daemon $(top_srcdir)/stdutil/include $(top_srcdir)/libspread-util/include $(top_srcdir)/libspines $(top_srcdir)/daemon
+link_dirs=../stdutil/lib ../libspread-util/lib ../libspines $(top_srcdir)/stdutil/lib $(top_srcdir)/libspread-util/lib $(top_srcdir)/libspines
+libs=../stdutil/lib/libstdutil.a ../libspread-util/lib/libspread-util.a ../libspines/libspines.a
+
+CFLAGS+=@CFLAGS@ $(LOCAL_CFLAGS) $(addprefix -I, $(include_dirs)) 
+LDFLAGS+=@LDFLAGS@ $(addprefix -L, $(link_dirs))
+LIBS+=$(libs) @LIBS@ #$(addprefix -l, $(libs))
+EXEEXT=@EXEEXT@
+WIRELESS_SUPPORT=@WIRELESS_SUPPORT@

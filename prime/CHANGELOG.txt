@@ -1,0 +1,22 @@
+Version 3.0 - May 17, 2017
+    * Redesigned replication model:
+        - Each Prime replica now serves a single application replica
+        - Each Prime replica delivers a totally ordered stream of updates to its application replica
+        - Prime provides an ephemeral ordering service (no persistent storage). State transfer
+          must be handled at the application level. Prime signals the application if it may need 
+          to do a state transfer.
+    * Added support for network partitions:
+        - If no quorum of connected replicas, progress resumes once partition heals
+        - If replica(s) are partitioned from a quorum, will catchup once reconnected
+
+Version 2.0 - September 17, 2014
+    * Added support for Diversity (via MultiCompiler)
+    * Added support for Proactive Recovery
+    * Added State Transfer protocol:
+        - Allows a replica to recover a clean copy of the state (if necessary) after proactive recovery
+
+Version 1.1 - December 07, 2013
+    * Added Prime View Change implementation
+
+Version 1.0 - May 4, 2010
+    * Initial Release
