@@ -19,14 +19,18 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2018 The Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
  * --------------------
  *    John Lane
  *    Raluca Musaloiu-Elefteri
- *    Nilo Rivera
+ *    Nilo Rivera 
+ * 
+ * Contributor(s): 
+ * ----------------
+ *    Sahiti Bommareddy 
  *
  */
 
@@ -107,7 +111,7 @@ static int IT_Link_Send(Link *lk, sys_scatter *scat)
             goto FAIL;
         }
 
-        if ((len = Sec_lock_msg(scat, IT_Crypt_Buf, (int) sizeof(IT_Crypt_Buf), &itdata->encrypt_ctx, &itdata->hmac_ctx)) < 0)
+        if ((len = Sec_lock_msg(scat, IT_Crypt_Buf, (int) sizeof(IT_Crypt_Buf), itdata->encrypt_ctx, itdata->hmac_ctx)) < 0)
         {
             Alarm(PRINT, "IT_Link_Send: Sec_lock_msg failed!\n");
             goto FAIL;
@@ -192,7 +196,7 @@ int Preprocess_intru_tol_packet(sys_scatter *scat, int received_bytes, Interface
 
     /* if we have DH key for link, then try authenicating + decrypting msg; should fail for DH msgs */
     
-    if (itdata->dh_key_computed == 2 && (ret = Sec_unlock_msg(scat, IT_Crypt_Buf, sizeof(IT_Crypt_Buf), &itdata->decrypt_ctx, &itdata->hmac_ctx)) >= 0)
+    if (itdata->dh_key_computed == 2 && (ret = Sec_unlock_msg(scat, IT_Crypt_Buf, sizeof(IT_Crypt_Buf), itdata->decrypt_ctx, itdata->hmac_ctx)) >= 0)
     {
         unsigned char *src     = IT_Crypt_Buf;
         unsigned char *src_end = IT_Crypt_Buf + ret;
@@ -813,14 +817,14 @@ void Process_DH_IT(Link *lk, sys_scatter *scat,
             int32u type, int mode)
 {
     Int_Tol_Data *itdata;
-    int bn_size, ret, cr_fail;
+    int bn_size, ret;
     unsigned int sign_len;
     BIGNUM *bn;
     char *read_ptr, *end_ptr;
     stdit it;
     int32u src, dst, my_inc, ngbr_inc, src_id;
     sp_time now = E_get_time();
-    EVP_MD_CTX md_ctx;
+    EVP_MD_CTX *md_ctx;
     int16u data_len;
     packet_header *phdr;
 
@@ -924,6 +928,9 @@ void Process_DH_IT(Link *lk, sys_scatter *scat,
     }
     
     bn = BN_new();
+    if(bn==NULL){
+        Alarm(EXIT, "BN_new() failed \r\n");
+    }
     BN_bin2bn((unsigned char*)read_ptr, bn_size, bn);
     read_ptr += bn_size;
 
@@ -931,12 +938,12 @@ void Process_DH_IT(Link *lk, sys_scatter *scat,
     if (read_ptr + HMAC_Key_Len > end_ptr)
     {
         Alarm(PRINT, "Process_DH_IT:%d: packet too small!\n", __LINE__);
-        return;
+        goto bn_cleanup;
     }
     
     if (memcmp(read_ptr, Conf_Hash, HMAC_Key_Len) != 0) {
         Alarm(PRINT, "Process_DH_IT: hash of config files do not match!\r\n");
-        return;
+        goto bn_cleanup;
     }
     read_ptr += HMAC_Key_Len;
 
@@ -946,36 +953,37 @@ void Process_DH_IT(Link *lk, sys_scatter *scat,
     if (sign_len != Signature_Len || sign_len > data_len) {
         Alarm(PRINT, "Process_DH_IT: sign_len (%d) != Key_Len (%d), data_len = %d\n",
               sign_len, Signature_Len, data_len);
-        return;
+        goto bn_cleanup;
     }
 
     if (read_ptr + sign_len > end_ptr)
     {
         Alarm(PRINT, "Process_DH_IT:%d: packet too small!\n", __LINE__);
-        return;
+        goto bn_cleanup;
     }
 
-    cr_fail = 0;
-    ret = EVP_VerifyInit(&md_ctx, EVP_sha256()); 
+    md_ctx = EVP_MD_CTX_new();
+    if(md_ctx==NULL){
+        Alarm(EXIT, "Process_DH_IT:%d: failed to allocate EVP_MD_CTX\n", __LINE__);
+    }
+    ret = EVP_VerifyInit(md_ctx, EVP_sha256()); 
     if (ret != 1) { 
         Alarm(PRINT, "Process_DH_IT: VerifyInit failed\r\n");
-        return;
+        goto cr_cleanup;
     }
 
     /* Adjust seq_no on packet_header for checking signature */
     phdr->seq_no = 0;
-    ret = EVP_VerifyUpdate(&md_ctx, (unsigned char*)phdr, sizeof(packet_header));
+    ret = EVP_VerifyUpdate(md_ctx, (unsigned char*)phdr, sizeof(packet_header));
     if (ret != 1) {
         Alarm(PRINT, "Process_DH_IT: VerifyUpdate for packet_header failed\r\n");
-        cr_fail = 1;
         goto cr_cleanup;
     }
 
-    ret = EVP_VerifyUpdate(&md_ctx, (unsigned char*)scat->elements[1].buf, 
+    ret = EVP_VerifyUpdate(md_ctx, (unsigned char*)scat->elements[1].buf, 
                             (unsigned int)(data_len - sign_len));
     if (ret != 1) {
         Alarm(PRINT, "Process_DH_IT: VerifyUpdate for packet_body failed\r\n");
-        cr_fail = 1;
         goto cr_cleanup;
     }
 
@@ -983,23 +991,17 @@ void Process_DH_IT(Link *lk, sys_scatter *scat,
     if (stdhash_is_end(&Node_Lookup_Addr_to_ID,  &it)) {
         Alarm(PRINT, "Process_DH_IT: \
                       source not in config file");
-        cr_fail = 1;
         goto cr_cleanup;
     }
     src_id = *(int32u *)stdhash_it_val(&it);
     /* printf("SRC_ID = %d, MSG_LEN = %d, DATA_LEN = %d\n", src_id, data_len - sign_len, data_len); */
 
-    ret = EVP_VerifyFinal(&md_ctx, (unsigned char*)read_ptr, sign_len, 
+    ret = EVP_VerifyFinal(md_ctx, (unsigned char*)read_ptr, sign_len, 
                             Pub_Keys[src_id]);
     if (ret != 1) {
         Alarm(PRINT, "Process_DH_IT: VerifyFinal failed\r\n");
-        cr_fail = 1;
         goto cr_cleanup;
     }
-
-    cr_cleanup:
-        EVP_MD_CTX_cleanup(&md_ctx);
-        if (cr_fail) return;
 
     /* Possibly send response, maybe just set state flag */
     
@@ -1022,16 +1024,20 @@ void Process_DH_IT(Link *lk, sys_scatter *scat,
     E_queue(Ping_IT_Timeout, (int)lk->link_id, NULL, it_ping_timeout);
     E_queue(Loss_Calculation_Event, (int)lk->link_id, NULL, loss_calc_timeout);
     
-    /* clean up allocated memory from this function */
-    BN_clear_free(bn);
-
     /* Initialize crypto ctx's for this link */
-
-    EVP_EncryptInit_ex(&itdata->encrypt_ctx, EVP_aes_128_cbc(), NULL, itdata->dh_key, NULL);
-    EVP_DecryptInit_ex(&itdata->decrypt_ctx, EVP_aes_128_cbc(), NULL, itdata->dh_key, NULL);
-    HMAC_Init_ex(&itdata->hmac_ctx, itdata->dh_key, HMAC_Key_Len, EVP_sha256(), NULL);
+    EVP_EncryptInit_ex(itdata->encrypt_ctx, EVP_aes_128_cbc(), NULL, itdata->dh_key, NULL);
+    EVP_DecryptInit_ex(itdata->decrypt_ctx, EVP_aes_128_cbc(), NULL, itdata->dh_key, NULL);
+    HMAC_Init_ex(itdata->hmac_ctx, itdata->dh_key, HMAC_Key_Len, EVP_sha256(), NULL);
 
     Incarnation_Change(lk->link_id, ngbr_inc, mode);
+
+    /* clean up memory allocated for crypto ops */
+    /* if we had a meaningful return value, would want to distinguish failure
+     * vs. non-failure cases here, but that requires bigger changes */
+    cr_cleanup:
+        EVP_MD_CTX_free(md_ctx);
+    bn_cleanup:
+        BN_clear_free(bn);
 }
 
 /***********************************************************/
@@ -2922,7 +2928,8 @@ void Key_Exchange_IT(int link_id, void *dummy)
     unsigned int sign_len;
     char *write_ptr;
     packet_header *hdr;
-    EVP_MD_CTX md_ctx;
+    EVP_MD_CTX *md_ctx;
+    const BIGNUM *pub_key;
 
     UNUSED(dummy);
 
@@ -2995,7 +3002,8 @@ void Key_Exchange_IT(int link_id, void *dummy)
     write_ptr += sizeof(int32u);
     itdata->dh_pkt.elements[1].len += sizeof(int32u);
 
-    bn_size = BN_num_bytes(itdata->dh_local->pub_key);
+    pub_key = DH_get0_pub_key(itdata->dh_local);
+    bn_size = BN_num_bytes(pub_key);
     *(int16u*)write_ptr = (int16u)bn_size;
     write_ptr += sizeof(int16u);
     itdata->dh_pkt.elements[1].len += sizeof(int16u);
@@ -3003,7 +3011,7 @@ void Key_Exchange_IT(int link_id, void *dummy)
     if (itdata->dh_pkt.elements[1].len + bn_size > sizeof(packet_body))
         Alarm(EXIT, "Key_Exchange_IT: DH key too large for packet_body\r\n");
 
-    BN_bn2bin(itdata->dh_local->pub_key, (unsigned char*)write_ptr);
+    BN_bn2bin(pub_key, (unsigned char*)write_ptr);
     write_ptr += bn_size;
     itdata->dh_pkt.elements[1].len += bn_size;
 
@@ -3036,21 +3044,24 @@ void Key_Exchange_IT(int link_id, void *dummy)
     hdr->seq_no           = 0;
 
     /* SIGN THIS WITH PRIV KEY */
-    ret = EVP_SignInit(&md_ctx, EVP_sha256()); 
+    md_ctx = EVP_MD_CTX_new();
+    if(md_ctx==NULL)
+        Alarm(EXIT, "EVP_MD_CTX_new() failed\r\n");
+    ret = EVP_SignInit(md_ctx, EVP_sha256()); 
     if (ret != 1) 
         Alarm(PRINT, "Key_Exchange_IT: SignInit failed\r\n");
 
-    ret = EVP_SignUpdate(&md_ctx, (unsigned char*)itdata->dh_pkt.elements[0].buf, 
+    ret = EVP_SignUpdate(md_ctx, (unsigned char*)itdata->dh_pkt.elements[0].buf, 
                             itdata->dh_pkt.elements[0].len);
     if (ret != 1) 
         Alarm(PRINT, "Key_Exchange_IT: SignUpdate of scat header failed\r\n");
 
-    ret = EVP_SignUpdate(&md_ctx, (unsigned char*)itdata->dh_pkt.elements[1].buf, 
+    ret = EVP_SignUpdate(md_ctx, (unsigned char*)itdata->dh_pkt.elements[1].buf, 
                             itdata->dh_pkt.elements[1].len - Signature_Len);
     if (ret != 1) 
         Alarm(PRINT, "Key_Exchange_IT: SignUpdate of scat body failed\r\n");
 
-    ret = EVP_SignFinal(&md_ctx, (unsigned char*)write_ptr, &sign_len, Priv_Key);
+    ret = EVP_SignFinal(md_ctx, (unsigned char*)write_ptr, &sign_len, Priv_Key);
     if (ret != 1) 
         Alarm(PRINT, "Key_Exchange_IT: SignFinal failed\r\n");
 
@@ -3058,22 +3069,22 @@ void Key_Exchange_IT(int link_id, void *dummy)
         Alarm(PRINT, "Key_Exchange_IT: sign_len (%d) != Key_Len (%d)\r\n",
                         sign_len, Signature_Len);
 
-    EVP_MD_CTX_cleanup(&md_ctx);
+    EVP_MD_CTX_free(md_ctx);
 
-    /* ret = EVP_VerifyInit(&md_ctx, EVP_sha256()); 
+    /* ret = EVP_VerifyInit(md_ctx, EVP_sha256()); 
     if (ret != 1) { 
         Alarm(PRINT, "Key_Exchange_IT: VerifyInit failed\r\n");
         return;
     }
 
-    ret = EVP_VerifyUpdate(&md_ctx, (unsigned char*)itdata->dh_pkt.pkt, 
+    ret = EVP_VerifyUpdate(md_ctx, (unsigned char*)itdata->dh_pkt.pkt, 
                             itdata->dh_pkt.data_len - sign_len);
     if (ret != 1) {
         Alarm(PRINT, "Key_Exchange_IT: VerifyUpdate failed\r\n");
         return;
     }
 
-    ret = EVP_VerifyFinal(&md_ctx, (unsigned char*)write_ptr, sign_len, 
+    ret = EVP_VerifyFinal(md_ctx, (unsigned char*)write_ptr, sign_len, 
                             Pub_Keys[My_ID]);
     if (ret != 1) {
         Alarm(PRINT, "Key_Exchange_IT: VerifyFinal failed\r\n");

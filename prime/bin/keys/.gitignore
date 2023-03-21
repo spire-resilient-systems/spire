@@ -1,0 +1,3 @@
+# Ignore everything in this directory. Generated key files go here
+*
+!.gitignore

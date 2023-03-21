@@ -26,11 +26,13 @@
  *
  * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
+ *   Sahiti Bommareddy    Addition of IDS, Contributions to OpenSSL upgrade, latency optimization
  *
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
+ *   Daniel Qian          Contributions to IDS
  *
- * Copyright (c) 2018 Johns Hopkins University.
+ * Copyright (c) 2017-2020 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -186,5 +188,10 @@
 
 /* Debugging defines */
 #define PRINT_PROGRESS 1000
+
+/* OpenSSL defines */
+#define KEY_SIZE 	   1024
+#define DIGEST_SIZE        20
+#define SIGNATURE_SIZE     128
 
 #endif /* DEF_H */

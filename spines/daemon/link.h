@@ -19,14 +19,18 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2018 The Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
  * --------------------
  *    John Lane
  *    Raluca Musaloiu-Elefteri
- *    Nilo Rivera
+ *    Nilo Rivera 
+ * 
+ * Contributor(s): 
+ * ----------------
+ *    Sahiti Bommareddy 
  *
  */
 
@@ -361,9 +365,9 @@ typedef struct Int_Tol_Data_d {
     int32u                  loss_history_unique_packets[HISTORY_SIZE+1];
     double                  loss_history_decay[HISTORY_SIZE+1];
     /* Crypto Variables */
-    EVP_CIPHER_CTX          encrypt_ctx;
-    EVP_CIPHER_CTX          decrypt_ctx;
-    HMAC_CTX                hmac_ctx;
+    EVP_CIPHER_CTX          *encrypt_ctx;
+    EVP_CIPHER_CTX          *decrypt_ctx;
+    HMAC_CTX                *hmac_ctx;
     unsigned char          *dh_key;
     unsigned char           dh_established;
     unsigned char           dh_key_computed; /* 0, 1, or 2 */

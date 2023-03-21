@@ -1,3 +1,7 @@
+Version 5.5 - December 23, 2020
+    * The main change is this version is to use OpenSSL version 1.1.1.
+    * Allows use of key size 512 bits in addition to previous version's 1024 bits and 2048 bits
+
 Version 5.4 - November 26, 2018
     * The main change is this version is to the dissemination-graph-based
       routing algorithm

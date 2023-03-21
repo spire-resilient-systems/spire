@@ -19,14 +19,18 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2018 The Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
  * --------------------
  *    John Lane
  *    Raluca Musaloiu-Elefteri
- *    Nilo Rivera
+ *    Nilo Rivera 
+ * 
+ * Contributor(s): 
+ * ----------------
+ *    Sahiti Bommareddy 
  *
  */
 
@@ -454,10 +458,22 @@ int16 Create_Link(Network_Leg *leg,
             E_queue(Loss_Calculation_Event, (int)lk->link_id, NULL, loss_calc_timeout);
         }
         else { /* (Conf_IT_Link.Crypto == 1) { */
+            /* TODO: IT_Link is never destroyed in normal operation, so these
+             * CTX structures don't cause a leak today, but would be nice to
+             * add cleanup code (e.g. to make memory leak detection easier) */
             it_data->dh_local = PEM_read_DHparams(fopen("keys/dhparam.pem", "r"), NULL, NULL, NULL);
-            EVP_CIPHER_CTX_init(&it_data->encrypt_ctx);
-            EVP_CIPHER_CTX_init(&it_data->decrypt_ctx);
-            HMAC_CTX_init(&(it_data->hmac_ctx));
+            it_data->encrypt_ctx = EVP_CIPHER_CTX_new();
+            if(it_data->encrypt_ctx == NULL){
+                Alarm(EXIT, "EVP_CIPHER_CTX_new returned NULL trying to init encrypt_ctx\n");
+            }
+            it_data->decrypt_ctx = EVP_CIPHER_CTX_new();
+            if(it_data->decrypt_ctx == NULL){
+                Alarm(EXIT, "EVP_CIPHER_CTX_new returned NULL trying to init decrypt_ctx\n");
+            }
+            it_data->hmac_ctx = HMAC_CTX_new();
+            if(it_data->hmac_ctx == NULL){
+                Alarm(EXIT, "HMAC_CTX_new returned NULL trying to init hmac_ctx\n");
+            }
         }
 
         it_data->dissem_head.dissemination = (RESERVED_ROUTING_BITS >> ROUTING_BITS_SHIFT);

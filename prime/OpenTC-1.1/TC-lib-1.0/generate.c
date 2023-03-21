@@ -31,10 +31,11 @@
 #include "TC.h"
 
 #include <openssl/rsa.h>
+#include <openssl/pem.h>
 
 int jacobi(BIGNUM* p,BIGNUM* q);
 
-int TC_bn2int(BIGNUM *bn);
+int TC_bn2int(const BIGNUM *bn);
 
 TC_DEALER *TC_generate(int bits, int l, int k,unsigned long val_e)
 {
@@ -48,10 +49,11 @@ TC_DEALER *TC_generate(int bits, int l, int k,unsigned long val_e)
 
 	/* variablle to be used for calcualtion */
 	temp = BN_CTX_new();
+        if (temp == NULL) goto ret_err;
 	
 	/* variable to be used for initialization */
 	ctx = BN_CTX_new();
-        if (ctx == NULL) goto null_err;
+        if (ctx == NULL) goto cleanup_temp;
         BN_CTX_start(ctx);	
 
 	/* initialize the variables */
@@ -70,9 +72,9 @@ TC_DEALER *TC_generate(int bits, int l, int k,unsigned long val_e)
         sum = BN_CTX_get(ctx);
 	
 	/* check if either of these variable failed to initialize */
-	if( sum == NULL) goto null_err;
+	if( sum == NULL) goto cleanup_ctx;
 	
-	if( l <= k || l == 0 || k == 0 ) goto null_err;
+	if( l <= k || l == 0 || k == 0 ) goto cleanup_ctx;
 
 	/* initialize tc */
 	tc = TC_DEALER_new();
@@ -91,11 +93,11 @@ TC_DEALER *TC_generate(int bits, int l, int k,unsigned long val_e)
         *  p = 2p' + 1 and q = 2q'+1*/
         /*setting the safe to true will generate a strong prime*/
 
-        p = BN_generate_prime(NULL,bits,1,NULL,NULL,NULL,NULL);
-        if (p == NULL) goto null_err;
+        result = BN_generate_prime_ex(p,bits,1,NULL,NULL,NULL);
+        if (result == 0) goto null_err;
 
-        q = BN_generate_prime(NULL,bits,1,NULL,NULL,NULL,NULL);
-        if (q == NULL) goto null_err;
+        result = BN_generate_prime_ex(q,bits,1,NULL,NULL,NULL);
+        if (result == 0) goto null_err;
 
 	/*calculate n = p*q */
         result = BN_mul(tc->n,p,q,temp);
@@ -118,8 +120,8 @@ TC_DEALER *TC_generate(int bits, int l, int k,unsigned long val_e)
 	if( result == 0 ) goto null_err;
 	
 	if (val_e == 0) {
-	  tc->e = BN_generate_prime(NULL,bits,0,NULL,NULL,NULL,NULL);
-	  if( tc->e == NULL) goto null_err;
+	  result = BN_generate_prime_ex(tc->e,bits,0,NULL,NULL,NULL);
+	  if (result == 0) goto null_err;
 	} else {
 	  tc->e=BN_new();
 	  if( tc->e == NULL) goto null_err;
@@ -273,9 +275,12 @@ null_err:
 	/* free the allocate memory and exit */
 	if( tc !=  NULL)
 		TC_DEALER_free(tc);
+cleanup_ctx:
 	BN_CTX_end(ctx);
         BN_CTX_free(ctx);
+cleanup_temp:
         BN_CTX_free(temp);
+ret_err:
 	return NULL;
 }	
 
@@ -285,6 +290,7 @@ TC_IND * TC_read_share(char* file)
 	int j;
 	RSA* current;
 	FILE * read;
+    const BIGNUM *n, *e, *d;
 
 	printf("Reading %s", file);
 	read = fopen(file, "r");
@@ -295,31 +301,36 @@ TC_IND * TC_read_share(char* file)
 	current = RSA_new();
 	
 	PEM_read_RSAPublicKey(read, &current, NULL, NULL);
-	tci->l = TC_bn2int(current->e);
-	tci->k = TC_bn2int(current->n);
+    RSA_get0_key(current, &n, &e, &d);
+	tci->l = TC_bn2int(e);
+	tci->k = TC_bn2int(n);
 	/*tci->l = atoi(BN_bn2dec(current->e));
 	tci->k = atoi(BN_bn2dec(current->n));*/
 
 	PEM_read_RSAPublicKey(read, &current, NULL, NULL);
+    RSA_get0_key(current, &n, &e, &d);
 	/*tci->mynum = atoi(BN_bn2dec(current->e));*/
-	tci->mynum = TC_bn2int(current->e);
-	tci->v = BN_dup(current->n);
+	tci->mynum = TC_bn2int(e);
+	tci->v = BN_dup(n);
 
 	PEM_read_RSAPublicKey(read, &current, NULL, NULL);
-	tci->u = BN_dup(current->e);
-	tci->e = BN_dup(current->n);
+    RSA_get0_key(current, &n, &e, &d);
+	tci->u = BN_dup(e);
+	tci->e = BN_dup(n);
 	
 	PEM_read_RSAPublicKey(read, &current, NULL, NULL);
-	tci->n = BN_dup(current->e);
-	tci->si = BN_dup(current->n);
+    RSA_get0_key(current, &n, &e, &d);
+	tci->n = BN_dup(e);
+	tci->si = BN_dup(n);
 
 	tci->vki = (BIGNUM**)(OPENSSL_malloc(tci->l * sizeof(BIGNUM*)));	
 	for(j=0; j<tci->l; j+=2)
 	{
 		PEM_read_RSAPublicKey(read, &current, NULL, NULL);
-		(tci->vki)[j] = BN_dup(current->e);
+        RSA_get0_key(current, &n, &e, &d);
+		(tci->vki)[j] = BN_dup(e);
 		if(j+1 != tci->l)
-			(tci->vki)[j+1] = BN_dup(current->n);
+			(tci->vki)[j+1] = BN_dup(n);
 	}
 	tci->Hp= EVP_md5();
 
@@ -351,6 +362,7 @@ TC_PK * TC_read_public_key(char* file)
 	RSA* ret = RSA_new();
 	FILE* read = fopen(file, "r");
 	TC_PK * tcpk;
+    const BIGNUM *n, *e, *d;
 
 	if (!read)
 		fprintf(stderr, "TC_read_public_key: Error opening file");
@@ -359,8 +371,9 @@ TC_PK * TC_read_public_key(char* file)
 	fclose(read);
 
 	tcpk = (TC_PK*)(malloc(sizeof(TC_PK)));
-	tcpk->e = BN_dup(ret->e);
-	tcpk->n = BN_dup(ret->n);
+    RSA_get0_key(ret, &n, &e, &d);
+	tcpk->e = BN_dup(e);
+	tcpk->n = BN_dup(n);
 	RSA_free(ret);
 
 	return tcpk;
@@ -375,6 +388,7 @@ void TC_write_shares(TC_DEALER* dealer, char* directory, int site_number )
 	char buf[512];
 	int i, j;
 	unsigned long fInfo;
+    BIGNUM *e, *n;
 
 	struct stat statbuf;
 	if(stat(directory, &statbuf) != 0) 
@@ -413,32 +427,35 @@ BN_print_fp(stdout, tci->si);
 printf("\n-----End user %d-----\n", i);
 #endif /* DEBUG */
 
-		current->e = BN_new();
-		current->n = BN_new();
-
-		BN_set_word((current->e), tci->l);
-		BN_set_word(current->n, tci->k);
+		e = BN_new();
+		n = BN_new();
+		BN_set_word(e, tci->l);
+		BN_set_word(n, tci->k);
+        RSA_set0_key(current, n, e, NULL);
 		PEM_write_RSAPublicKey(out,current);
 
-		BN_set_word(current->e, tci->mynum);
-		BN_free(current->n);
-		current->n = tci->v;
-		PEM_write_RSAPublicKey(out,current);
-		BN_free(current->e);
-
-		current->e = tci->u;
-		current->n = tci->e;
+		e = BN_new();
+		BN_set_word(e, tci->mynum);
+		n = BN_dup( tci->v);
+        RSA_set0_key(current, n, e, NULL);
 		PEM_write_RSAPublicKey(out,current);
 
-		current->e = tci->n;
-		current->n = tci->si;
+		e = BN_dup(tci->u);
+		n = BN_dup(tci->e);
+        RSA_set0_key(current, n, e, NULL);
+		PEM_write_RSAPublicKey(out,current);
+
+		e = BN_dup(tci->n);
+		n = BN_dup(tci->si);
+        RSA_set0_key(current, n, e, NULL);
 		PEM_write_RSAPublicKey(out,current);
 		
 		for(j=0; j<dealer->l; j+=2)
 		{
-			current->e = (tci->vki)[j];
+			e = BN_dup((tci->vki)[j]);
 			if(j+1 != dealer->l)
-				current->n = (tci->vki)[j+1];
+				n = BN_dup((tci->vki)[j+1]);
+            RSA_set0_key(current, n, e, NULL);
 			PEM_write_RSAPublicKey(out,current);
 		}
 		TC_IND_free(tci);
@@ -447,18 +464,17 @@ printf("\n-----End user %d-----\n", i);
 
 	sprintf(buf, "%s/pubkey_%d.pem", directory,site_number);
 	out = fopen(buf, "w");
-	current->e = dealer->e;
-	current->n = dealer->n;
+	e = BN_dup(dealer->e);
+	n = BN_dup(dealer->n);
+    RSA_set0_key(current, n, e, NULL);
 	PEM_write_RSAPublicKey(out, current);
-	current->e = NULL;
-	current->n = NULL;
 	RSA_free(current);
 	fclose(out);
 
 	printf("Done Writing\n");
 }
 
-int TC_bn2int(BIGNUM *bn)
+int TC_bn2int(const BIGNUM *bn)
 {
     int ret;
     char *bn_string;

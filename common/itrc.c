@@ -26,11 +26,13 @@
  *
  * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
+ *   Sahiti Bommareddy    Addition of IDS, Contributions to OpenSSL upgrade, latency optimization
  *
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
+ *   Daniel Qian          Contributions to IDS
  *
- * Copyright (c) 2018 Johns Hopkins University.
+ * Copyright (c) 2017-2020 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -524,7 +526,7 @@ void *ITRC_Prime_Inject(void *data)
                             sizeof(signed_message) + mess->len - SIGNATURE_SIZE,
                             (unsigned char *)mess, mess->machine_id, RSA_CLIENT);
                 if (!ret) {
-                    printf("RSA_Verify Failed of Client Update from %d\n", mess->machine_id);
+                    printf("Prime Inject: RSA_Verify Failed for Client Update from %d with message type (%d)\n", mess->machine_id, mess->type);
                     continue;
                 }
 

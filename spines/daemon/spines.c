@@ -19,14 +19,19 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2018 The Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
  * --------------------
  *    John Lane
  *    Raluca Musaloiu-Elefteri
- *    Nilo Rivera
+ *    Nilo Rivera 
+ * 
+ * Contributor(s): 
+ * ----------------
+ *    Sahiti Bommareddy 
+ *
  *
  */
 
@@ -336,7 +341,7 @@ int main(int argc, char* argv[])
 
     Alarm( PRINT, "/===========================================================================\\\n");
     Alarm( PRINT, "| Spines                                                                    |\n");
-    Alarm( PRINT, "| Copyright (c) 2003 - 2018 Johns Hopkins University                        |\n"); 
+    Alarm( PRINT, "| Copyright (c) 2003 - 2020 Johns Hopkins University                        |\n"); 
     Alarm( PRINT, "| All rights reserved.                                                      |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| Spines is licensed under the Spines Open-Source License.                  |\n");
@@ -354,13 +359,16 @@ int main(int argc, char* argv[])
     Alarm( PRINT, "| Major Contributors:                                                       |\n");
     Alarm( PRINT, "|    John Lane                 johnlane@cs.jhu.edu                          |\n");
     Alarm( PRINT, "|    Raluca Musaloiu-Elefteri  ralucam@cs.jhu.edu                           |\n");
-    Alarm( PRINT, "|    Nilo Rivera               nrivera@cs.jhu.edu                           |\n");
+    Alarm( PRINT, "|    Nilo Rivera                nrivera@cs.jhu.edu                           |\n");
+    Alarm( PRINT, "|                                                                           |\n");
+    Alarm( PRINT, "| Contributors:                                                             |\n");
+    Alarm( PRINT, "|    Sahiti Bommareddy         sahiti@jhu.edu                               |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| WWW:     www.spines.org      www.dsn.jhu.edu                              |\n");
     Alarm( PRINT, "| Contact: spines@spines.org                                                |\n");
     Alarm( PRINT, "|                                                                           |\n");
-    Alarm( PRINT, "| Version 5.4, Built November 26, 2018                                      |\n"); 
+    Alarm( PRINT, "| Version 5.5, Built December 23, 2020                                      |\n"); 
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use       |\n");
     Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                 |\n");

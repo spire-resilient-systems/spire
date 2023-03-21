@@ -19,14 +19,18 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2018 The Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
  * --------------------
  *    John Lane
  *    Raluca Musaloiu-Elefteri
- *    Nilo Rivera
+ *    Nilo Rivera 
+ * 
+ * Contributor(s): 
+ * ----------------
+ *    Sahiti Bommareddy 
  *
  */
 
@@ -85,7 +89,8 @@ int main(int argc, char* argv[])
     struct         sockaddr *daemon_ptr = NULL;
     int            ss, sr, bytes, num, ret, i;
     fd_set         mask;
-    fd_set         dummy_mask,temp_mask;
+    //fd_set         dummy_mask,temp_mask;
+    fd_set         temp_mask;
     char           mess_buf[MAX_MESS_LEN];
     char           input_buf[80];
     struct ip_mreq mreq;
@@ -257,7 +262,7 @@ int main(int argc, char* argv[])
     /*************************************************************/
     ret = 1;
     FD_ZERO( &mask );
-    FD_ZERO( &dummy_mask );
+    //FD_ZERO( &dummy_mask );
     FD_SET( sr, &mask );
     if (Sender == 1) {
         FD_SET( (long)0, &mask );   /* stdin */
@@ -266,7 +271,7 @@ int main(int argc, char* argv[])
     {
         temp_mask = mask;
         bytes = 0;
-        num = select( FD_SETSIZE, &temp_mask, &dummy_mask, &dummy_mask, NULL);
+        num = select( FD_SETSIZE, &temp_mask, NULL, NULL, NULL);
         if (num > 0) {
             if ( FD_ISSET( sr, &temp_mask) ) {
                 bytes = spines_recvfrom(sr, mess_buf, sizeof(mess_buf), 0, NULL, 0);

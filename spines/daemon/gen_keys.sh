@@ -1,5 +1,7 @@
 #!/bin/bash
 
+mkdir -p keys
+
 openssl dhparam -outform PEM -out keys/dhparam.pem 2048
 
 # Change this to the number of nodes in the network

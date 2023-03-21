@@ -19,14 +19,18 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2018 The Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
  * --------------------
  *    John Lane
  *    Raluca Musaloiu-Elefteri
- *    Nilo Rivera
+ *    Nilo Rivera 
+ * 
+ * Contributor(s): 
+ * ----------------
+ *    Sahiti Bommareddy 
  *
  */
 
@@ -325,9 +329,9 @@ void Conf_set_all_crypto(bool new_state)
 
 void Conf_set_signature_len_bits(int new_value)
 {
-    if (new_value != 2048 && new_value != 1024)
+    if (new_value != 2048 && new_value != 1024 && new_value != 512)
         Alarm(EXIT, "Conf_signature_len_bits: Configuration File must "
-                "specify either 1024 or 2048 bit signatures\r\n");
+                "specify either 512 or 1024 or 2048 bit signatures\r\n");
     Signature_Len_Bits = new_value;
 }
 

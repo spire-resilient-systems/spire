@@ -284,7 +284,7 @@ int TC_Combine_Sigs_P1(TC_IND_SIG **ind_sigs, TC_IND *key, BIGNUM *hM, int check
   return TC_NOERROR;
 }
 
-int TC_Combine_Sigs_P2(TC_IND *key, BIGNUM *hM, TC_SIG *sig, BIGNUM *wexps, int *Set_S) {
+int TC_Combine_Sigs_P2(TC_IND *key, BIGNUM *hM, TC_SIG *sig, BIGNUM **wexps, int *Set_S) {
   BN_CTX *ctx=NULL;
   BIGNUM *w=NULL; 
   BIGNUM *temp=NULL,*temp2=NULL,*temp3=NULL, *temp4=NULL;
@@ -316,7 +316,7 @@ int TC_Combine_Sigs_P2(TC_IND *key, BIGNUM *hM, TC_SIG *sig, BIGNUM *wexps, int 
   /* Compute w */
   if (!BN_one(w)) return (ret_error(NULL,Set_S, ctx, TC_BN_ARTH_ERROR));
   for (j=0;j<key->k;j++) {
-    if (!BN_mod_mul(w,w,&(wexps[j]),key->n,ctx)) return (ret_error(NULL,Set_S, ctx, TC_BN_ARTH_ERROR));
+    if (!BN_mod_mul(w,w,wexps[j],key->n,ctx)) return (ret_error(NULL,Set_S, ctx, TC_BN_ARTH_ERROR));
   }
   
   /* Use extended Euclidean Algorithm */

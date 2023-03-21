@@ -1,9 +1,4 @@
 #!/bin/bash
-
-# NON-STANDARD GCC LOCATION: Set CXX_LOC to your g++ >= 4.9
-# CXX_LOC=/toolchains/bin/g++
-CXX_LOC=g++
-
 echo Building OpenPLC environment:
 
 echo [MATIEC COMPILER]
@@ -18,20 +13,60 @@ cp ./matiec_src/iec2c ./
 ./iec2c ./st_files/blank_program.st
 mv -f POUS.c POUS.h LOCATED_VARIABLES.h VARIABLES.csv Config0.c Config0.h Res0.c ./core/
 
+echo [ST OPTIMIZER]
+cd st_optimizer_src
+g++ st_optimizer.cpp -o st_optimizer
+cd ..
+cp ./st_optimizer_src/st_optimizer ./
+
 echo [GLUE GENERATOR]
 cd glue_generator_src
-$CXX_LOC glue_generator.cpp -o glue_generator
+g++ glue_generator.cpp -o glue_generator
 cd ..
 cp ./glue_generator_src/glue_generator ./core/glue_generator
 
+clear
+echo OpenPLC can talk Modbus/TCP and DNP3 SCADA protocols. Modbus/TCP is already
+echo added to the system. Do you want to add support for DNP3 as well \(Y/N\)?
+read DNP3_SUPPORT
+if [ "$DNP3_SUPPORT" = "Y" -o "$DNP3_SUPPORT" = "y" -o "$DNP3_SUPPORT" = "yes" ]; then
+	echo Installing DNP3 on the system...
+
+	#moving files to the right place
+	mv ./core/dnp3.disabled ./core/dnp3.cpp 2> /dev/null
+	mv ./core/dnp3_dummy.cpp ./core/dnp3_dummy.disabled 2> /dev/null
+	cp -f ./core/core_builders/dnp3_enabled/*.* ./core/core_builders/
+
+	cd dnp3_build
+
+	#build opendnp3 and install locally
+	INSTALL_LOC=./install
+
+	# NON-STANDARD GCC LOCATION: Set C_LOC and CXX_LOC to your gcc and g++ >= 4.9
+	# and pass these options to cmake (uncomment following 3 lines and comment
+	# out other cmake
+	# Also make sure to change `core/core_builders/dnp3_enabled/build_normal.sh`
+	#C_LOC=/toolchains/bin/gcc
+	#CXX_LOC=/toolchains/bin/g++
+	#cmake ../opendnp3 -DSTATICLIBS=ON -DCMAKE_C_COMPILER=$C_LOC -DCMAKE_CXX_COMPILER=$CXX_LOC -DCMAKE_INSTALL_PREFIX=$INSTALL_LOC
+
+	cmake ../dnp3 -DSTATICLIBS=ON -DCMAKE_INSTALL_PREFIX=$INSTALL_LOC 
+        make 
+       	make install
+
+	cd ..
+else
+	echo Skipping DNP3 installation
+	mv ./core/dnp3.cpp ./core/dnp3.disabled 2> /dev/null
+	mv ./core/dnp3_dummy.disabled ./core/dnp3_dummy.cpp 2> /dev/null
+	cp -f ./core/core_builders/dnp3_disabled/*.* ./core/core_builders/
+fi
 cd core
 rm -f ./hardware_layer.cpp
 rm -f ../build_core.sh
-echo
-echo
 echo The OpenPLC needs a driver to be able to control physical or virtual hardware.
 echo Please select the driver you would like to use:
-OPTIONS="Blank Modbus Fischertechnik RaspberryPi UniPi PiXtend Arduino ESP8266 Arduino+RaspberryPi Simulink "
+OPTIONS="Blank Modbus Fischertechnik RaspberryPi UniPi PiXtend PiXtend_2S Arduino ESP8266 Arduino+RaspberryPi Simulink "
 select opt in $OPTIONS; do
 	if [ "$opt" = "Blank" ]; then
 		cp ./hardware_layers/blank.cpp ./hardware_layer.cpp
@@ -77,6 +112,13 @@ select opt in $OPTIONS; do
 		exit
 	elif [ "$opt" = "PiXtend" ]; then
 		cp ./hardware_layers/pixtend.cpp ./hardware_layer.cpp
+		cp ./core_builders/build_rpi.sh ../build_core.sh
+		echo [OPENPLC]
+		cd ..
+		./build_core.sh
+		exit
+	elif [ "$opt" = "PiXtend_2S" ]; then
+		cp ./hardware_layers/pixtend2s.cpp ./hardware_layer.cpp
 		cp ./core_builders/build_rpi.sh ../build_core.sh
 		echo [OPENPLC]
 		cd ..

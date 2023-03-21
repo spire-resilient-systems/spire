@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2018
+ * Copyright (c) 2008-2020
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -437,6 +437,8 @@ void Initialize_Spines(int dummy, void *dummy_p)
   spines_ip = htonl(UTIL_Get_Server_Spines_Address(VAR.My_Server_ID));
   NET.Spines_Channel = -1;
 
+  Alarm(DEBUG, "Spines IP: "IPF", My IP: "IPF"\n", 
+	  IP(spines_ip), IP(my_ip));
 #if 0
   /* ========== Connect to spines for Reliable (Bounded) ========= */
   spines_recv_sk = -1;

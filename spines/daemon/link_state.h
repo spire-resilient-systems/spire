@@ -19,14 +19,18 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2018 The Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
  * --------------------
  *    John Lane
  *    Raluca Musaloiu-Elefteri
- *    Nilo Rivera
+ *    Nilo Rivera 
+ * 
+ * Contributor(s): 
+ * ----------------
+ *    Sahiti Bommareddy 
  *
  */
 
@@ -67,7 +71,7 @@ typedef struct Edge_d
     struct Node_d *src;                    /* Source node */
     struct Node_d *dst;                    /* Destination node */
 
-    struct Network_Leg_d   *leg;                    /* the underlying communication leg */
+    struct Network_Leg_d   *leg;           /* the underlying communication leg */
   
 } Edge;
 

@@ -26,11 +26,13 @@
  #
  # Major Contributors:
  #   Marco Platania       Contributions to architecture design 
+ #   Sahiti Bommareddy    Addition of IDS, Contributions to OpenSSL upgrade, latency optimization
  #
  # Contributors:
  #   Samuel Beckley       Contributions to HMIs 
+ #   Daniel Qian          Contributions to IDS
  #
- # Copyright (c) 2018 Johns Hopkins University.
+ # Copyright (c) 2017-2020 Johns Hopkins University.
  # All rights reserved.
  #
  # Partial funding for Spire research was provided by the Defense Advanced 
@@ -48,7 +50,7 @@ CXX=g++
 #CXXLIB=-Wl,-rpath,/toolchains/lib64
 CXXFLAGS= -std=gnu++11
 
-DNP3_DIR=../opendnp3/opendnp3_build/install
+DNP3_DIR=../OpenPLC_v2/dnp3_build/install
 LIBS=-lpthread ../prime/OpenTC-1.1/TC-lib-1.0/.libs/libTC.a \
            ../spines/libspines/libspines.a ../prime/stdutil/lib/libstdutil.a \
 		   $(DNP3_DIR)/lib/libasiodnp3.a $(DNP3_DIR)/lib/libasiopal.a \

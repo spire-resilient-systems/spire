@@ -19,14 +19,18 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2018 The Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
  * --------------------
  *    John Lane
  *    Raluca Musaloiu-Elefteri
- *    Nilo Rivera
+ *    Nilo Rivera 
+ * 
+ * Contributor(s): 
+ * ----------------
+ *    Sahiti Bommareddy 
  *
  */
 
@@ -2183,7 +2187,7 @@ int Reliable_Flood_Send_E2E (Node *next_hop, int ngbr_index, int mode)
     unsigned char       *sign_start, crypto_fail = 0;
     sys_scatter         *scat;
     unsigned int        sign_len;
-    EVP_MD_CTX          md_ctx;
+    EVP_MD_CTX          *md_ctx;
 
     assert(ngbr_index >= 1 && ngbr_index <= Degree[My_ID]);
     rfldata = &RF_Edge_Data[ngbr_index];
@@ -2266,27 +2270,31 @@ int Reliable_Flood_Send_E2E (Node *next_hop, int ngbr_index, int mode)
     if (My_ID == d) {
         /* RSA Sign */
         if (Conf_Rel.Crypto == 1) {
-            ret = EVP_SignInit(&md_ctx, EVP_sha256()); 
+            md_ctx = EVP_MD_CTX_new();
+            if (md_ctx==NULL) {
+                Alarm(EXIT, "RF_Send_E2E: EVP_MD_CTX_new()  failed\r\n");
+            }
+            ret = EVP_SignInit(md_ctx, EVP_sha256()); 
             if (ret != 1) {
                 Alarm(PRINT, "RF_Send_E2E: SignInit failed\r\n");
                 crypto_fail = 1;
             }
         
             /* add the phdr->type */
-            ret = EVP_SignUpdate(&md_ctx, (unsigned char*)&phdr->type, sizeof(phdr->type));
+            ret = EVP_SignUpdate(md_ctx, (unsigned char*)&phdr->type, sizeof(phdr->type));
             if (ret != 1) {
                 Alarm(PRINT, "RF_Send_E2E: SignUpdate failed on phdr->type = %d\r\n", phdr->type);
                 crypto_fail = 1;
             }
 
             /* add the e2e ack */
-            ret = EVP_SignUpdate(&md_ctx, (unsigned char*)&E2E[My_ID], 
+            ret = EVP_SignUpdate(md_ctx, (unsigned char*)&E2E[My_ID], 
                                 sizeof(rel_flood_e2e_ack));
             if (ret != 1) {
                 Alarm(PRINT, "RF_Send_E2E: SignUpdate failed on E2E Ack\r\n");
                 crypto_fail = 1;
             }
-            ret = EVP_SignFinal(&md_ctx, (unsigned char*)E2E_Sig[My_ID], 
+            ret = EVP_SignFinal(md_ctx, (unsigned char*)E2E_Sig[My_ID], 
                                 &sign_len, Priv_Key);
             if (ret != 1) {
                 Alarm(PRINT, "RF_Send_E2E: SignFinal failed\r\n");
@@ -2298,7 +2306,7 @@ int Reliable_Flood_Send_E2E (Node *next_hop, int ngbr_index, int mode)
                 crypto_fail = 1;
             }
 
-            EVP_MD_CTX_cleanup(&md_ctx);
+            EVP_MD_CTX_free(md_ctx);
         }
     }
     
@@ -2943,7 +2951,7 @@ int Reliable_Flood_Verify(sys_scatter *scat, int32u src_id, unsigned char type)
     int i, ret, last_elem = scat->num_elements - 1;
     udp_header *hdr;
     packet_header *phdr;
-    EVP_MD_CTX md_ctx;
+    EVP_MD_CTX *md_ctx;
 
     /* Verify the RSA Signature */
     if (Conf_Rel.Crypto == 0)
@@ -2956,14 +2964,18 @@ int Reliable_Flood_Verify(sys_scatter *scat, int32u src_id, unsigned char type)
     temp_ttl = hdr->ttl;
     hdr->ttl = 0;
 
-    ret = EVP_VerifyInit(&md_ctx, EVP_sha256()); 
+    md_ctx = EVP_MD_CTX_new();
+    if (md_ctx==NULL) {
+        Alarm(EXIT, "RF_Verify: EVP_MD_CTX_new()  failed\r\n");
+    }
+    ret = EVP_VerifyInit(md_ctx, EVP_sha256()); 
     if (ret != 1) { 
         Alarm(PRINT, "RF_Verify: VerifyInit failed\r\n");
-        return ret;
+        goto cr_cleanup;
     }
 
     phdr = (packet_header*)scat->elements[0].buf;
-    ret = EVP_VerifyUpdate(&md_ctx, (unsigned char*)&phdr->type, sizeof(phdr->type));
+    ret = EVP_VerifyUpdate(md_ctx, (unsigned char*)&phdr->type, sizeof(phdr->type));
     if (ret != 1) {
         Alarm(PRINT, "RF_Verify: VerifyUpdate failed. p_hdr->type = %d\r\n", phdr->type);
         goto cr_cleanup;
@@ -2972,10 +2984,10 @@ int Reliable_Flood_Verify(sys_scatter *scat, int32u src_id, unsigned char type)
     if (type == REL_FLOOD_DATA) {
         for (i = 1; i < last_elem; i++) {
             if (i < last_elem - 1) 
-                ret = EVP_VerifyUpdate(&md_ctx, (unsigned char*)scat->elements[i].buf, 
+                ret = EVP_VerifyUpdate(md_ctx, (unsigned char*)scat->elements[i].buf, 
                             (unsigned int)scat->elements[i].len);
             else
-                ret = EVP_VerifyUpdate(&md_ctx, (unsigned char*)scat->elements[i].buf, 
+                ret = EVP_VerifyUpdate(md_ctx, (unsigned char*)scat->elements[i].buf, 
                             (unsigned int)scat->elements[i].len - Rel_Signature_Len);
                 
             if (ret != 1) {
@@ -2985,7 +2997,7 @@ int Reliable_Flood_Verify(sys_scatter *scat, int32u src_id, unsigned char type)
         }
     }
     else if (type == REL_FLOOD_E2E) {
-        ret = EVP_VerifyUpdate(&md_ctx, 
+        ret = EVP_VerifyUpdate(md_ctx, 
                         (unsigned char*)scat->elements[1].buf + sizeof(udp_header), 
                         sizeof(rel_flood_e2e_ack));
         if (ret != 1) {
@@ -2994,7 +3006,7 @@ int Reliable_Flood_Verify(sys_scatter *scat, int32u src_id, unsigned char type)
         }
     }
     else if (type == STATUS_CHANGE) {
-        ret = EVP_VerifyUpdate(&md_ctx, 
+        ret = EVP_VerifyUpdate(md_ctx, 
                         (unsigned char*)scat->elements[1].buf + sizeof(udp_header), 
                         sizeof(status_change));
         if (ret != 1) {
@@ -3006,7 +3018,7 @@ int Reliable_Flood_Verify(sys_scatter *scat, int32u src_id, unsigned char type)
         Alarm(EXIT, "Reliable_Flood_Verify: invalid r_hdr type for verifying "
                         "signatures - %d\r\n", type);
 
-    ret = EVP_VerifyFinal(&md_ctx, 
+    ret = EVP_VerifyFinal(md_ctx, 
                         (unsigned char*)(scat->elements[last_elem - 1].buf +
                             scat->elements[last_elem - 1].len - Rel_Signature_Len),
                         Rel_Signature_Len, Pub_Keys[src_id]);
@@ -3016,7 +3028,7 @@ int Reliable_Flood_Verify(sys_scatter *scat, int32u src_id, unsigned char type)
     }
 
     cr_cleanup:
-        EVP_MD_CTX_cleanup(&md_ctx);
+        EVP_MD_CTX_free(md_ctx);
         if (ret != 1) return ret;
 
     hdr->ttl = temp_ttl;
@@ -3042,7 +3054,7 @@ void Reliable_Flood_Restamp( void )
     Rel_Flood_Link_Data *rfldata;
     Flow_Queue          *temp_fq;
     Flow_Buffer         *fb;
-    EVP_MD_CTX          md_ctx;
+    EVP_MD_CTX          *md_ctx;
     stdit               it;
     Node                *nd;
     
@@ -3114,23 +3126,27 @@ void Reliable_Flood_Restamp( void )
                     }
                     
                     /* Sign with Priv_Key */
-                    ret = EVP_SignInit(&md_ctx, EVP_sha256()); 
+                    md_ctx = EVP_MD_CTX_new();
+                    if (md_ctx == NULL) {
+                        Alarm(EXIT, "Reliable_Flood_Restamp: EVP_MD_CTX_new()  failed\r\n");
+                    }
+                    ret = EVP_SignInit(md_ctx, EVP_sha256()); 
                     if (ret != 1) {
                         Alarm(PRINT, "Reliable_Flood_Restamp: SignInit failed\r\n");
                         error = 1;
-                        continue;
+                        goto cr_cleanup;
                     }
 
                     /* Add each part of the message to be signed into the md_ctx */
                     /* First, sign over the type in the packet_header */
-                    ret = EVP_SignUpdate(&md_ctx, (unsigned char*)&phdr->type, sizeof(phdr->type));
+                    ret = EVP_SignUpdate(md_ctx, (unsigned char*)&phdr->type, sizeof(phdr->type));
 
                     /* Strip off old signature */
                     fb->msg[index]->elements[fb->msg[index]->num_elements-2].len -= Rel_Signature_Len;
 
                     /* Sign over the remaining elements in the message (not including the rt) */
                     for (k = 1; k < fb->msg[index]->num_elements - 1; k++) {
-                        ret = EVP_SignUpdate(&md_ctx, (unsigned char*)fb->msg[index]->elements[k].buf, 
+                        ret = EVP_SignUpdate(md_ctx, (unsigned char*)fb->msg[index]->elements[k].buf, 
                                                 fb->msg[index]->elements[k].len);
                         if (ret != 1) {
                             Alarm(PRINT, "Reliable_Flood_Restamp: SignUpdate failed\r\n");
@@ -3141,7 +3157,7 @@ void Reliable_Flood_Restamp( void )
                     if (error == 1)
                         goto cr_cleanup;
 
-                    ret = EVP_SignFinal(&md_ctx, sign_ptr, &sign_len, Priv_Key);
+                    ret = EVP_SignFinal(md_ctx, sign_ptr, &sign_len, Priv_Key);
                     if (ret != 1) {
                         Alarm(PRINT, "Reliable_Flood_Restamp: SignFinal failed\r\n");
                         error = 1;
@@ -3166,7 +3182,7 @@ void Reliable_Flood_Restamp( void )
                     }
 
                     cr_cleanup:
-                        EVP_MD_CTX_cleanup(&md_ctx);
+                        EVP_MD_CTX_free(md_ctx);
                         if (error) continue;
                 }
 
@@ -3751,7 +3767,7 @@ int Send_Status_Change (Node *next_hop, int ngbr_index, int mode)
     sys_scatter         *scat;
     unsigned char       crypto_fail = 0;
     unsigned int        sign_len;
-    EVP_MD_CTX          md_ctx;
+    EVP_MD_CTX          *md_ctx;
 
     assert(ngbr_index >= 1 && ngbr_index <= Degree[My_ID]);
     rfldata = &RF_Edge_Data[ngbr_index];
@@ -3834,27 +3850,31 @@ int Send_Status_Change (Node *next_hop, int ngbr_index, int mode)
     if (creator == My_ID) {
         /* RSA Sign */
         if (Conf_Rel.Crypto == 1) {
-            ret = EVP_SignInit(&md_ctx, EVP_sha256()); 
+            md_ctx = EVP_MD_CTX_new();
+            if (md_ctx == NULL) {
+                Alarm(EXIT, "Send_Status_Change: EVP_MD_CTX_new() failed\r\n");
+            }
+            ret = EVP_SignInit(md_ctx, EVP_sha256()); 
             if (ret != 1) {
                 Alarm(PRINT, "Send_Status_Change: SignInit failed\r\n");
                 crypto_fail = 1;
             }
             
             /* add the phdr->type */
-            ret = EVP_SignUpdate(&md_ctx, (unsigned char*)&phdr->type, sizeof(phdr->type));
+            ret = EVP_SignUpdate(md_ctx, (unsigned char*)&phdr->type, sizeof(phdr->type));
             if (ret != 1) {
                 Alarm(PRINT, "Send_Status_Change: SignUpdate failed on phdr->type = %d\r\n", phdr->type);
                 crypto_fail = 1;
             }
 
             /* add the e2e ack */
-            ret = EVP_SignUpdate(&md_ctx, (unsigned char*)&Status_Change[My_ID], 
+            ret = EVP_SignUpdate(md_ctx, (unsigned char*)&Status_Change[My_ID], 
                                 sizeof(status_change));
             if (ret != 1) {
                 Alarm(PRINT, "Send_Status_Change: SignUpdate failed\r\n");
                 crypto_fail = 1;
             }
-            ret = EVP_SignFinal(&md_ctx, (unsigned char*)Status_Change_Sig[My_ID], 
+            ret = EVP_SignFinal(md_ctx, (unsigned char*)Status_Change_Sig[My_ID], 
                                 &sign_len, Priv_Key);
             if (ret != 1) {
                 Alarm(PRINT, "Send_Status_Change: SignFinal failed\r\n");
@@ -3866,7 +3886,7 @@ int Send_Status_Change (Node *next_hop, int ngbr_index, int mode)
                 crypto_fail = 1;
             }
 
-            EVP_MD_CTX_cleanup(&md_ctx);
+            EVP_MD_CTX_free(md_ctx);
         }
     }
 

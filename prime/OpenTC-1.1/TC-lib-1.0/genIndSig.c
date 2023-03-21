@@ -34,6 +34,20 @@
 /* Proof of correctness:
    c = H'(v,xt,vi,xi^2,v^z*vi^-c,xt^z*xi^-2c)*/
 
+static int add_bn_to_EVP_digest(EVP_MD_CTX *ctx, BIGNUM *bn) {
+  int bn_size;
+  unsigned char *bn_char;
+
+  bn_size = BN_num_bytes(bn);
+  bn_char = (unsigned char*) OPENSSL_malloc(bn_size); /* AB: check this */
+  if (bn_char == NULL) return TC_ALLOC_ERROR;
+  BN_bn2bin(bn, bn_char);
+  EVP_DigestUpdate(ctx,bn_char,bn_size);
+  OPENSSL_free(bn_char);
+
+  return 0;
+}
+
 static int ret_error_veri(BN_CTX *ctx, int errno) {
   BN_CTX_end(ctx);
   BN_CTX_free(ctx);
@@ -41,10 +55,12 @@ static int ret_error_veri(BN_CTX *ctx, int errno) {
 }
 
 int TC_Check_Proof(TC_IND *tcind, BIGNUM*_x,TC_IND_SIG* sign, int signum) {
-  EVP_MD_CTX ctx;
+  EVP_MD_CTX *ctx;
   int hLength;
   unsigned char *tempc;
   int retJacobi;
+  int bn_err = 0;
+  int result;
 
   BN_CTX *temp=NULL;
   BIGNUM* x =NULL;  
@@ -161,30 +177,61 @@ int TC_Check_Proof(TC_IND *tcind, BIGNUM*_x,TC_IND_SIG* sign, int signum) {
     return(ret_error_veri(temp,TC_BN_ARTH_ERROR));
   }
 
-  EVP_DigestInit(&ctx,tcind->Hp);
-  EVP_DigestUpdate(&ctx,tcind->v->d,(tcind->v->top)*sizeof(BN_ULONG));
-  EVP_DigestUpdate(&ctx,xt->d,(xt->top)*sizeof(BN_ULONG));
-  EVP_DigestUpdate(&ctx,tcind->vki[signum]->d,(tcind->vki[signum]->top)*sizeof(BN_ULONG));
-  EVP_DigestUpdate(&ctx,xiSq->d,(xiSq->top)*sizeof(BN_ULONG));
-  EVP_DigestUpdate(&ctx,calcTemp4->d,(calcTemp4->top)*sizeof(BN_ULONG));
-  EVP_DigestUpdate(&ctx,calcTemp6->d,(calcTemp6->top)*sizeof(BN_ULONG));
-  EVP_DigestFinal(&ctx,tempc,&hLength);
-  EVP_MD_CTX_cleanup(&ctx);
+  /* AB: check this... */
+  if ((ctx = EVP_MD_CTX_new()) == NULL) {
+    bn_err = 1;
+    goto bn_cleanup;
+  }
+  if (EVP_DigestInit(ctx,tcind->Hp) != 1) {
+    bn_err = 1;
+    goto ctx_cleanup;
+  }
+  if (add_bn_to_EVP_digest(ctx, tcind->v) < 0) {
+    bn_err = 1;
+    goto ctx_cleanup;
+  }
+  if (add_bn_to_EVP_digest(ctx,xt) < 0) {
+    bn_err = 1;
+    goto ctx_cleanup;
+  }
+  if (add_bn_to_EVP_digest(ctx,tcind->vki[signum]) < 0) {
+    bn_err = 1;
+    goto ctx_cleanup;
+  }
+  if (add_bn_to_EVP_digest(ctx,xiSq) < 0) {
+    bn_err = 1;
+    goto ctx_cleanup;
+  }
+  if (add_bn_to_EVP_digest(ctx,calcTemp4) < 0) {
+    bn_err = 1;
+    goto ctx_cleanup;
+  }
+  if (add_bn_to_EVP_digest(ctx,calcTemp6) < 0) {
+    bn_err = 1;
+    goto ctx_cleanup;
+  }
+  if (EVP_DigestFinal(ctx,tempc,&hLength) != 1) {
+    bn_err = 1;
+    goto ctx_cleanup;
+  }
   
   BN_bin2bn(tempc,hLength,calcTemp);
 
-  OPENSSL_free(tempc);
-
   if (BN_cmp(calcTemp,sign->proof_c)==0) {
-    BN_CTX_end(temp);
-    BN_CTX_free(temp);
-    return 1;
+    result = 1;
+  } else {
+    result = 0;
   }
 
-  BN_CTX_end(temp);
-  BN_CTX_free(temp);
-  
-  return 0;
+  ctx_cleanup:
+    EVP_MD_CTX_free(ctx);
+  bn_cleanup:
+    OPENSSL_free(tempc);
+    BN_CTX_end(temp);
+    BN_CTX_free(temp);
+
+  if (bn_err) return TC_ERROR;
+  return result;
 }
 
 
@@ -216,10 +263,11 @@ int genIndSig(TC_IND *tcind,BIGNUM *_x,TC_IND_SIG* sign, int genproof) {
   BIGNUM *xt ;
   BIGNUM *xiSq ;
   BIGNUM *tempz ;
-  EVP_MD_CTX ctx;
+  EVP_MD_CTX *ctx;
   unsigned char *tempc;
   int hLength;
   int retJacobi;
+  int bn_err = 0;
 
   if (tcind->mynum == -1)
     return (TC_ERROR);
@@ -316,31 +364,69 @@ int genIndSig(TC_IND *tcind,BIGNUM *_x,TC_IND_SIG* sign, int genproof) {
     if ((tempc = (unsigned char*)OPENSSL_malloc(EVP_MAX_MD_SIZE))==NULL)
       return(ret_error_veri(temp,TC_ALLOC_ERROR));
 
-
-    EVP_DigestInit(&ctx,tcind->Hp);
-    EVP_DigestUpdate(&ctx,tcind->v->d,(tcind->v->top)*sizeof(BN_ULONG));
-    EVP_DigestUpdate(&ctx,xt->d,(xt->top)*sizeof(BN_ULONG));
-    EVP_DigestUpdate(&ctx,tcind->vki[tcind->mynum]->d,(tcind->vki[tcind->mynum]->top)*sizeof(BN_ULONG));
-    EVP_DigestUpdate(&ctx,xiSq->d,(xiSq->top)*sizeof(BN_ULONG));
-    EVP_DigestUpdate(&ctx,vp->d,(vp->top)*sizeof(BN_ULONG));
-    EVP_DigestUpdate(&ctx,xp->d,(xp->top)*sizeof(BN_ULONG));
-    EVP_DigestFinal(&ctx,tempc,&hLength); 
-    EVP_MD_CTX_cleanup(&ctx);
+    /* AB: check this... */
+    if ((ctx = EVP_MD_CTX_new()) == NULL) {
+      bn_err = TC_ALLOC_ERROR;
+      goto bn_cleanup;
+    }
+    if (EVP_DigestInit(ctx,tcind->Hp) != 1) {
+      bn_err = TC_ERROR;
+      goto ctx_cleanup;
+    }
+    if (add_bn_to_EVP_digest(ctx,tcind->v) < 0) {
+      bn_err = TC_ALLOC_ERROR;
+      goto ctx_cleanup;
+    }
+    if (add_bn_to_EVP_digest(ctx,xt) < 0) {
+      bn_err = TC_ALLOC_ERROR;
+      goto ctx_cleanup;
+    }
+    if (add_bn_to_EVP_digest(ctx,tcind->vki[tcind->mynum]) < 0) {
+      bn_err = TC_ALLOC_ERROR;
+      goto ctx_cleanup;
+    }
+    if (add_bn_to_EVP_digest(ctx,xiSq) < 0) {
+      bn_err = TC_ALLOC_ERROR;
+      goto ctx_cleanup;
+    }
+    if (add_bn_to_EVP_digest(ctx,vp) < 0) {
+      bn_err = TC_ALLOC_ERROR;
+      goto ctx_cleanup;
+    }
+    if (add_bn_to_EVP_digest(ctx,xp) < 0) {
+      bn_err = TC_ALLOC_ERROR;
+      goto ctx_cleanup;
+    }
+    if (EVP_DigestFinal(ctx,tempc,&hLength) != 1) {
+      bn_err = TC_ERROR;
+      goto ctx_cleanup;
+    }
 
     BN_bin2bn(tempc,hLength,sign->proof_c);
 
-    OPENSSL_free(tempc);
-
-    if(!(BN_mul(tempz,tcind->si,sign->proof_c,temp)))
-      return(ret_error_veri(temp,TC_ALLOC_ERROR));
+    if(!(BN_mul(tempz,tcind->si,sign->proof_c,temp))) {
+      bn_err = TC_ALLOC_ERROR;
+      goto cleanup_final;
+    }
 
     /*set z*/
-    if(!(BN_add(sign->proof_z,tempz,calcTemp)))
-      return(ret_error_veri(temp,TC_ALLOC_ERROR));
+    if(!(BN_add(sign->proof_z,tempz,calcTemp))) {
+      bn_err = TC_ALLOC_ERROR;
+      goto cleanup_final;
+    }
+
+    ctx_cleanup:
+      EVP_MD_CTX_free(ctx);
+
+    bn_cleanup:
+      OPENSSL_free(tempc);
+
   }
   
-  BN_CTX_end(temp);
-  BN_CTX_free(temp);
+  cleanup_final:
+    BN_CTX_end(temp);
+    BN_CTX_free(temp);
 
+  if (bn_err != 0) return bn_err;
   return TC_NOERROR;
 }

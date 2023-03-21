@@ -27,7 +27,7 @@
 #    Brian Coan           Design of the Prime algorithm
 #    Jeff Seibert         View Change protocol
 #       
-#  Copyright (c) 2008 - 2018
+#  Copyright (c) 2008-2020
 #  The Johns Hopkins University.
 #  All rights reserved.
 #  

@@ -19,14 +19,18 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2018 The Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
  * --------------------
  *    John Lane
  *    Raluca Musaloiu-Elefteri
- *    Nilo Rivera
+ *    Nilo Rivera 
+ * 
+ * Contributor(s): 
+ * ----------------
+ *    Sahiti Bommareddy 
  *
  */
 
@@ -1723,7 +1727,7 @@ int Session_Send_Message(Session *ses)
     rel_flood_header *r_hdr;
     sb_header *s_hdr;
     rel_flood_tail *rt;
-    EVP_MD_CTX md_ctx;
+    EVP_MD_CTX *md_ctx;
     int cr_ret;
 
     if (ses->scat == NULL)
@@ -1938,18 +1942,24 @@ int Session_Send_Message(Session *ses)
                 path[i] = (unsigned char) 0;
             }
         }
-        ret = EVP_SignInit(&md_ctx, EVP_sha256()); 
+
+        md_ctx = EVP_MD_CTX_new();
+        if (md_ctx==NULL) {
+            Alarm(EXIT, "Session_Send_Message: EVP_MD_CTX_new failed\r\n");
+        }
+        ret = EVP_SignInit(md_ctx, EVP_sha256()); 
         if (ret != 1) {
             Alarm(PRINT, "Session_Send_Message: SignInit failed\r\n");
             Cleanup_Scatter(ses->scat); ses->scat = NULL;
-            return NO_ROUTE;
+            cr_ret = NO_ROUTE;
+            goto cr_return;
         }
         /* Add each part of the message to be signed into the md_ctx */
         /*      Sign over the type in the packet_header */
-        ret = EVP_SignUpdate(&md_ctx, (unsigned char*)&phdr->type, sizeof(phdr->type));
+        ret = EVP_SignUpdate(md_ctx, (unsigned char*)&phdr->type, sizeof(phdr->type));
         /*      Sign over the remaining elements in the message */
         for (i = 1; i < ses->scat->num_elements; i++) {
-            ret = EVP_SignUpdate(&md_ctx, (unsigned char*)ses->scat->elements[i].buf, ses->scat->elements[i].len);
+            ret = EVP_SignUpdate(md_ctx, (unsigned char*)ses->scat->elements[i].buf, ses->scat->elements[i].len);
             if (ret != 1) {
                 Alarm(PRINT, "Session_Send_Message: SignUpdate failed\r\n");
                 Cleanup_Scatter(ses->scat); ses->scat = NULL;
@@ -1957,7 +1967,7 @@ int Session_Send_Message(Session *ses)
                 goto cr_return;
             }
         }
-        ret = EVP_SignFinal(&md_ctx, sign_ptr, &sign_len, Priv_Key);
+        ret = EVP_SignFinal(md_ctx, sign_ptr, &sign_len, Priv_Key);
         if (ret != 1) {
             Alarm(PRINT, "Session_Send_Message: SignFinal failed\r\n");
             Cleanup_Scatter(ses->scat); ses->scat = NULL;
@@ -1980,7 +1990,7 @@ int Session_Send_Message(Session *ses)
         }
 
         cr_return:
-            EVP_MD_CTX_cleanup(&md_ctx);
+            EVP_MD_CTX_free(md_ctx);
             if (cr_ret != BUFF_OK) return cr_ret;
     }
 

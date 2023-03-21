@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2018
+ * Copyright (c) 2008-2020
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -122,6 +122,57 @@ int poseqcmp(const void *n1, const void *n2)
    else if (p1.seq_num > p2.seq_num)
      return 1;
    return 0;
+}
+
+void Load_Addrs_From_File(char *fileName, int32 addrs[NUM_SERVER_SLOTS]) 
+{
+  FILE *f;
+  int32u num_assigned, num_expected;
+  int32u server;
+  int32 ip1,ip2,ip3,ip4;
+  
+  /* Initialize data structure with 0s */
+  for (server = 0; server < NUM_SERVER_SLOTS; server++)
+    addrs[server] = 0;
+  
+  /* Open file */
+  if((f = fopen(fileName, "r")) == NULL)
+    Alarm(EXIT, "   ERROR Load_Addrs_From_File: Could not open the address file: %s\n", fileName);
+ 
+  /* Read file. Each line has the following format:
+   *    server_id ip1.ip2.ip3.ip4
+   */
+  num_expected = 5;
+  num_assigned = fscanf(f,"%d %d.%d.%d.%d", &server, &ip1, &ip2, &ip3, &ip4);
+  while (num_assigned == num_expected) {
+    Alarm(DEBUG,"Load_Addrs_From_File: read server %d, IP: %d.%d.%d.%d "
+                "(%d/%d fields assigned correctly)\n", server, ip1, ip2, ip3,
+                ip4, num_assigned, num_expected);
+
+    /* Sanity check input */
+    if (server <= 0 || server > NUM_SERVERS) {
+        Alarm(EXIT, "ERROR: Load_Addrs_From_File: Invalid input. Config includes "
+                    "server %d outside valid range (1 - %d).\n", server, NUM_SERVERS);
+    }
+    if (addrs[server] != 0) {
+        Alarm(EXIT, "ERROR: Load_Addrs_From_File: Multiple entries for server "
+                    "%d\n", server);
+    }
+
+    /* Correctly formatted input. Store the address */
+    addrs[server] = ((ip1 << 24 ) | (ip2 << 16) | (ip3 << 8) | ip4);
+
+    /* Read next line */
+    num_assigned = fscanf(f,"%d %d.%d.%d.%d", &server, &ip1, &ip2, &ip3, &ip4);
+  }
+  
+  /* Validate that every entry of the data structure was initialized */
+  for (server = 1; server <= NUM_SERVERS; server++) {
+    if (addrs[server] == 0)
+        Alarm(EXIT, "ERROR: Load_Addrs_From_File: Invalid input. Config missing server %d.\n", server);
+  }
+
+  fclose(f);
 }
 
 int32u UTIL_Message_Size(signed_message *m)
@@ -645,47 +696,15 @@ void UTIL_RSA_Sign_Message(signed_message *mess)
 /* Load addresses of all servers from a configuration file */
 void UTIL_Load_Addresses() 
 {
-  FILE *f;
   char fileName[50];
   char dir[100] = ".";
-  int32u num_assigned;
-  int32u server;
-  int32 ip1,ip2,ip3,ip4;
   
   /* Open an address.config file and read in the addresses of all
    * servers. */
-   
   sprintf(fileName, "%s/address.config", dir);
+  Alarm(DEBUG, "Reading addrs from %s\n", fileName);
+  Load_Addrs_From_File(fileName, NET.server_address);
   
-  if((f = fopen(fileName, "r")) == NULL)
-    Alarm(EXIT,"   ERROR: Could not open the address file: %s\n", fileName );
-  
-  /* The file has the following format:
-   *    server_id address      
-   */
-
-  /* Initialize data structure with 0s */
-  for(server = 0; server < NUM_SERVER_SLOTS; server++)
-    NET.server_address[server] = 0;
-  
-  num_assigned = 5;
-  while (num_assigned == 5) {
-    num_assigned = fscanf(f,"%d %d.%d.%d.%d",
-			  &server, &ip1,&ip2,&ip3,&ip4);
-    Alarm(DEBUG,"%d %d %d %d %d\n", ip1, ip2, ip3, ip4, num_assigned);
-    if (num_assigned == 5) {
-      if (server <= NUM_SERVERS && server > 0) {
-        /* Store the address */
-        NET.server_address[server] = 
-          ( (ip1 << 24 ) | (ip2 << 16) | (ip3 << 8) | ip4 );
-      } else {
-        Alarm(PRINT, "WARNING: Config includes server %d outside valid range (1 - %d)...ignoring\n", server, NUM_SERVERS);
-      }
-    }
-  }
-
-  fclose(f);
-
 #ifdef SET_USE_SPINES
   UTIL_Load_Spines_Addresses();
 #endif
@@ -1518,64 +1537,35 @@ int32 UTIL_Get_Server_Spines_Address(int32u server)
 
 void UTIL_Load_Spines_Addresses() 
 {
-  FILE *f;
   char fileName[50];
   char dir[100] = ".";
-  int32u num_assigned, unique_spines;
+  int32u unique_spines;
   int32u server, i;
-  int32 ip1,ip2,ip3,ip4;
   
-  /* Open an address.config file and read in the addresses of all
-   * servers in all sites. Note: we are using the same addresses as
-   * those in the main address.config file. If different addresses are
-   * necessary, two different files can be used. */
+  /* Open spines_address.config file and read in spines address to use for each
+   * replica */
   sprintf(fileName,"%s/spines_address.config",dir);
+  Alarm(DEBUG, "Reading Spines addrs from %s\n", fileName);
+  Load_Addrs_From_File(fileName, NET.server_address_spines);
 
-  if((f = fopen(fileName, "r")) == NULL)
-    Alarm(EXIT, "ERROR: Could not open the spines address file: %s\n", 
-	  fileName);
-  
-  Alarm(DEBUG, "Opening file: %s\n", fileName);
-
-  /* The file has the following format:
-   *
-   * server_id address   
-   *
-   */
-
-  for(server = 1; server <= NUM_SERVERS; server++) {
-    NET.server_address_spines[server] = 0;
+  /* Initialize list of unique spines daemons */
+  for (server = 1; server <= NUM_SERVERS; server++) {
     NET.spines_daemon_address[server] = 0;
   }
   NET.num_spines_daemons = 0;
   
-  num_assigned = 5;
-  while(num_assigned == 5) {
-    num_assigned = fscanf(f,"%d %d.%d.%d.%d", &server,
-                          &ip1,&ip2,&ip3,&ip4);
-    if(num_assigned == 5) {
-      Alarm(DEBUG,"%d %d %d %d %d\n", ip1, ip2, ip3, ip4, num_assigned);
-      if (server <= NUM_SERVERS && server > 0) {
-        /* Store the address */
-        NET.server_address_spines[server] = 
-          ( (ip1 << 24 ) | (ip2 << 16) | (ip3 << 8) | ip4 );
-        unique_spines = 1;
-        for (i = 1; i <= NET.num_spines_daemons; i++) {
-          if (NET.server_address_spines[server] == NET.spines_daemon_address[i]) {
-            unique_spines = 0;
-            break;
-          }
-        }
-        if (unique_spines == 1) {
-          NET.num_spines_daemons++;
-          NET.spines_daemon_address[NET.num_spines_daemons] = NET.server_address_spines[server];
-        }
-      } else {
-        Alarm(PRINT, "WARNING: Spines config includes server %d outside valid range (1 - %d)...ignoring\n", server, NUM_SERVERS);
+  for (server = 1; server <= NUM_SERVERS; server++) {
+    unique_spines = 1;
+    for (i = 1; i <= NET.num_spines_daemons; i++) {
+      if (NET.server_address_spines[server] == NET.spines_daemon_address[i]) {
+        unique_spines = 0;
+        break;
       }
     }
+    if (unique_spines == 1) {
+      NET.num_spines_daemons++;
+      NET.spines_daemon_address[NET.num_spines_daemons] = NET.server_address_spines[server];
+    }
   }
-
-  fclose(f);
 }
 #endif

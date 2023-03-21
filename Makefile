@@ -26,9 +26,11 @@
  #
  # Major Contributors:
  #   Marco Platania       Contributions to architecture design 
+ #   Sahiti Bommareddy    Contributions to OpenSSL upgrade, latency optimization, IDS
  #
  # Contributors:
  #   Samuel Beckley       Contributions to HMIs 
+ #   Daniel Qian          Contributions to IDS
  #
  # Copyright (c) 2018 Johns Hopkins University.
  # All rights reserved.

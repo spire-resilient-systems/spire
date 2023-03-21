@@ -19,14 +19,18 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2018 The Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
  * --------------------
  *    John Lane
  *    Raluca Musaloiu-Elefteri
- *    Nilo Rivera
+ *    Nilo Rivera 
+ * 
+ * Contributor(s): 
+ * ----------------
+ *    Sahiti Bommareddy 
  *
  */
 
@@ -308,7 +312,7 @@ int Priority_Flood_Disseminate(Link *src_link, sys_scatter *scat, int mode)
     Node                *nd;
     unsigned int        sign_len;
     unsigned char       temp_ttl;
-    EVP_MD_CTX          md_ctx;
+    EVP_MD_CTX          *md_ctx;
     unsigned char       *path = NULL, *routing_mask;
     unsigned char       temp_path[8];
     unsigned char       temp_path_index;
@@ -411,21 +415,30 @@ int Priority_Flood_Disseminate(Link *src_link, sys_scatter *scat, int mode)
             goto cr_return;
         }
 
-        crypto_ret = EVP_VerifyInit(&md_ctx, EVP_sha256()); 
+        md_ctx = EVP_MD_CTX_new();
+        if (md_ctx==NULL){
+            Alarm(EXIT, "Priority_Flood: EVP_MD_CTX_new() failed\r\n");
+        }
+        crypto_ret = EVP_VerifyInit(md_ctx, EVP_sha256()); 
         if (crypto_ret != 1) { 
             Alarm(PRINT, "Priority_Flood: VerifyInit failed\r\n");
             ret = NO_ROUTE;
-            goto cr_return;
+            goto cleanup;
         }
 
         phdr = (packet_header*)scat->elements[0].buf;
-        crypto_ret = EVP_VerifyUpdate(&md_ctx, (unsigned char*)&phdr->type, sizeof(phdr->type));
+        crypto_ret = EVP_VerifyUpdate(md_ctx, (unsigned char*)&phdr->type, sizeof(phdr->type));
+        if (crypto_ret != 1) {
+	    Alarm(PRINT, "Priority_Flood: VerifyUpdate failed\r\n");
+            ret = NO_ROUTE;
+            goto cleanup;
+        }
         for (i = 1; i < scat->num_elements; i++) {
             if (i < scat->num_elements - 1)
-                crypto_ret = EVP_VerifyUpdate(&md_ctx, (unsigned char*)scat->elements[i].buf, 
+                crypto_ret = EVP_VerifyUpdate(md_ctx, (unsigned char*)scat->elements[i].buf, 
                                 (unsigned int)scat->elements[i].len);
             else
-                crypto_ret = EVP_VerifyUpdate(&md_ctx, (unsigned char*)scat->elements[i].buf, 
+                crypto_ret = EVP_VerifyUpdate(md_ctx, (unsigned char*)scat->elements[i].buf, 
                                 (unsigned int)scat->elements[i].len - sign_len);
                 
             if (crypto_ret != 1) {
@@ -441,7 +454,7 @@ int Priority_Flood_Disseminate(Link *src_link, sys_scatter *scat, int mode)
                 (unsigned int)(data_len - sign_len),
                 src_id); */
         
-        crypto_ret = EVP_VerifyFinal(&md_ctx, 
+        crypto_ret = EVP_VerifyFinal(md_ctx, 
                             (unsigned char*)(scat->elements[scat->num_elements-1].buf + 
                                 scat->elements[scat->num_elements-1].len - sign_len), 
                             sign_len, Pub_Keys[src_id]);
@@ -453,7 +466,7 @@ int Priority_Flood_Disseminate(Link *src_link, sys_scatter *scat, int mode)
         hdr->ttl = temp_ttl;
 
         cleanup:
-            EVP_MD_CTX_cleanup(&md_ctx);
+            EVP_MD_CTX_free(md_ctx);
         cr_return:
             if (ret != BUFF_OK) return ret;
     }

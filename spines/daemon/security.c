@@ -19,14 +19,18 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2018 The Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
  * --------------------
  *    John Lane
  *    Raluca Musaloiu-Elefteri
- *    Nilo Rivera
+ *    Nilo Rivera 
+ * 
+ * Contributor(s): 
+ * ----------------
+ *    Sahiti Bommareddy 
  *
  */
 
@@ -46,7 +50,7 @@
 
 /* ------------------------------------------------------------------------------------------ */
 
-static EVP_CIPHER_CTX IV_Ctx;
+static EVP_CIPHER_CTX *IV_Ctx;
 static unsigned char  IV_Counter[SECURITY_MAX_BLOCK_SIZE];
 
 /* Sec_gen_IV -------------------------------------------------------------------------------
@@ -57,7 +61,7 @@ static int Sec_gen_IV(unsigned char *iv, unsigned iv_len)
 {
     int            ret     = -1;
     unsigned char *iv_end  = iv + iv_len;
-    unsigned       blk_len = EVP_CIPHER_CTX_block_size(&IV_Ctx);
+    unsigned       blk_len = EVP_CIPHER_CTX_block_size(IV_Ctx);
     unsigned char  blk[SECURITY_MAX_BLOCK_SIZE];
     int            tmp;
     int            i;
@@ -68,7 +72,7 @@ static int Sec_gen_IV(unsigned char *iv, unsigned iv_len)
     {
         /* encrypt IV_Counter */
     
-        if (EVP_EncryptUpdate(&IV_Ctx, blk, (tmp = (int) sizeof(blk), &tmp), IV_Counter, blk_len) != 1)
+        if (EVP_EncryptUpdate(IV_Ctx, blk, (tmp = (int) sizeof(blk), &tmp), IV_Counter, blk_len) != 1)
         { assert(0); goto FAIL; }
 
         assert(tmp == blk_len);
@@ -100,15 +104,17 @@ int Sec_init(void)
     unsigned char iv_key[SECURITY_MAX_KEY_SIZE] = { 0 };
 
     OpenSSL_add_all_algorithms();
-    EVP_CIPHER_CTX_init(&IV_Ctx);
+    IV_Ctx = EVP_CIPHER_CTX_new();
+    if (IV_Ctx == NULL)
+        Alarmp(SPLOG_FATAL, SECURITY | EXIT, "Sec_init: IV_Ctx = EVP_CIPHER_CTX_new() failed\n");
     
     /* NOTE: we use IV_Ctx = aes-128-ecb(iv_key) on IV_Counter to implement a CTR-like mode for generating unpredictable IVs */
   
     if (RAND_bytes(iv_key, sizeof(iv_key)) != 1 || RAND_bytes(IV_Counter, sizeof(IV_Counter)) != 1)
         Alarmp(SPLOG_FATAL, SECURITY | EXIT, "Sec_init: RAND_bytes(iv_key, IV_Counter) failed\n");
   
-    if (EVP_EncryptInit_ex(&IV_Ctx, EVP_aes_128_ecb(), NULL, iv_key, NULL) != 1 || EVP_CIPHER_CTX_set_padding(&IV_Ctx, 0) != 1)
-        Alarmp(SPLOG_FATAL, SECURITY | EXIT, "Sec_init: EVP_EncryptInit_ex(&IV_Ctx) failed\n");
+    if (EVP_EncryptInit_ex(IV_Ctx, EVP_aes_128_ecb(), NULL, iv_key, NULL) != 1 || EVP_CIPHER_CTX_set_padding(IV_Ctx, 0) != 1)
+        Alarmp(SPLOG_FATAL, SECURITY | EXIT, "Sec_init: EVP_EncryptInit_ex(IV_Ctx) failed\n");
 
     return 0;
 }
@@ -275,7 +281,7 @@ int Sec_unlock_msg(const sys_scatter * const msg,
     const unsigned char *msg_hmac;
 
     unsigned char  local_hmac[SECURITY_MAX_HMAC_SIZE] = { 0 };
-    const int      local_hmac_len = EVP_MD_size(hmac_ctx->md);  /* NOTE: HMAC_CTX->md is not part of documented API */
+    const int      local_hmac_len = EVP_MD_size(HMAC_CTX_get_md(hmac_ctx));
     unsigned       local_hmac_len2;
     
     unsigned char        *dst     = dst_begin;
@@ -554,9 +560,9 @@ static void Sec_run_test(int num_iters, const char *data, size_t data_len, EVP_C
 
 void Sec_unit_test(void)
 {
-    EVP_CIPHER_CTX encrypt_ctx;
-    EVP_CIPHER_CTX decrypt_ctx;
-    HMAC_CTX       hmac_ctx;
+    EVP_CIPHER_CTX *encrypt_ctx;
+    EVP_CIPHER_CTX *decrypt_ctx;
+    HMAC_CTX       *hmac_ctx;
     unsigned char  crypt_key[SECURITY_MAX_KEY_SIZE + 1] = "234567891123456";
     unsigned char  iv_key[SECURITY_MAX_KEY_SIZE + 1]    = "234567891123456";
     unsigned char  hmac_key[SECURITY_MAX_HMAC_SIZE + 1] = "2345678911234567892123456789312";
@@ -565,37 +571,47 @@ void Sec_unit_test(void)
     iv_key[SECURITY_MAX_KEY_SIZE]    = '\0';
     hmac_key[SECURITY_MAX_HMAC_SIZE] = '\0';
     
-    EVP_CIPHER_CTX_init(&encrypt_ctx);
-    EVP_CIPHER_CTX_init(&decrypt_ctx);
-    HMAC_CTX_init(&hmac_ctx);
+    encrypt_ctx = EVP_CIPHER_CTX_new();
+    if (encrypt_ctx == NULL)
+        Alarmp(SPLOG_FATAL, SECURITY | EXIT, "Sec_unit_test:%d: allocation of encrypt_ctx failed!\n", __LINE__);
+    decrypt_ctx = EVP_CIPHER_CTX_new();
+    if (decrypt_ctx == NULL)
+        Alarmp(SPLOG_FATAL, SECURITY | EXIT, "Sec_unit_test:%d: allocation of decrypt_ctx failed!\n", __LINE__);
+    hmac_ctx = HMAC_CTX_new();
+    if (hmac_ctx == NULL)
+        Alarmp(SPLOG_FATAL, SECURITY | EXIT, "Sec_unit_test:%d: allocation of hmac_ctx failed!\n", __LINE__);
 
-    if (EVP_EncryptInit_ex(&encrypt_ctx, EVP_aes_128_cbc(), NULL, crypt_key, NULL) != 1 ||
-        EVP_DecryptInit_ex(&decrypt_ctx, EVP_aes_128_cbc(), NULL, crypt_key, NULL) != 1)
+    if (EVP_EncryptInit_ex(encrypt_ctx, EVP_aes_128_cbc(), NULL, crypt_key, NULL) != 1 ||
+        EVP_DecryptInit_ex(decrypt_ctx, EVP_aes_128_cbc(), NULL, crypt_key, NULL) != 1)
         Alarmp(SPLOG_FATAL, SECURITY | EXIT, "Sec_unit_test:%d: initialization of crypto ctx's failed!\n", __LINE__);
 
-    HMAC_Init_ex(&hmac_ctx, hmac_key, sizeof(hmac_key), EVP_sha256(), NULL);
+    HMAC_Init_ex(hmac_ctx, hmac_key, sizeof(hmac_key), EVP_sha256(), NULL);
 
     /* manually do what Sec_init does to make first batch of tests deterministic and repeatable */
 
     srand(0);
     
     OpenSSL_add_all_algorithms();
-    EVP_CIPHER_CTX_init(&IV_Ctx);
+    EVP_CIPHER_CTX_init(IV_Ctx);
 
     strncpy((char*) IV_Counter, Test_Data, sizeof(IV_Counter));
     
-    if (EVP_EncryptInit_ex(&IV_Ctx, EVP_aes_128_ecb(), NULL, iv_key, NULL) != 1 || EVP_CIPHER_CTX_set_padding(&IV_Ctx, 0) != 1)
+    if (EVP_EncryptInit_ex(IV_Ctx, EVP_aes_128_ecb(), NULL, iv_key, NULL) != 1 || EVP_CIPHER_CTX_set_padding(IV_Ctx, 0) != 1)
         Alarmp(SPLOG_FATAL, SECURITY | EXIT, "Sec_unit_test:%d: init of IV_Ctx failed!\n", __LINE__);
 
     Conf_IT_Link.Encrypt = 1;
 
     Alarmp(SPLOG_PRINT, PRINT, "Running unit test 1!\n");
-    Sec_run_test(1000000, Test_Data, strlen(Test_Data), &encrypt_ctx, &decrypt_ctx, &hmac_ctx);
+    Sec_run_test(1000000, Test_Data, strlen(Test_Data), encrypt_ctx, decrypt_ctx, hmac_ctx);
     Alarmp(SPLOG_PRINT, PRINT, "Success!\n");
     
     Conf_IT_Link.Encrypt = 0;
 
     Alarmp(SPLOG_PRINT, PRINT, "Running unit test 2!\n");
-    Sec_run_test(1000000, Test_Data, strlen(Test_Data), &encrypt_ctx, &decrypt_ctx, &hmac_ctx);
+    Sec_run_test(1000000, Test_Data, strlen(Test_Data), encrypt_ctx, decrypt_ctx, hmac_ctx);
     Alarmp(SPLOG_PRINT, PRINT, "Success!\n");
+
+    EVP_CIPHER_CTX_free(encrypt_ctx);
+    EVP_CIPHER_CTX_free(decrypt_ctx);
+    HMAC_CTX_free(hmac_ctx);
 }    

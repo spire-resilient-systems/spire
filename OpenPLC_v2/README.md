@@ -1,3 +1,6 @@
+### Changes
+This version of OpenPLC_v2 has been modified to work with [Spire](http://www.dsn.jhu.edu/spire/), an intrusion tolerant SCADA system for the power grid. It contains small changes so that Opendnp3 is installed locally to `dnp3_build/install`, as well as some compatability changes for CentOS.
+
 # OpenPLC v2
 This program is intended to emulate a PLC on a Linux machine. This virtual PLC uses the OpenPLC Software Stack to execute IEC 61131-3 programs and reply to MODBUS/TCP requests. Programs can be created using the PLCopen editor and then uploaded to this virtual PLC.
 
@@ -7,7 +10,9 @@ There is a NodeJS application that works as a http server for the user to upload
 
 You must have NodeJS and WiringPi (in case you are using Raspberry Pi) installed to use this program. Usage:
 
-1) ./build.sh
+1) Install required packages: </br> sudo apt-get update </br> sudo apt-get install build-essential pkg-config bison flex autoconf automake libtool make nodejs git
+
+2) ./build.sh
 
 2) sudo nodejs server.js
 

@@ -9,20 +9,31 @@ echo [LADDER]
 ./iec2c.exe ./st_files/blank_program.st
 mv -f POUS.c POUS.h LOCATED_VARIABLES.h VARIABLES.csv Config0.c Config0.h Res0.c ./core/
 
+echo [ST OPTIMIZER]
+cd st_optimizer_src
+g++ st_optimizer.cpp -o st_optimizer
+cd ..
+cp ./st_optimizer_src/st_optimizer.exe ./
+
 echo [GLUE GENERATOR]
 cd glue_generator_src
 g++ glue_generator.cpp -o glue_generator
 cd ..
 cp ./glue_generator_src/glue_generator.exe ./core/glue_generator.exe
 
+clear
+echo Disabling DNP3 support \(opendnp3 is not compatible with Cygwin\)...
+mv ./core/dnp3.cpp ./core/dnp3.disabled 2> /dev/null
+mv ./core/dnp3_dummy.disabled ./core/dnp3_dummy.cpp 2> /dev/null
+cp -f ./core/core_builders/dnp3_disabled/*.* ./core/core_builders/
+
 cd core
 rm -f ./hardware_layer.cpp
 rm -f ../build_core.sh
-echo
-echo
+
 echo The OpenPLC needs a driver to be able to control physical or virtual hardware.
 echo Please select the driver you would like to use:
-OPTIONS="Blank Modbus Fischertechnik RaspberryPi UniPi PiXtend Arduino ESP8266 Arduino+RaspberryPi Simulink "
+OPTIONS="Blank Modbus Fischertechnik RaspberryPi UniPi PiXtend PiXtend_2S Arduino ESP8266 Arduino+RaspberryPi Simulink "
 select opt in $OPTIONS; do
 	if [ "$opt" = "Blank" ]; then
 		cp ./hardware_layers/blank.cpp ./hardware_layer.cpp
@@ -77,6 +88,13 @@ select opt in $OPTIONS; do
 		cd ..
 		./build_core.sh
 		echo 'export PATH=$PATH:"/cygdrive/c/Program Files/nodejs/"' >> ~/.bashrc
+		exit
+    elif [ "$opt" = "PiXtend_2S" ]; then
+		cp ./hardware_layers/pixtend2s.cpp ./hardware_layer.cpp
+		cp ./core_builders/build_rpi.sh ../build_core.sh
+		echo [OPENPLC]
+		cd ..
+		./build_core.sh
 		exit
 	elif [ "$opt" = "Arduino" ]; then
 		cp ./hardware_layers/arduino.cpp ./hardware_layer.cpp

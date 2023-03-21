@@ -27,7 +27,7 @@
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008 - 2018
+ * Copyright (c) 2008-2020
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -74,7 +74,7 @@ int main(int argc, char** argv)
 
   Alarm( PRINT, "/===========================================================================\\\n");
   Alarm( PRINT, "| Prime                                                                     |\n");
-  Alarm( PRINT, "| Copyright (c) 2010 - 2018 Johns Hopkins University                        |\n"); 
+  Alarm( PRINT, "| Copyright (c) 2010 - 2020 Johns Hopkins University                        |\n"); 
   Alarm( PRINT, "| All rights reserved.                                                      |\n");
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| Prime is licensed under the Prime Open-Source License.                    |\n");
@@ -96,7 +96,7 @@ int main(int argc, char** argv)
   Alarm( PRINT, "| WWW:     www.dsn.jhu/prime   www.dsn.jhu.edu                              |\n");
   Alarm( PRINT, "| Contact: prime@dsn.jhu.edu                                                |\n");
   Alarm( PRINT, "|                                                                           |\n");
-  Alarm( PRINT, "| Version 3.2, Built November 26, 2018                                      |\n"); 
+  Alarm( PRINT, "| Version 3.3, Built December 23, 2020                                      |\n"); 
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use       |\n");
   Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                 |\n");

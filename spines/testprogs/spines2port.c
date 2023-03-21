@@ -19,14 +19,18 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003 - 2018 The Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
  * --------------------
  *    John Lane
  *    Raluca Musaloiu-Elefteri
- *    Nilo Rivera
+ *    Nilo Rivera 
+ * 
+ * Contributor(s): 
+ * ----------------
+ *    Sahiti Bommareddy 
  *
  */
 
@@ -78,6 +82,16 @@ typedef struct pkt_stats_d {
     unsigned char path[8];
 } pkt_stats;
 
+typedef struct trie_node_d {
+    int count;
+    struct trie_node_d* child[256];
+} trie_node;
+
+typedef struct hist_bucket_d {
+    int count;
+    trie_node *paths_trie;
+} hist_bucket;
+
 typedef struct history_d {
     struct timeval timeout;
     int size;
@@ -89,7 +103,8 @@ typedef struct interval_stats_d {
     double oneway_ms;
     long unsigned int msgs;
     long unsigned int bytes;
-    int histogram[HIST_NUM_BUCKETS+1];
+    trie_node *total_paths;
+    hist_bucket histogram[HIST_NUM_BUCKETS+1];
 } interval_stats;
 
 static int recvPort;
@@ -123,6 +138,9 @@ static void Final_Report(int signum);
 static struct timeval addTime( struct timeval t1, struct timeval t2 );
 static struct timeval diffTime( struct timeval t1, struct timeval t2 );
 static int compTime( struct timeval t1, struct timeval t2 );
+static void trie_add(trie_node *root, unsigned char *path, int len);
+static void trie_print(trie_node *root);
+static void trie_clean(trie_node *root);
 static void Usage(int argc, char *argv[]);
 
 int main(int argc, char *argv[])
@@ -353,12 +371,17 @@ int main(int argc, char *argv[])
                 if (elapsed_ms < 0) {
                     /* Using last spot of array to catch anything with a
                      * negative elapsed time (due to clock sync issues) */
-                    Arrival_stats.histogram[HIST_NUM_BUCKETS]++;
+                    Arrival_stats.histogram[HIST_NUM_BUCKETS].count++;
+                    trie_add(Arrival_stats.histogram[HIST_NUM_BUCKETS].paths_trie, ps->path, 8);
                 } else if (elapsed_ms > HIST_BUCKET_SIZE * HIST_NUM_BUCKETS) {
-                    Arrival_stats.histogram[HIST_NUM_BUCKETS - 1]++;
+                    Arrival_stats.histogram[HIST_NUM_BUCKETS - 1].count++;
+                    trie_add(Arrival_stats.histogram[HIST_NUM_BUCKETS - 1].paths_trie, ps->path, 8);
                 } else {
-                    Arrival_stats.histogram[(int) (elapsed_ms / HIST_BUCKET_SIZE)]++;
+                    Arrival_stats.histogram[(int) (elapsed_ms / HIST_BUCKET_SIZE)].count++;
+                    trie_add(Arrival_stats.histogram[(int) (elapsed_ms / HIST_BUCKET_SIZE)].paths_trie, ps->path, 8);
                 }
+
+                trie_add(Arrival_stats.total_paths, ps->path, 8);
             }
             else if (!Verbose_Print_Mode && Reporting_Interval == 0 && recv_count % 1000 == 0) {
                 Alarm(PRINT, "%ld\t%d\t%4f\tpath: ", bytes-sizeof(pkt_stats),
@@ -494,12 +517,17 @@ int main(int argc, char *argv[])
                 if (elapsed_ms < 0) {
                     /* Using last spot of array to catch anything with a
                      * negative elapsed time (due to clock sync issues) */
-                    Delivery_stats.histogram[HIST_NUM_BUCKETS]++;
+                    Delivery_stats.histogram[HIST_NUM_BUCKETS].count++;
+                    trie_add(Delivery_stats.histogram[HIST_NUM_BUCKETS].paths_trie, deliver_ps->path, 8);
                 }else if (elapsed_ms > HIST_BUCKET_SIZE * HIST_NUM_BUCKETS) {
-                    Delivery_stats.histogram[HIST_NUM_BUCKETS - 1]++;
+                    Delivery_stats.histogram[HIST_NUM_BUCKETS - 1].count++;
+                    trie_add(Delivery_stats.histogram[HIST_NUM_BUCKETS - 1].paths_trie, deliver_ps->path, 8);
                 } else {
-                    Delivery_stats.histogram[(int) (elapsed_ms / HIST_BUCKET_SIZE)]++;
+                    Delivery_stats.histogram[(int) (elapsed_ms / HIST_BUCKET_SIZE)].count++;
+                    trie_add(Delivery_stats.histogram[(int) (elapsed_ms / HIST_BUCKET_SIZE)].paths_trie, deliver_ps->path, 8);
                 }
+
+                trie_add(Delivery_stats.total_paths, deliver_ps->path, 8);
             }
             window[ref % WINDOW_SIZE].size = 0;
             if (tail != ref)
@@ -560,21 +588,51 @@ static void histogramPrint(interval_stats *stats)
 {
     int i;
 
-    if (stats->histogram[HIST_NUM_BUCKETS] != 0)
-        Alarm(PRINT, "\t[-1 - 0]\t%d\n", stats->histogram[HIST_NUM_BUCKETS]);
+    /* Print out counts */
+    if (stats->histogram[HIST_NUM_BUCKETS].count != 0) {
+        Alarm(PRINT, "\t[-1 - 0]\t%d\n", stats->histogram[HIST_NUM_BUCKETS].count);
+    }
 
     for (i = 0; i < HIST_NUM_BUCKETS-1; i++)
     {
-        if (stats->histogram[i] != 0) {
+        if (stats->histogram[i].count != 0) {
             Alarm(PRINT, "\t[%d - %d]\t%d\n", i * HIST_BUCKET_SIZE,
-                   (i + 1) * HIST_BUCKET_SIZE, stats->histogram[i]);
+                   (i + 1) * HIST_BUCKET_SIZE, stats->histogram[i].count);
         }
     }
-    if (stats->histogram[HIST_NUM_BUCKETS-1] != 0) {
+    if (stats->histogram[HIST_NUM_BUCKETS-1].count != 0) {
         Alarm(PRINT, "\t[%d   + ]\t%d\n",
                (HIST_NUM_BUCKETS-1) * HIST_BUCKET_SIZE,
-               stats->histogram[HIST_NUM_BUCKETS-1]);
+               stats->histogram[HIST_NUM_BUCKETS-1].count);
     }
+
+    /* Print out paths */
+    Alarm(PRINT, "\n");
+    Alarm(PRINT, "   ** Paths **\n");
+    if (stats->histogram[HIST_NUM_BUCKETS].count != 0) {
+        Alarm(PRINT, "\t[-1 - 0]\n");
+        trie_print(stats->histogram[i].paths_trie);
+    }
+
+    for (i = 0; i < HIST_NUM_BUCKETS-1; i++)
+    {
+        if (stats->histogram[i].count != 0) {
+            Alarm(PRINT, "\t[%d - %d]\n", i * HIST_BUCKET_SIZE,
+                   (i + 1) * HIST_BUCKET_SIZE);
+            trie_print(stats->histogram[i].paths_trie);
+        }
+    }
+    if (stats->histogram[HIST_NUM_BUCKETS-1].count != 0) {
+        Alarm(PRINT, "\t[%d   + ]\n",
+               (HIST_NUM_BUCKETS-1) * HIST_BUCKET_SIZE);
+        trie_print(stats->histogram[HIST_NUM_BUCKETS-1].paths_trie);
+    }
+
+    /* Print out trie showing all paths taken */
+    Alarm(PRINT, "\n");
+    Alarm(PRINT, "   ** Total Paths Taken ** \n");
+    trie_print(stats->total_paths);
+    Alarm(PRINT, "\n");
 }
 
 static void intervalStatsInit(interval_stats *stats) {
@@ -587,8 +645,13 @@ static void intervalStatsInit(interval_stats *stats) {
 
     for (i = 0; i <= HIST_NUM_BUCKETS; i++)
     {
-        stats->histogram[i] = 0;
+        stats->histogram[i].count = 0;
+        trie_clean(stats->histogram[i].paths_trie);
+        stats->histogram[i].paths_trie = calloc(1, sizeof(trie_node));
     }
+
+    trie_clean(stats->total_paths);
+    stats->total_paths = calloc(1, sizeof(trie_node));
 }
 
 static struct timeval addTime( struct timeval t1, struct timeval t2 ) {
@@ -630,6 +693,86 @@ static int compTime( struct timeval t1, struct timeval t2 ) {
 	else if ( t1.tv_usec > t2.tv_usec ) return (  1 );
 	else if ( t1.tv_usec < t2.tv_usec ) return ( -1 );
 	else			      return (  0 );
+}
+
+static void trie_add(trie_node *root, unsigned char *path, int len)
+{
+    if (root == NULL)
+    {
+        printf("Error in trie_add: root is NULL\n");
+        exit(1);
+    }
+    if (len == 0)
+    {
+        root->count++;
+        return;
+    }
+    if (root->child[(int)(path[0])] == NULL)
+        root->child[(int)(path[0])] = calloc(1, sizeof(trie_node));
+    trie_add(root->child[(int)(path[0])], path+1, len-1);
+}
+
+static void trie_print_recurse(trie_node *root, unsigned char path[], int path_len)
+{
+    int i;
+    int ret;
+    char buf[100];
+    int cpos = 0;
+
+    if (root == NULL)
+    {
+        Alarm(EXIT, "Error in trie_print: root is NULL\n");
+    }
+    if (root->count > 0)
+    {
+        snprintf(buf+cpos, sizeof(buf)-cpos, "\t");
+        cpos++;
+        for(i = 0; i<path_len; i++) {
+            ret = snprintf(buf+cpos, sizeof(buf)-cpos, "%d ", path[i]);
+            if (ret <= 0) Alarm(EXIT, "trie_print: Error in snprintf");
+            cpos += ret;
+        }
+        snprintf(buf+cpos, sizeof(buf)-cpos, ": %d\n", root->count);
+        Alarm(PRINT, buf);
+    }   
+    for (i = 0; i<256; i++)
+        if (root->child[i] != NULL)
+        {
+            path[path_len] = i;
+            trie_print_recurse(root->child[i], path, path_len + 1);
+        }
+}
+
+static void trie_print(trie_node *root)
+{
+    unsigned char temp_path[10];
+
+    trie_print_recurse(root, temp_path, 0);
+}
+
+static void trie_clean_recurse(trie_node *root)
+{
+    int i;
+
+    for (i = 0; i < 256; i++) {
+        if (root->child[i] != NULL) {
+            trie_clean_recurse(root->child[i]);
+        }
+    }
+
+    for (i = 0; i < 256; i++) {
+        if (root->child[i] != NULL) {
+            free(root->child[i]);
+        }
+    }
+}
+
+static void trie_clean(trie_node *root)
+{
+    if (root == NULL) return;
+
+    trie_clean_recurse(root);
+    free(root);
 }
 
 static void Usage(int argc, char *argv[])

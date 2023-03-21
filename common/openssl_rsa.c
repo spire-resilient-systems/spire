@@ -26,11 +26,13 @@
  *
  * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
+ *   Sahiti Bommareddy    Addition of IDS, Contributions to OpenSSL upgrade, latency optimization
  *
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
+ *   Daniel Qian          Contributions to IDS
  *
- * Copyright (c) 2018 Johns Hopkins University.
+ * Copyright (c) 2017-2020 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -71,7 +73,7 @@ RSA *private_rsa; /* My Private Key */
 RSA *public_rsa_by_server[NUMBER_OF_SERVERS + 1];
 RSA *public_rsa_by_client[NUMBER_OF_CLIENTS + 1];
 const EVP_MD *message_digest;
-//EVP_MD_CTX mdctx;
+_Thread_local EVP_MD_CTX *mdctx=NULL;
 void *pt;
 int32 verify_count;
 
@@ -82,7 +84,7 @@ void Gen_Key_Callback(int32 stage, int32 n, void *unused)
     UNUSED(unused);
 } 
 
-void Write_BN(FILE *f, BIGNUM *bn) 
+void Write_BN(FILE *f, const BIGNUM *bn) 
 {
   char *bn_buf;
   
@@ -98,6 +100,9 @@ void Write_RSA( int32u rsa_type, int32u server_number, RSA *rsa, const char *key
 {
   FILE *f;
   char fileName[100];
+  const BIGNUM *n, *e, *d;
+  const BIGNUM *p, *q;
+  const BIGNUM *dmp1, *dmq1, *iqmp;
   
   /* Write an RSA structure to a file */
   if(rsa_type == RSA_TYPE_PUBLIC)
@@ -111,16 +116,19 @@ void Write_RSA( int32u rsa_type, int32u server_number, RSA *rsa, const char *key
      
   f = fopen(fileName, "w");
 
-  Write_BN(f, rsa->n);
-  Write_BN(f, rsa->e);
+  RSA_get0_key(rsa, &n, &e, &d);
+  RSA_get0_factors(rsa, &p, &q);
+  RSA_get0_crt_params(rsa, &dmp1, &dmq1, &iqmp);
+  Write_BN(f, n);
+  Write_BN(f, e);
 
   if(rsa_type == RSA_TYPE_PRIVATE || rsa_type == RSA_TYPE_CLIENT_PRIVATE) {
-    Write_BN( f, rsa->d );
-    Write_BN( f, rsa->p );
-    Write_BN( f, rsa->q );
-    Write_BN( f, rsa->dmp1 );
-    Write_BN( f, rsa->dmq1 );
-    Write_BN( f, rsa->iqmp );
+    Write_BN( f, d );
+    Write_BN( f, p );
+    Write_BN( f, q );
+    Write_BN( f, dmp1 );
+    Write_BN( f, dmq1 );
+    Write_BN( f, iqmp );
   }
   fprintf( f, "\n" );
   fclose(f);
@@ -144,6 +152,9 @@ void Read_RSA( int32u rsa_type, int32u server_number, RSA *rsa, const char *keys
 {
   FILE *f;
   char fileName[100];
+  BIGNUM *n = NULL, *e = NULL, *d = NULL;
+  BIGNUM *p = NULL, *q = NULL;
+  BIGNUM *dmp1 = NULL, *dmq1 = NULL, *iqmp = NULL;
   
   /* Read an RSA structure to a file */
   
@@ -161,15 +172,31 @@ void Read_RSA( int32u rsa_type, int32u server_number, RSA *rsa, const char *keys
     exit(1);
   }
   
-  Read_BN( f, &rsa->n );
-  Read_BN( f, &rsa->e );
+  Read_BN( f, &n );
+  Read_BN( f, &e );
+  if (!RSA_set0_key(rsa, n, e, d)) {
+    printf("Error: Read_RSA: RSA_set0_key() failed (%s:%d)\n", __FILE__, __LINE__);
+    exit(1);
+  }
   if ( rsa_type == RSA_TYPE_PRIVATE || rsa_type == RSA_TYPE_CLIENT_PRIVATE ) {
-    Read_BN( f, &rsa->d );
-    Read_BN( f, &rsa->p );
-    Read_BN( f, &rsa->q );
-    Read_BN( f, &rsa->dmp1 );
-    Read_BN( f, &rsa->dmq1 );
-    Read_BN( f, &rsa->iqmp );
+    Read_BN( f, &d );
+    Read_BN( f, &p );
+    Read_BN( f, &q );
+    Read_BN( f, &dmp1 );
+    Read_BN( f, &dmq1 );
+    Read_BN( f, &iqmp );
+    if (!RSA_set0_key(rsa, NULL, NULL, d)) {
+      printf("Error: Read_RSA: RSA_set0_key() failed (%s:%d)\n", __FILE__, __LINE__);
+      exit(1);
+    }
+    if (!RSA_set0_factors(rsa, p, q)) {
+      printf("Error: Read_RSA: RSA_set0_key() failed (%s:%d)\n", __FILE__, __LINE__);
+      exit(1);
+    }
+    if (!RSA_set0_crt_params(rsa, dmp1, dmq1, iqmp)) {
+      printf("Error: Read_RSA: RSA_set0_key() failed (%s:%d)\n", __FILE__, __LINE__);
+      exit(1);
+    }
   }
 
   fclose(f);
@@ -182,20 +209,30 @@ void OPENSSL_RSA_Generate_Keys(const char *keys_dir) {
 
     RSA *rsa;
     int32u s;
+    BIGNUM *e;
 
     /* Prompt user for a secret key value. */
 
-    /* Generate Keys For Servers */
+    /* Generate Keys For Servers, note KEY_SIZE is defined in def.h */
+    rsa = RSA_new();
+    e = BN_new();
+    BN_set_word(e, 3);
     for ( s = 1; s <= NUMBER_OF_SERVERS; s++ ) {
-      rsa = RSA_generate_key( 1024, 3, Gen_Key_Callback, NULL );
+      if (!RSA_generate_key_ex( rsa, KEY_SIZE, e, NULL)) {
+        printf("OPENSSL_RSA_Generate_Keys: RSA_generate_key failed (%s:%d)", __FILE__, __LINE__);
+        exit(1);
+      }
       /*RSA_print_fp( stdout, rsa, 4 );*/
       Write_RSA( RSA_TYPE_PUBLIC,  s, rsa, keys_dir ); 
       Write_RSA( RSA_TYPE_PRIVATE, s, rsa, keys_dir ); 
     } 
 
-    /* Generate Keys For Clients */
+    /* Generate Keys For Clients, note KEY_SIZE is defined in def.h */
     for ( s = 1; s <= NUMBER_OF_CLIENTS; s++ ) {
-      rsa = RSA_generate_key( 1024, 3, Gen_Key_Callback, NULL );
+      if (!RSA_generate_key_ex( rsa, KEY_SIZE, e, NULL)) {
+        printf("OPENSSL_RSA_Generate_Keys: RSA_generate_key failed (%s:%d)", __FILE__, __LINE__);
+        exit(1);
+      }
       /*RSA_print_fp( stdout, rsa, 4 );*/
       Write_RSA( RSA_TYPE_CLIENT_PUBLIC,  s, rsa, keys_dir ); 
       Write_RSA( RSA_TYPE_CLIENT_PRIVATE, s, rsa, keys_dir ); 
@@ -245,7 +282,6 @@ void OPENSSL_RSA_Init()
   message_digest = EVP_get_digestbyname( DIGEST_ALGORITHM );
   verify_count = 0;
 
-  //EVP_MD_CTX_init(&mdctx);
 }
 
 int32u OPENSSL_RSA_Digests_Equal( unsigned char *digest1, 
@@ -274,29 +310,28 @@ void OPENSSL_RSA_Make_Digest( const void *buffer, size_t buffer_size,
      * computational cost because these high-level functions are used. We might
      * want to test this and see if we take a performance hit. */
     
-    EVP_MD_CTX mdctx;
     int32u md_len;
     
 #if REMOVE_CRYPTO 
     //return;
 #endif
-   
+
     //memset(digest_value, 0, DIGEST_SIZE);
     //return;
-
-    EVP_MD_CTX_init(&mdctx);
-    EVP_DigestInit_ex(&mdctx, message_digest, NULL);
-    EVP_DigestUpdate(&mdctx, buffer, buffer_size);
-    EVP_DigestFinal_ex(&mdctx, digest_value, &md_len);
-    EVP_MD_CTX_cleanup(&mdctx);
-
+    //EVP_MD_CTX *mdctx;
+    if (mdctx==NULL)
+    	mdctx = EVP_MD_CTX_new();
+    EVP_DigestInit_ex(mdctx, message_digest, NULL);
+    EVP_DigestUpdate(mdctx, buffer, buffer_size);
+    EVP_DigestFinal_ex(mdctx, digest_value, &md_len);
+    //EVP_MD_CTX_free(mdctx);
     /* Check to determine if the digest length is expected for sha1. It should
-     * be 20 bytes. */
+     * be DIGEST_SIZE bytes, which is 20 */
    
-    if ( md_len != 20 ) {
+    if ( md_len != DIGEST_SIZE ) {
 	printf("An error occurred while generating a message digest.\n"
-		"The length of the digest was set to %d. It should be 20.\n"
-		, md_len);
+		"The length of the digest was set to %d. It should be %d.\n"
+		, md_len, DIGEST_SIZE);
 	exit(0);
     }
 
@@ -321,7 +356,7 @@ void OPENSSL_RSA_Make_Signature( const byte *digest_value, byte *signature )
   int32u signature_size = 0;
   
   /* Make a signature for the specified digest value. The digest value is
-   * assumed to be 20 bytes. */
+   * assumed to be DIGEST_SIZE bytes. */
 
 #if REMOVE_CRYPTO
   UTIL_Busy_Wait(0.000005);
@@ -339,11 +374,11 @@ void OPENSSL_RSA_Make_Signature( const byte *digest_value, byte *signature )
   /*rsa_size = RSA_size( private_rsa ); */
     
   /*printf("Signature size: %d\n", rsa_size);*/
-  //private_rsa = RSA_generate_key( 1024, 3, Gen_Key_Callback, NULL );
+  //private_rsa = RSA_generate_key( KEY_SIZE, 3, Gen_Key_Callback, NULL );
  
   //start = E_get_time();
 
-  RSA_sign(NID_sha1, digest_value, 20, signature, &signature_size,private_rsa);
+  RSA_sign(NID_sha1, digest_value, DIGEST_SIZE, signature, &signature_size,private_rsa);
 
   //end = E_get_time();
   
@@ -356,7 +391,7 @@ int32u OPENSSL_RSA_Verify_Signature( const byte *digest_value,
 	unsigned char *signature,  int32u number,  int32u type ) {
 
     /* Verify a signature for the specified digest value. The digest value is
-     * assumed to be 20 bytes. */
+     * assumed to be DIGEST_SIZE bytes. */
    
     int32 ret;
     RSA *rsa; 
@@ -381,7 +416,7 @@ int32u OPENSSL_RSA_Verify_Signature( const byte *digest_value,
         rsa = public_rsa_by_server[number];
     }
     
-    ret = RSA_verify(NID_sha1, digest_value, 20, signature, SIGNATURE_SIZE,
+    ret = RSA_verify(NID_sha1, digest_value, DIGEST_SIZE, signature, SIGNATURE_SIZE,
 	    rsa );
     
     verify_count++;
