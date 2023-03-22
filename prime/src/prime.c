@@ -20,14 +20,15 @@
  *   Jonathan Kirsch      jak@cs.jhu.edu
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
- *   Amy Babay            babay@cs.jhu.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu
+ *   Amy Babay            babay@pitt.edu
+ *   Thomas Tantillo      tantillo@cs.jhu.edu 
+ *
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol
  *      
- * Copyright (c) 2008-2020
+ * Copyright (c) 2008-2023
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -74,7 +75,7 @@ int main(int argc, char** argv)
 
   Alarm( PRINT, "/===========================================================================\\\n");
   Alarm( PRINT, "| Prime                                                                     |\n");
-  Alarm( PRINT, "| Copyright (c) 2010 - 2020 Johns Hopkins University                        |\n"); 
+  Alarm( PRINT, "| Copyright (c) 2017-2023 Johns Hopkins University                        |\n"); 
   Alarm( PRINT, "| All rights reserved.                                                      |\n");
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| Prime is licensed under the Prime Open-Source License.                    |\n");
@@ -86,7 +87,7 @@ int main(int argc, char** argv)
   Alarm( PRINT, "|    Jonathan Kirsch           jak@cs.jhu.edu                               |\n");
   Alarm( PRINT, "|    John Lane                 johnlane@cs.jhu.edu                          |\n");
   Alarm( PRINT, "|    Marco Platania            platania@cs.jhu.edu                          |\n");
-  Alarm( PRINT, "|    Amy Babay                 babay@cs.jhu.edu                             |\n");
+  Alarm( PRINT, "|    Amy Babay                 babay@pitt.edu                             |\n");
   Alarm( PRINT, "|    Thomas Tantillo           tantillo@cs.jhu.edu                          |\n");
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| Major Contributors:                                                       |\n");

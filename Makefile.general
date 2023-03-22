@@ -1,0 +1,21 @@
+CC=gcc
+CFLAGS+= -Wall -W -g
+
+
+IEC_DIR=$(base_dir)/libiec61850/.install
+SPINES_DIR=$(base_dir)/spines/libspines
+SPREADUTIL_DIR=$(base_dir)/spines/libspread-util
+TC_DIR=$(base_dir)/prime/OpenTC-1.1/TC-lib-1.0
+
+
+IEC_LIB=$(IEC_DIR)/lib/libiec61850.a
+SPINES_LIB=$(SPINES_DIR)/libspines.a
+SPREADUTIL_LIB=$(SPREADUTIL_DIR)/src/libspread-util.a -lpthread -ldl
+TC_LIB=$(TC_DIR)/.libs/libTC.a -lcrypto
+
+IEC_INC= -I $(IEC_DIR)/include
+SPINES_INC= -I $(SPINES_DIR)
+SPREADUTIL_INC= -I $(SPREADUTIL_DIR)/include
+TC_INC= -I $(TC_DIR)
+
+

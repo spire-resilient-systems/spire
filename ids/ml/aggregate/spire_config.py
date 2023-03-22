@@ -21,23 +21,25 @@ Johns Hopkins University.
 Creators:
   Yair Amir             yairamir@cs.jhu.edu
   Trevor Aron           taron1@cs.jhu.edu
-  Amy Babay             babay@cs.jhu.edu
-  Thomas Tantillo       tantillo@cs.jhu.edu
+  Amy Babay             babay@pitt.edu
+  Thomas Tantillo       tantillo@cs.jhu.edu 
+  Sahiti Bommareddy     sahiti@cs.jhu.edu
 
 Major Contributors:
   Marco Platania        Contributions to architecture design 
-  Sahiti Bommareddy     Addition of IDS, Contributions to OpenSSL upgrade, latency optimization
+  Daniel Qian           Contributions to Trip Master and IDS 
+ 
 
 Contributors:
-  Daniel Qian           Contributions to IDS
+
   Samuel Beckley        Contributions to HMIs
 
-Copyright (c) 2017-2020 Johns Hopkins University.
+Copyright (c) 2017-2023 Johns Hopkins University.
 All rights reserved.
 
 Partial funding for Spire research was provided by the Defense Advanced 
 Research Projects Agency (DARPA) and the Department of Defense (DoD).
-Spire is not necessarily endorsed by DARPA or the DoD. 
+Spire is not necessarily endorsed by DARPA, the DoD or the DoE. 
 '''
 
 # Addresses of machines uses to run a 6 machine (f=1,k=1) Spire configuration

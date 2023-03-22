@@ -1,0 +1,364 @@
+{
+    "num_rtus":17,
+    "num_locations":17,
+    "locations": [
+        {
+            "ID":0,
+            "protocols": [
+                "dnp3"
+            ],
+            "rtus": [
+                {
+                    "ID":0,
+                    "scenario":"JHU",
+                    "protocol":"dnp3",
+                    "PORT":20001,
+                    "IP":"192.168.101.105"
+                }
+            ]
+        },
+        {
+            "ID":1,
+            "protocols": [
+                "dnp3"
+            ],
+            "rtus": [
+                {
+                    "ID":1,
+                    "scenario":"JHU",
+                    "protocol":"dnp3",
+                    "PORT":20002,
+                    "IP":"192.168.101.105"
+                }
+            ]
+        },
+        {
+            "ID":2,
+            "protocols": [
+                "dnp3"
+            ],
+            "rtus": [
+                {
+                    "ID":2,
+                    "scenario":"JHU",
+                    "protocol":"dnp3",
+                    "PORT":20003,
+                    "IP":"192.168.101.105"
+                }
+            ]
+        },
+        {
+            "ID":3,
+            "protocols": [
+                "modbus"
+            ],
+            "rtus": [
+                {
+                    "ID":3,
+                    "scenario":"JHU",
+                    "protocol":"modbus",
+                    "PORT":506,
+                    "IP":"192.168.101.105",
+                    "NUM_CYCLES":6,
+                    "DEBUG":1,
+                    "CYCLES": [
+                        "1,coilStatus(3,0)",
+                        "1,holdingRegisters(3,0)",
+                        "1,holdingRegisters(3,1)",
+                        "1,holdingRegisters(3,2)",
+                        "1,holdingRegisters(3,3)",
+                        "1,holdingRegisters(3,4)"
+                    ]
+                }
+            ]
+        },
+        {
+            "ID":4,
+            "protocols": [
+                "modbus"
+            ],
+            "rtus": [
+                {
+                    "ID":4,
+                    "scenario":"JHU",
+                    "protocol":"modbus",
+                    "PORT":507,
+                    "IP":"192.168.101.105",
+                    "NUM_CYCLES":5,
+                    "DEBUG":1,
+                    "CYCLES": [
+                        "1,coilStatus(4,0)",
+                        "1,holdingRegisters(4,0)",
+                        "1,holdingRegisters(4,1)",
+                        "1,holdingRegisters(4,2)",
+                        "1,holdingRegisters(4,3)"
+                    ]
+                }
+            ]
+        },
+
+        {
+            "ID":5,
+            "protocols": [
+                "dnp3"
+            ],
+            "rtus": [
+                {
+                    "ID":5,
+                    "scenario":"JHU",
+                    "protocol":"dnp3",
+                    "PORT":20006,
+                    "IP":"192.168.101.105"
+                }
+            ]
+        },
+
+        {
+            "ID":6,
+            "protocols": [
+                "dnp3"
+            ],
+            "rtus": [
+                {
+                    "ID":6,
+                    "scenario":"JHU",
+                    "protocol":"dnp3",
+                    "PORT":20007,
+                    "IP":"192.168.101.105"
+                }
+            ]
+        },
+
+        {
+            "ID":7,
+            "protocols": [
+                "dnp3"
+            ],
+            "rtus": [
+                {
+                    "ID":7,
+                    "scenario":"JHU",
+                    "protocol":"dnp3",
+                    "PORT":20008,
+                    "IP":"192.168.101.105"
+                }
+            ]
+        },
+
+        {
+            "ID":8,
+            "protocols": [
+                "modbus"
+            ],
+            "rtus": [
+                {
+                    "ID":8,
+                    "scenario":"JHU",
+                    "protocol":"modbus",
+                    "PORT":511,
+                    "IP":"192.168.101.105",
+                    "NUM_CYCLES":3,
+                    "DEBUG":1,
+                    "CYCLES": [
+                        "1,coilStatus(8,0)",
+                        "1,holdingRegisters(8,0)",
+                        "1,holdingRegisters(8,1)"
+                    ]
+                }
+            ]
+        },
+
+        {
+            "ID":9,
+            "protocols": [
+                "modbus"
+            ],
+            "rtus": [
+                {
+                    "ID":9,
+                    "scenario":"JHU",
+                    "protocol":"modbus",
+                    "PORT":512,
+                    "IP":"192.168.101.105",
+                    "NUM_CYCLES":3,
+                    "DEBUG":1,
+                    "CYCLES": [
+                        "1,coilStatus(9,0)",
+                        "1,holdingRegisters(9,0)",
+                        "1,holdingRegisters(9,1)"
+                    ]
+
+                }
+            ]
+        },
+
+        {
+            "ID":10,
+            "protocols": [
+                "modbus"
+            ],
+            "rtus": [
+                {
+                    "ID":10,
+                    "protocol":"modbus",
+                    "scenario":"PNNL",
+                    "PORT":502,
+                    "IP":"192.168.101.105",
+                    "NUM_CYCLES":3,
+                    "DEBUG":1,
+                    "CYCLES": [
+                        "14,inputStatus(0,0)",
+                        "14,coilStatus(0,0)",
+                        "16,holdingRegisters(0,0)"
+                    ]
+                }
+            ]
+        },
+
+        {
+            "ID":11,
+            "protocols": [
+                "modbus"
+            ],
+            "rtus": [
+                {
+                    "ID":11,
+                    "protocol":"modbus",
+                    "scenario":"EMS",
+                    "PORT":513,
+                    "IP":"192.168.101.105",
+                    "NUM_CYCLES":3,
+                    "DEBUG":1,
+                    "CYCLES": [
+                        "1,coilStatus(0,0)",
+                        "1,holdingRegisters(0,0)",
+                        "3,inputRegisters(0,0)"
+                    ]
+                }
+            ]
+        },
+
+        {
+            "ID":12,
+            "protocols": [
+                "modbus"
+            ],
+            "rtus": [
+                {
+                    "ID":12,
+                    "protocol":"modbus",
+                    "scenario":"EMS",
+                    "PORT":514,
+                    "IP":"192.168.101.105",
+                    "NUM_CYCLES":3,
+                    "DEBUG":1,
+                    "CYCLES": [
+                        "1,coilStatus(0,0)",
+                        "1,holdingRegisters(0,0)",
+                        "3,inputRegisters(0,0)"
+                    ]
+                }
+            ]
+        },
+
+        {
+            "ID":13,
+            "protocols": [
+                "modbus"
+            ],
+            "rtus": [
+                {
+                    "ID":13,
+                    "protocol":"modbus",
+                    "scenario":"EMS",
+                    "PORT":515,
+                    "IP":"192.168.101.105",
+                    "NUM_CYCLES":3,
+                    "DEBUG":1,
+                    "CYCLES": [
+                        "1,coilStatus(0,0)",
+                        "1,holdingRegisters(0,0)",
+                        "3,inputRegisters(0,0)"
+                    ]
+                }
+            ]
+        },
+
+        {
+            "ID":14,
+            "protocols": [
+                "modbus"
+            ],
+            "rtus": [
+                {
+                    "ID":14,
+                    "protocol":"modbus",
+                    "scenario":"EMS",
+                    "PORT":516,
+                    "IP":"192.168.101.105",
+                    "NUM_CYCLES":3,
+                    "DEBUG":1,
+                    "CYCLES": [
+                        "1,coilStatus(0,0)",
+                        "1,holdingRegisters(0,0)",
+                        "3,inputRegisters(0,0)"
+                    ]
+                }
+            ]
+        },
+
+        {
+            "ID":15,
+            "protocols": [
+                "modbus"
+            ],
+            "rtus": [
+                {
+                    "ID":15,
+                    "protocol":"modbus",
+                    "scenario":"EMS",
+                    "PORT":517,
+                    "IP":"192.168.101.105",
+                    "NUM_CYCLES":3,
+                    "DEBUG":1,
+                    "CYCLES": [
+                        "1,coilStatus(0,0)",
+                        "1,holdingRegisters(0,0)",
+                        "3,inputRegisters(0,0)"
+                    ]
+                }
+            ]
+        },
+
+        {
+            "ID":16,
+            "protocols": [
+                "modbus"
+            ],
+            "rtus": [
+                {
+                    "ID":16,
+                    "protocol":"modbus",
+                    "scenario":"EMS",
+                    "PORT":518,
+                    "IP":"192.168.101.105",
+                    "NUM_CYCLES":3,
+                    "DEBUG":1,
+                    "CYCLES": [
+                        "1,coilStatus(0,0)",
+                        "1,holdingRegisters(0,0)",
+                        "3,inputRegisters(0,0)"
+                    ]
+                }
+            ]
+        }
+    ],
+    "GLOBALS": {
+        "modbus": {
+            "PROTOCOL":"RTU",
+            "N_POLL_SLAVE":0,
+            "CYCLETIME":1000,
+            "DEBUG":1
+        }
+    }
+}

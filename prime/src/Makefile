@@ -20,14 +20,14 @@
 #    Jonathan Kirsch      jak@cs.jhu.edu
 #    John Lane            johnlane@cs.jhu.edu
 #    Marco Platania       platania@cs.jhu.edu
-#    Amy Babay            babay@cs.jhu.edu
+#    Amy Babay            babay@pitt.edu
 #    Thomas Tantillo      tantillo@cs.jhu.edu
 # 
 #  Major Contributors:
 #    Brian Coan           Design of the Prime algorithm
 #    Jeff Seibert         View Change protocol
 #       
-#  Copyright (c) 2008-2020
+#  Copyright (c) 2008-2023
 #  The Johns Hopkins University.
 #  All rights reserved.
 #  
@@ -53,7 +53,7 @@ SPINES_LIB = ../../spines/libspines/libspines.a
 
 CC = gcc
 #CFLAGS = -g -pg -O2 -Wall $(SPINES) $(INC)  
-CFLAGS = -g -O2 -Wall $(SPINES) $(INC)  
+CFLAGS += -g -O2 -Wall $(SPINES) $(INC)  
 
 WRAPPER_OBJ = error_wrapper.o openssl_rsa.o
 
@@ -63,6 +63,12 @@ PRIME_OBJ = prime.o data_structs.o utility.o network.o pre_order.o \
 	reliable_broadcast.o view_change.o erasure.o recon.o \
 	tc_wrapper.o catchup.o proactive_recovery.o $(WRAPPER_OBJ)
 
+CONF_PRIME_OBJ = prime.o data_structs.o utility.o network.o pre_order.o \
+	util_dll.o conf_validate.o process.o packets.o order.o \
+	signature.o net_wrapper.o merkle.o suspect_leader.o \
+	reliable_broadcast.o view_change.o erasure.o recon.o \
+	conf_tc_wrapper.o catchup.o proactive_recovery.o $(WRAPPER_OBJ)
+
 CLIENT_OBJ = client.o data_structs.o utility.o network.o pre_order.o \
 	util_dll.o packets.o process.o order.o \
 	signature.o net_wrapper.o erasure.o validate.o suspect_leader.o \
@@ -71,7 +77,13 @@ CLIENT_OBJ = client.o data_structs.o utility.o network.o pre_order.o \
 
 GEN_KEYS_OBJ = openssl_rsa.o generate_keys.o tc_wrapper.o
 
-all: $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) prime client gen_keys 
+all: $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) prime client gen_keys conf_prime
+
+
+base_prime: $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) prime client gen_keys
+
+conf_base_prime: $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) conf_prime gen_keys
+
 
 $(STDUTIL_LIB):
 	cd ../stdutil; ./configure; make
@@ -83,13 +95,16 @@ $(TC_LIB):
 	cd ../OpenTC-1.1/TC-lib-1.0/; ./configure; make
 
 gen_keys: $(GEN_KEYS_OBJ)
-	$(CC) $(CFLAGS) -o ../bin/gen_keys $(GEN_KEYS_OBJ) $(LIBSPREAD_UTIL) $(TC_LIB) -lcrypto -ldl -lpthread -lrt
+	$(CC) $(LDFLAGS) -o ../bin/gen_keys $(GEN_KEYS_OBJ) $(LIBSPREAD_UTIL) $(TC_LIB) -lcrypto -ldl -lpthread -lrt
 
 prime: $(PRIME_OBJ)
-	$(CC) $(CFLAGS) $(CPPFLAGS) -o ../bin/prime $(PRIME_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
+	$(CC) $(LDFLAGS) $(CPPFLAGS) -o ../bin/prime $(PRIME_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
+
+conf_prime: $(CONF_PRIME_OBJ)
+	$(CC) $(LDFLAGS) $(CPPFLAGS) -o ../bin/conf_prime $(CONF_PRIME_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
 
 client: $(CLIENT_OBJ)
-	$(CC) -o ../bin/client $(CLIENT_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
+	$(CC) $(LDFLAGS) -o ../bin/client $(CLIENT_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
 
 %.o:	%.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $*.o $*.c
@@ -99,6 +114,7 @@ clean:
 	rm -f *.o
 	rm -f core*
 	rm -f ../bin/prime
+	rm -f ../bin/conf_prime
 	rm -f ../bin/client
 	rm -f ../bin/gen_keys
 

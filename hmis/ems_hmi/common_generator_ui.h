@@ -16,28 +16,31 @@
  * License.
  *
  * Spire is developed at the Distributed Systems and Networks Lab,
- * Johns Hopkins University.
+ * Johns Hopkins University and the Resilient Systems and Societies Lab,
+ * University of Pittsburgh.
  *
  * Creators:
  *   Yair Amir            yairamir@cs.jhu.edu
  *   Trevor Aron          taron1@cs.jhu.edu
- *   Amy Babay            babay@cs.jhu.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu
+ *   Amy Babay            babay@pitt.edu
+ *   Thomas Tantillo      tantillo@cs.jhu.edu 
+ *   Sahiti Bommareddy    sahiti@cs.jhu.edu 
+ *   Maher Khan           maherkhan@pitt.edu
  *
  * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
- *   Sahiti Bommareddy    Addition of IDS, Contributions to OpenSSL upgrade, latency optimization
+ *   Daniel Qian          Contributions to Trip Master and IDS 
  *
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
- *   Daniel Qian          Contributions to IDS
  *
- * Copyright (c) 2017-2020 Johns Hopkins University.
+ * Copyright (c) 2017-2023 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
- * Research Projects Agency (DARPA) and the Department of Defense (DoD).
- * Spire is not necessarily endorsed by DARPA or the DoD. 
+ * Research Projects Agency (DARPA), the Department of Defense (DoD), and the
+ * Department of Energy (DoE).
+ * Spire is not necessarily endorsed by DARPA, the DoD or the DoE. 
  *
  */
 #include "master_exec.h"

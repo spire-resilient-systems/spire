@@ -121,6 +121,14 @@ pvb/designer/src/Makefile.pvbplugin
 !proxy/Makefile
 !scada_master/Makefile
 !spines/stdutil/Makefile
+!relay_emulator/Makefile
+!proxy_iec61850/Makefile
+!benchmarks_ss/Makefile
+!trip_master_v2/Makefile
+!trip_master/Makefile
+!/libiec61850/Makefile
+!benchmarks_ss/Makefile
+
 
 # Spines misc
 spines/daemon/config.h
@@ -174,6 +182,8 @@ OpenPLC_v2/matiec_src/stage1_2/iec_bison.hh
 OpenPLC_v2/matiec_src/stage1_2/iec_flex.cc
 OpenPLC_v2/matiec_src/stage4/generate_c/stage4.Po
 OpenPLC_v2/core/glueVars.cpp
+OpenPLC_v2/st_optimizer
+OpenPLC_v2/st_optimizer_src
 
 # PVB misc
 pvb/designer/src/moc_pvb_designer_plugin.cpp
@@ -208,3 +218,32 @@ pvb/rllib/rlsvg/rlsvgcat
 pvb/fake_qmake/fake_qmake
 pvb/rllib/rlfind/rlfind
 pvb/rllib/rlhtml2pdf/rlhtml2pdf
+
+
+
+# Compiled Executables
+relay_emulator/gen_event
+relay_emulator/goose_publisher
+trip_master_v2/trip_master
+trip_master/trip_master
+proxy_iec61850/dst_proxy_vr2
+proxy_iec61850/pnnl_simple_cb_proxy
+proxy_iec61850/counting_dst_proxy
+proxy_iec61850/dst_proxy
+proxy_iec61850/pnnl_relay_proxy
+proxy_iec61850/relay_proxy
+trip_master_v2/gen_keys
+trip_master/gen_keys
+benchmarks_ss/benchmark2
+benchmarks_ss/benchmark
+benchmarks_ss/mil_runs
+benchmarks_ss/*log*
+benchmarks_ss/*out*
+
+#libiec61850 misc
+libiec61850/.install
+ 
+
+#TM Keys
+trip_master_v2/tm_keys
+trip_master/tm_keys

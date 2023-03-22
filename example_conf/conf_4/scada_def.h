@@ -16,28 +16,32 @@
  * License.
  *
  * Spire is developed at the Distributed Systems and Networks Lab,
- * Johns Hopkins University.
+ * Johns Hopkins University and the Resilient Systems and Societies Lab,
+ * University of Pittsburgh.
  *
  * Creators:
  *   Yair Amir            yairamir@cs.jhu.edu
  *   Trevor Aron          taron1@cs.jhu.edu
- *   Amy Babay            babay@cs.jhu.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu
+ *   Amy Babay            babay@pitt.edu
+ *   Thomas Tantillo      tantillo@cs.jhu.edu 
+ *   Sahiti Bommareddy    sahiti@cs.jhu.edu 
+ *   Maher Khan           maherkhan@pitt.edu
  *
  * Major Contributors:
  *   Marco Platania       Contributions to architecture design 
- *   Sahiti Bommareddy    Addition of IDS, Contributions to OpenSSL upgrade, latency optimization
+ *   Daniel Qian          Contributions to Trip Master and IDS 
  *
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs 
- *   Daniel Qian          Contributions to IDS
+ 
  *
- * Copyright (c) 2017-2020 Johns Hopkins University.
+ * Copyright (c) 2017-2023 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
- * Research Projects Agency (DARPA) and the Department of Defense (DoD).
- * Spire is not necessarily endorsed by DARPA or the DoD. 
+ * Research Projects Agency (DARPA), the Department of Defense (DoD), and the
+ * Department of Energy (DoE).
+ * Spire is not necessarily endorsed by DARPA, the DoD or the DoE. 
  *
  */
 
@@ -157,6 +161,9 @@
 #define LISTEN_QLEN 4
 #define MAX_LEN 10000
 
+/* MK: Checkpoint */
+#define CHECKPOINT_PERIOD 100
+
 /* Replica Type defines */
 #define CC_TYPE  1
 #define DC_TYPE  2
@@ -190,4 +197,78 @@
 #define DIGEST_SIZE        20
 #define SIGNATURE_SIZE     128
 
+/***********************************
+ * Substation System wide defines  *
+ * *********************************/
+/* Total number of relays, should equal (2 * NUM_F + NUM_K + 1) */
+#define NUM_REPLICAS 4
+/* Maximum number of byzantine faults */
+#define SS_NUM_F 1
+/* Maximum number of fail-stopped relays (i.e. undergoing proactive recovery) */
+#define SS_NUM_K 1
+
+/* IP address of machines running Spines, Subscribers, and Trip Masters */
+#define SPINES_RELAY_INT_ADDRS {"192.168.101.101", \
+                                "192.168.101.102", \
+                                "192.168.101.103", \
+                                "192.168.101.104"}
+
+#define SPINES_RELAY_EXT_ADDRS {"192.168.101.101", \
+                                "192.168.101.102", \
+                                "192.168.101.103", \
+                                "192.168.101.104"}
+
+/* IP address of destination proxy machine (external spines) connected to Circuit Breaker */
+#define SPINES_PROXY_ADDR "192.168.101.105"
+
+
+/* Interval that discretised timestamps are rounded too, in ms */
+#define DTS_INTERVAL 2
+
+#define RECOVERY_TIMEOUT_SEC  10
+#define RECOVERY_TIMEOUT_USEC 0
+
+#define SIGNED_TIMEOUT_SEC  0
+#define SIGNED_TIMEOUT_USEC 2000
+
+/**********************************
+ *    Substation Spines defines    *
+ * *********************************/
+/* Port used by Spines Disemmination/External network */
+#define SS_SPINES_EXT_PORT     10200
+#define SS_SPINES_INT_PORT     10000
+
+/* Spines virtual ports
+ *
+ * With Threshold Crypto (2.a)
+ *  TM_OUT_PORT        Used by Trip Master to send to destination Proxy
+ *  TM_TC_PORT         Spines Internal PORT for co-ordination by Trip Masters
+ *
+ * */
+#define TM_PROXY_PORT      7501
+#define TM_TC_PORT         7502
+#define BREAKER_PORT      7601
+#define EXPIRATION_SEC      5
+#define EXPIRATION_USEC     0
+#define SPINES_MAX_SIZE     2000
+
+/* IPC Communication defines */
+#define TM_IPC_IN  "/tmp/tm_ipc_in"
+#define TM_IPC_OUT  "/tmp/tm_ipc_out"
+
+
+/* Threshhold Crypto defines */
+#define TM_KEYS "tm_keys"
+
+/* GOOSE parameters */
+#define GOOSE_MAX_LENGTH 1522
+#define ETH_P_GOOSE 0x88b8
+
+#define GOOSE_CB_REF "simpleIOGenericIO/LLN0$GO$gcbAnalogValues"
+
+/* Relay Emulation defines */
+#define EMULATOR_MCAST_PORT 8401
+#define EMULATOR_MCAST_ADDR (224 << 24 | 1 << 16 | 1 << 8 | 1) /* (224.1.1.1) */
+
+#define SS_KEY_SIZE 1024
 #endif /* DEF_H */

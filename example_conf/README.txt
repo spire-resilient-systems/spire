@@ -25,11 +25,12 @@ Usage: ./install_conf.sh <conf_dir>
 Options:
   -h : print help and exit
 
-The script recompile.sh recompiles the necessary parts of Spire to reflect
-changes in scada_def.h and prime_def.h
-Usage: ./recompile.sh
-Options:
-  -h : print help and exit
+After copying the configuration files, to recompile, run the following commands
+from the top-level directory:
+  
+  make clean
+  make libs
+  make
 
 Note that if the total number of replicas (or clients) is increased, you will
 also need to re-run Prime's gen_keys program to create keys for the additional

@@ -20,8 +20,8 @@
  *   Jonathan Kirsch      jak@cs.jhu.edu
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
- *   Amy Babay            babay@cs.jhu.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu
+ *   Amy Babay            babay@pitt.edu
+ *   Thomas Tantillo      tantillo@cs.jhu.edu 
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
