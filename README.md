@@ -186,10 +186,10 @@ Prime 3.0 and Spines 5.2.
 
 ## 6. Publications
 
-Babay, Amy, Thomas Tantillo, Trevor Aron, Marco Platania, and Yair Amir. "Network-attack-resilient intrusion-tolerant SCADA for the power grid." In 2018 48th Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN), pp. 255-266. IEEE, 2018.
+Babay, Amy, Thomas Tantillo, Trevor Aron, Marco Platania, and Yair Amir. ["Network-attack-resilient intrusion-tolerant SCADA for the power grid."](https://sites.pitt.edu/~babay/pubs/scada_DSN_2018.pdf) In [2018 48th Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN)](https://ieeexplore.ieee.org/document/8416488), pp. 255-266. IEEE, 2018.
 
-Babay, Amy, John Schultz, Thomas Tantillo, Samuel Beckley, Eamon Jordan, Kevin Ruddell, Kevin Jordan, and Yair Amir. "Deploying intrusion-tolerant SCADA for the power grid." In 2019 49th Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN), pp. 328-335. IEEE, 2019.
+Babay, Amy, John Schultz, Thomas Tantillo, Samuel Beckley, Eamon Jordan, Kevin Ruddell, Kevin Jordan, and Yair Amir. ["Deploying intrusion-tolerant SCADA for the power grid."](https://sites.pitt.edu/~babay/pubs/DSN_2019_SCADA_Experience.pdf) In [2019 49th Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN)](https://ieeexplore.ieee.org/document/8809554), pp. 328-335. IEEE, 2019.
 
-Khan, Maher, and Amy Babay. "Toward intrusion tolerance as a service: Confidentiality in partially cloud-based BFT systems." In 2021 51st Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN), pp. 14-25. IEEE, 2021.
+Khan, Maher, and Amy Babay. ["Toward intrusion tolerance as a service: Confidentiality in partially cloud-based BFT systems."](https://sites.pitt.edu/~babay/pubs/dsn21_confidentialBFT.pdf) In [2021 51st Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN)](https://ieeexplore.ieee.org/document/9505127), pp. 14-25. IEEE, 2021.
 
-Bommareddy, Sahiti, Daniel Qian, Christopher Bonebrake, Paul Skare, and Yair Amir. "Real-time Byzantine resilience for power grid substations." In 2022 41st International Symposium on Reliable Distributed Systems (SRDS), pp. 213-224. IEEE, 2022.
+Bommareddy, Sahiti, Daniel Qian, Christopher Bonebrake, Paul Skare, and Yair Amir. ["Real-time Byzantine resilience for power grid substations."](https://ieeexplore.ieee.org/document/9996955) In [2022 41st International Symposium on Reliable Distributed Systems (SRDS)](https://ieeexplore.ieee.org/document/9996955), pp. 213-224. IEEE, 2022.
