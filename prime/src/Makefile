@@ -25,8 +25,8 @@
 # 
 #  Major Contributors:
 #    Brian Coan           Design of the Prime algorithm
-#    Jeff Seibert         View Change protocol
-#       
+#    Jeff Seibert         View Change protocol 
+#  
 #  Copyright (c) 2008-2023
 #  The Johns Hopkins University.
 #  All rights reserved.
@@ -58,29 +58,34 @@ CFLAGS += -g -O2 -Wall $(SPINES) $(INC)
 WRAPPER_OBJ = error_wrapper.o openssl_rsa.o
 
 PRIME_OBJ = prime.o data_structs.o utility.o network.o pre_order.o \
-	util_dll.o validate.o process.o packets.o order.o \
+	util_dll.o validate.o nm_process.o process.o packets.o order.o  \
 	signature.o net_wrapper.o merkle.o suspect_leader.o \
 	reliable_broadcast.o view_change.o erasure.o recon.o \
 	tc_wrapper.o catchup.o proactive_recovery.o $(WRAPPER_OBJ)
 
 CONF_PRIME_OBJ = prime.o data_structs.o utility.o network.o pre_order.o \
-	util_dll.o conf_validate.o process.o packets.o order.o \
+	util_dll.o conf_validate.o nm_process.o process.o packets.o order.o \
 	signature.o net_wrapper.o merkle.o suspect_leader.o \
 	reliable_broadcast.o view_change.o erasure.o recon.o \
 	conf_tc_wrapper.o catchup.o proactive_recovery.o $(WRAPPER_OBJ)
 
 CLIENT_OBJ = client.o data_structs.o utility.o network.o pre_order.o \
-	util_dll.o packets.o process.o order.o \
+	util_dll.o packets.o nm_process.o process.o order.o \
 	signature.o net_wrapper.o erasure.o validate.o suspect_leader.o \
 	reliable_broadcast.o view_change.o catchup.o proactive_recovery.o \
 	merkle.o recon.o tc_wrapper.o $(WRAPPER_OBJ)
 
-GEN_KEYS_OBJ = openssl_rsa.o generate_keys.o tc_wrapper.o
+#GEN_KEYS_OBJ = data_structs.o openssl_rsa.o generate_keys.o tc_wrapper.o
+GEN_KEYS_OBJ =  generate_keys.o tc_wrapper.o data_structs.o utility.o network.o pre_order.o \
+        util_dll.o validate.o nm_process.o process.o packets.o order.o  \
+        signature.o net_wrapper.o merkle.o suspect_leader.o proactive_recovery.o\
+        reliable_broadcast.o view_change.o erasure.o recon.o  catchup.o $(WRAPPER_OBJ)
 
 all: $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) prime client gen_keys conf_prime
 
 
-base_prime: $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) prime client gen_keys
+base_prime: $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) prime  gen_keys
+#base_prime: $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) prime 
 
 conf_base_prime: $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) conf_prime gen_keys
 
@@ -95,7 +100,7 @@ $(TC_LIB):
 	cd ../OpenTC-1.1/TC-lib-1.0/; ./configure; make
 
 gen_keys: $(GEN_KEYS_OBJ)
-	$(CC) $(LDFLAGS) -o ../bin/gen_keys $(GEN_KEYS_OBJ) $(LIBSPREAD_UTIL) $(TC_LIB) -lcrypto -ldl -lpthread -lrt
+	$(CC) $(LDFLAGS) -o ../bin/gen_keys $(GEN_KEYS_OBJ) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) $(STDUTIL_LIB) -lcrypto -ldl -lpthread -lrt
 
 prime: $(PRIME_OBJ)
 	$(CC) $(LDFLAGS) $(CPPFLAGS) -o ../bin/prime $(PRIME_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt

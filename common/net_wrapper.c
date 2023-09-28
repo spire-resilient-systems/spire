@@ -62,17 +62,38 @@
 #include "net_wrapper.h"
 #include "spines_lib.h"
 
+//Sahiti Notes:
+//NUM_SM : 3f+2k+1 or N
+//NUM_CC_REPLICA : replicas in cc
+//NUM_CC : num of cc sites
+//NUM_SITES : cc + dc
+
 int Type;
 int My_ID;
+int My_Global_ID,PartOfConfig;
 int32u My_Incarnation;
+int32u My_Global_Configuration_Number;
 int Prime_Client_ID;
 int My_IP;
+int32u My_curr_global_config_num;
 int All_Sites[NUM_SM];
 int CC_Replicas[NUM_CC_REPLICA];
 int CC_Sites[NUM_CC_REPLICA];
 char* Ext_Site_Addrs[NUM_CC]    = SPINES_EXT_SITE_ADDRS;
 char* Int_Site_Addrs[NUM_SITES] = SPINES_INT_SITE_ADDRS;
 sigset_t signal_mask;
+int Curr_num_f = NUM_F;
+int Curr_num_k = NUM_K;
+
+char Curr_Ext_Site_Addrs[MAX_NUM_SERVER_SLOTS][32];
+char Curr_Int_Site_Addrs[MAX_NUM_SERVER_SLOTS][32];
+int Curr_All_Sites[MAX_NUM_SERVER_SLOTS];
+int Curr_CC_Replicas[MAX_NUM_SERVER_SLOTS];
+int Curr_CC_Sites[MAX_NUM_SERVER_SLOTS];
+int Curr_num_SM =NUM_SM;
+int Curr_num_CC_Replica = NUM_CC_REPLICA;
+int Curr_num_CC= NUM_CC;
+int Curr_num_sites=NUM_SITES;
 
 /* local functions */
 int max_rcv_buff(int sk);
@@ -95,17 +116,106 @@ void Init_SM_Replicas()
             cc_rep++;
         } 
         site = (site + 1) % NUM_SITES;
-    }   
+    }  
+
+    for(int i=0; i < MAX_NUM_SERVER_SLOTS;i++){
+        memset(Curr_Ext_Site_Addrs[i],0,sizeof(Curr_Ext_Site_Addrs[i]));
+        memset(Curr_Int_Site_Addrs[i],0,sizeof(Curr_Int_Site_Addrs[i]));
+        Curr_CC_Replicas[i]=0;
+        Curr_CC_Sites[i]=0;
+        Curr_All_Sites[i]=0;
+    }
+    
+    for (id = 1; id <= Curr_num_CC ;id++){
+        sprintf(Curr_Ext_Site_Addrs[id-1],"%s",Ext_Site_Addrs[id-1]);
+    }
+    
+    for(id = 1; id <= Curr_num_sites ; id++){
+        sprintf(Curr_Int_Site_Addrs[id-1],"%s",Int_Site_Addrs[id-1]);
+    }
+
+    cc_rep = 0;
+     site=0;
+     for (id = 1; id <= Curr_num_SM; id++){
+         Curr_All_Sites[id-1] = site;
+        if (site < Curr_num_CC) {
+            Curr_CC_Replicas[cc_rep] = id;
+            Curr_CC_Sites[cc_rep] = site;
+            cc_rep++;
+        }
+        site = (site + 1) % Curr_num_sites;
+     }
+
+}
+
+void Reset_SM_def_vars(int32u N,int32u f, int32u k, int32u cc_replicas, int32u num_cc, int32 num_dc){
+    if(N< (3*f+2*k+1))
+            perror("OOB config message has N < 3f+2k+1\n");
+    Curr_num_SM=N;
+    Curr_num_CC_Replica=cc_replicas;
+    Curr_num_CC=num_cc;
+    Curr_num_sites= num_cc+num_dc;
+    Curr_num_f=f;
+    Curr_num_k=k;
+    //printf("Reset defs successfully\n");
+
+}
+
+void Reset_SM_Replicas(int32u tpm_based_id[MAX_NUM_SERVER_SLOTS],int replica_flag[MAX_NUM_SERVER_SLOTS],char spines_ext_addresses[MAX_NUM_SERVER_SLOTS][32],char spines_int_addresses[MAX_NUM_SERVER_SLOTS][32]){
+   int i,id; 
+   for(i=0; i < MAX_NUM_SERVER_SLOTS;i++){
+        memset(Curr_Ext_Site_Addrs[i],0,sizeof(Curr_Ext_Site_Addrs[i]));
+        memset(Curr_Int_Site_Addrs[i],0,sizeof(Curr_Int_Site_Addrs[i]));
+        Curr_CC_Replicas[i]=0;
+        Curr_CC_Sites[i]=0;
+        Curr_All_Sites[i]=0;
+    }
+    
+    for(i=0;i<MAX_NUM_SERVER_SLOTS;i++){
+        if(tpm_based_id[i]==0)
+            continue;
+        int l_id=tpm_based_id[i];
+        int r_flag=replica_flag[i];
+        if(r_flag==1){
+            sprintf(Curr_Ext_Site_Addrs[l_id-1],"%s",spines_ext_addresses[i]);
+        }
+        sprintf(Curr_Int_Site_Addrs[l_id-1],"%s",spines_int_addresses[i]);
+    }
+    if(replica_flag[My_Global_ID-1]==1)
+	Type=CC_TYPE;
+    else
+	Type=DC_TYPE;
+
+    int cc_rep = 0;
+    int  site=0;
+     for (id = 1; id <= Curr_num_SM; id++){
+         Curr_All_Sites[id-1] = site;
+        if (site < Curr_num_CC) {
+            Curr_CC_Replicas[cc_rep] = id;
+            Curr_CC_Sites[cc_rep] = site;
+            cc_rep++;
+        }
+        site = (site + 1) % Curr_num_sites;
+     }
+    /*
+     for (i =0; i<MAX_NUM_SERVER_SLOTS;i++){
+         printf("Reset SM Replica ext spines addr[%d]: %s\n",i+1, Curr_Ext_Site_Addrs[i]);
+         printf("Reset SM Replica int spines addr[%d]: %s\n",i+1, Curr_Int_Site_Addrs[i]);
+         printf("Reset SM Curr_CC_Replicas[%d]:%d\n",i,Curr_CC_Replicas[i]);
+         printf("Reset SM Curr_CC_Sites[%d]:%d\n",i,Curr_CC_Sites[i]);
+    }
+    */
 }
 
 /* Returns 1 if given id is the id of a control center replica, 0 otherwise */
 int Is_CC_Replica(int id) 
 {
     int i;
-
-    for (i = 0; i < NUM_CC_REPLICA; i++)
+    //TODO: Curr_num_CC_Replica
+    //for (i = 0; i < NUM_CC_REPLICA; i++)
+    for (i = 0; i < Curr_num_CC_Replica; i++)
     {   
-        if (CC_Replicas[i] == id) 
+        if (Curr_CC_Replicas[i] == id) 
             return 1;
     }   
 
@@ -442,7 +552,7 @@ int Spines_SendOnly_Sock(const char *sp_addr, int sp_port, int proto)
         exp.sec  = INT_EXPIRATION_SEC;
         exp.usec = INT_EXPIRATION_USEC;
     }
-    else if (sp_port == SPINES_EXT_PORT) {
+    else if (sp_port == SPINES_EXT_PORT || sp_port == SPINES_CTRL_PORT) {
         exp.sec  = EXT_EXPIRATION_SEC;
         exp.usec = EXT_EXPIRATION_USEC;
     }
@@ -464,6 +574,81 @@ int Spines_SendOnly_Sock(const char *sp_addr, int sp_port, int proto)
 
     return sk;
 }
+
+/* Connect to Spines at specified IP and port, with proto as semantics */
+int Spines_Mcast_SendOnly_Sock(const char *sp_addr, int sp_port, int proto) 
+{
+    int sk, ret, protocol;
+    struct sockaddr_in spines_addr;
+    struct sockaddr_un spines_uaddr;
+    int16u prio, kpaths;
+    spines_nettime exp;
+
+    memset(&spines_addr, 0, sizeof(spines_addr));
+
+    printf("Initiating Spines connection: %s:%d\n", sp_addr, sp_port);
+    spines_addr.sin_family = AF_INET;
+    spines_addr.sin_port   = htons(sp_port);
+    spines_addr.sin_addr.s_addr = inet_addr(sp_addr);
+
+    spines_uaddr.sun_family = AF_UNIX;
+    sprintf(spines_uaddr.sun_path, "%s%d", "/tmp/spines", sp_port);
+
+    protocol = 8 | (proto << 8);
+
+    /* printf("Creating IPC spines_socket\n");
+    sk = spines_socket(PF_SPINES, SOCK_DGRAM, protocol, (struct sockaddr *)&spines_uaddr); */
+   
+    if ((int)inet_addr(sp_addr) == My_IP) {
+        printf("Creating default spines_socket\n");
+        sk = spines_socket(PF_SPINES, SOCK_DGRAM, protocol, (struct sockaddr *)&spines_uaddr);
+    }
+    else {
+        printf("Creating inet spines_socket\n");
+        sk = spines_socket(PF_SPINES, SOCK_DGRAM, protocol, 
+                (struct sockaddr *)&spines_addr);
+    }
+    if (sk < 0) {
+        perror("Spines_Sock: error creating spines socket!");
+        return sk;
+    }
+
+    /* setup kpaths = 1 */
+    kpaths = 0;
+    if ((ret = spines_setsockopt(sk, 0, SPINES_DISJOINT_PATHS, (void *)&kpaths, sizeof(int16u))) < 0) {
+        printf("Spines_Sock: spines_setsockopt failed for disjoint paths = %u\n", kpaths);
+        return ret;
+    }
+
+    /* setup priority level and garbage collection settings for Priority Messaging */
+    prio = SCADA_PRIORITY;
+    if (sp_port == SPINES_INT_PORT) {
+        exp.sec  = INT_EXPIRATION_SEC;
+        exp.usec = INT_EXPIRATION_USEC;
+    }
+    else if (sp_port == SPINES_EXT_PORT || sp_port == SPINES_CTRL_PORT) {
+        exp.sec  = EXT_EXPIRATION_SEC;
+        exp.usec = EXT_EXPIRATION_USEC;
+    }
+    else {
+        printf("Invalid spines port specified! (%u)\n", sp_port);
+        exit(EXIT_FAILURE);
+    }
+    if (proto == SPINES_PRIORITY) {
+        if ((ret = spines_setsockopt(sk, 0, SPINES_SET_EXPIRATION, (void *)&exp, sizeof(spines_nettime))) < 0) {
+            printf("Spines_Sock: error setting expiration time to %u sec %u usec\n", exp.sec, exp.usec);
+            return ret;
+        }
+
+        if ((ret = spines_setsockopt(sk, 0, SPINES_SET_PRIORITY, (void *)&prio, sizeof(int16u))) < 0) {
+            printf("Spines_Sock: error setting priority to %u\n", prio);
+            return ret;
+        }
+    }
+
+    return sk;
+}
+
 
 
 struct timeval diffTime(struct timeval t1, struct timeval t2)

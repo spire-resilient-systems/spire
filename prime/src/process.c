@@ -21,12 +21,11 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -43,6 +42,7 @@
  * These functions take a message that has first been validated. */
 #include <assert.h>
 #include <string.h>
+
 #include "data_structs.h"
 #include "process.h"
 #include "spu_memory.h"
@@ -57,6 +57,7 @@
 #include "view_change.h"
 #include "catchup.h"
 #include "proactive_recovery.h"
+#include "nm_process.h"
 
 /* Gobally Accessible Variables */
 extern server_variables   VAR;
@@ -77,10 +78,12 @@ void PROCESS_Message(signed_message *mess)
     break;
 
   case PO_REQUEST:
+    Alarm(DEBUG,"Processing PO_Request\n");
     PRE_ORDER_Process_PO_Request(mess);
     break;
     
   case PO_ACK:
+    Alarm(DEBUG,"Processing PO_Ack\n");
     PRE_ORDER_Process_PO_Ack(mess);
     break;
 
@@ -274,6 +277,11 @@ void PROCESS_Message(signed_message *mess)
   case RESET_CERT:
     PR_Process_Reset_Certificate(mess);
     break;
+  case CLIENT_OOB_CONFIG_MSG:
+    Alarm(PRINT,"MS2022: Received OOB Config Msg\n");
+	Process_OOB_NM_MSG(mess);
+	break;
+
 
   default:
     Alarm(PRINT, "Unexpected message type in PROCESS message: %d\n", mess->type);

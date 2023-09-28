@@ -26,7 +26,7 @@
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.

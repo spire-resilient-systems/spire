@@ -178,6 +178,7 @@ typedef struct dummy_signed_message {
 
     int32u incarnation;
     int32u monotonic_counter;
+    int32u global_configuration_number; /*MS2022:  Global configuration number to differntiate configurations*/
 
     /* Content of message follows */
 } signed_message;

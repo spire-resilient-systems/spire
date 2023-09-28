@@ -227,6 +227,7 @@ static int send_SM_Message(const int new_target, const int id) {
     ps.incarnation = My_Incarnation;
     ps.seq_num = Seq_Num;
     mess = PKT_Construct_HMI_Command_Msg(ps, MAX_EMU_RTU + My_ID, EMS, new_target, id);
+    mess->global_configuration_number=My_Global_Configuration_Number;
     nbytes = sizeof(signed_message) + mess->len;
     Seq_Num++;
     IPC_Send(ipc_sock, (void *)mess, nbytes, itrc_in.ipc_remote);

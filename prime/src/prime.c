@@ -21,12 +21,11 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -60,7 +59,9 @@
 extern server_variables   VAR;
 extern network_variables  NET;
 extern server_data_struct DATA;
-
+extern int Curr_N;
+extern int Curr_k;
+extern int Curr_f;
 /* Local Function Definitions */
 void Usage(int argc, char **argv);
 void Print_Usage(void);
@@ -71,11 +72,14 @@ int main(int argc, char** argv)
   setlinebuf(stdout);
   Usage(argc, argv);
   Alarm_set_types(NONE);
+  //Alarm_set_types(STATUS);
+  //Alarm_set_types(PRINT);
+  //Alarm_set_types(DEBUG);
   Alarm_enable_timestamp_high_res(NULL);
 
   Alarm( PRINT, "/===========================================================================\\\n");
   Alarm( PRINT, "| Prime                                                                     |\n");
-  Alarm( PRINT, "| Copyright (c) 2017-2023 Johns Hopkins University                        |\n"); 
+  Alarm( PRINT, "| Copyright (c) 2010 - 2020 Johns Hopkins University                        |\n"); 
   Alarm( PRINT, "| All rights reserved.                                                      |\n");
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| Prime is licensed under the Prime Open-Source License.                    |\n");
@@ -107,7 +111,7 @@ int main(int argc, char** argv)
   /* This is the server program */
   NET.program_type = NET_SERVER_PROGRAM_TYPE;  
   
-  Alarm(PRINT,"Running Server %d\n", VAR.My_Server_ID);
+  Alarm(PRINT,"Running Server local id %d  and TPM id %d\n", VAR.My_Server_ID,VAR.My_Tpm_ID);
 
   // Ignore the SIGPIPE signal, handle manually with socket send error
   signal(SIGPIPE, SIG_IGN);
@@ -124,9 +128,9 @@ int main(int argc, char** argv)
   /* Initialize RSA Keys */
   /* PRTODO: eventually change this to loading TPM public keys from ROM */
   OPENSSL_RSA_Init();
-  OPENSSL_RSA_Read_Keys(VAR.My_Server_ID, RSA_SERVER);
-  TC_Read_Public_Key();
-  TC_Read_Partial_Key(VAR.My_Server_ID, 1); /* only "1" site */
+  OPENSSL_RSA_Read_Keys(VAR.My_Server_ID, RSA_SERVER,"./keys");
+  TC_Read_Public_Key("./keys");
+  TC_Read_Partial_Key(VAR.My_Server_ID, 1,"./keys"); /* only "1" site */
 
   Alarm(PRINT, "Finished reading keys.\n");
 
@@ -155,7 +159,8 @@ void Init_Memory_Objects(void)
   Mem_init_object_abort(RECON_SLOT_OBJ,   "recon_slot",     sizeof(recon_slot),       200, 20);
   Mem_init_object_abort(NET_STRUCT_OBJ,   "net_struct",     sizeof(net_struct),       200, 20);
   Mem_init_object_abort(RB_SLOT_OBJ,      "rb_slot",        sizeof(rb_slot),          200, 20);
-  Mem_init_object_abort(MSG_ARRAY_OBJ,    "msg_array",      sizeof(signed_message *) * NUM_SERVER_SLOTS,          200, 20);
+  /*SM2022: TODO*/
+  Mem_init_object_abort(MSG_ARRAY_OBJ,    "msg_array",      sizeof(signed_message *) * MAX_NUM_SERVER_SLOTS,          200, 20);
 }
 
 void Usage(int argc, char **argv)
@@ -163,14 +168,23 @@ void Usage(int argc, char **argv)
   int tmp;
   float tmp2;
 
-  if(NUM_SERVERS != (3*NUM_F + 2*NUM_K + 1)) {
-    Alarm(PRINT, "Configuration error: NUM_SERVERS must equal 3f+2k+1\n");
+  if(MAX_NUM_SERVERS < (3*NUM_F + 2*NUM_K + 1)) {
+    Alarm(PRINT, "Configuration error: MAX_NUM_SERVERS must be greater than or equal to 3f+2k+1\n");
     exit(0);
   }
 
   VAR.My_Server_ID         = 1;
   VAR.F                    = NUM_F;
   VAR.K                    = NUM_K;
+  VAR.Num_Servers          = (3* VAR.F + 2* VAR.K +1);
+   
+  if(VAR.Num_Servers < (3*NUM_F + 2*NUM_K + 1)) {
+    Alarm(PRINT, "Configuration error: NUM_SERVERS is less than 3f+2k+1\n");
+    exit(0);
+  }
+  //MS2022: set initial global incarnation number to 0
+  DATA.NM.global_configuration_number=0;
+  DATA.NM.PartOfConfig = 1;
 
   DATA.ORD.delay_attack           = 0;
   DATA.ORD.microseconds_delayed   = 0;
@@ -178,17 +192,17 @@ void Usage(int argc, char **argv)
   DATA.ORD.inconsistent_pp_attack = 0;
   DATA.ORD.inconsistent_pp_type   = 0;
   DATA.ORD.inconsistent_delay     = 30.0;
-
   while(--argc > 0) {
+    Alarm(DEBUG, "MS2022: argc=%d\n",argc);
     argv++;
 
     /* [-i server_id] */
     if( (argc > 1) && (!strncmp(*argv, "-i", 2)) ) {
       sscanf(argv[1], "%d", &tmp);
       VAR.My_Server_ID = tmp;
-      if(VAR.My_Server_ID > NUM_SERVERS || VAR.My_Server_ID <= 0) {
+      if(VAR.My_Server_ID > VAR.Num_Servers || VAR.My_Server_ID <= 0) {
 	Alarm(PRINT,"Invalid server id: %d.  Index must be between 1 and %d.\n",
-	      VAR.My_Server_ID, NUM_SERVERS);
+	      VAR.My_Server_ID, VAR.Num_Servers);
 	exit(0);
       }
       argc--; argv++;
@@ -223,6 +237,16 @@ void Usage(int argc, char **argv)
       }
       argc--; argv++;
     }
+    else if ((argc > 1) && (!strncmp(*argv, "-g", 2))){
+        sscanf(argv[1], "%d", &tmp);
+        printf("MS2022:TPM id from cmd line%d\n",tmp);
+        VAR.My_Tpm_ID = tmp;
+        if (tmp < 1 || tmp > MAX_NUM_SERVERS){
+            Alarm(PRINT,"Invalid TPM ID it should be 1...MAX_NUM_SERVERS\n");
+            exit(0);
+        }
+        argc--; argv++;
+    }
     else
       Print_Usage();
   }
@@ -231,6 +255,6 @@ void Usage(int argc, char **argv)
 void Print_Usage()
 {
   Alarm(PRINT, "Usage: ./server\n"
-	"\t[-i local_id, indexed base 1, default 1]\n");
+	"\t[-i local_id -g tpm_id, indexed base 1, default 1]\n");
   exit(0);
 }

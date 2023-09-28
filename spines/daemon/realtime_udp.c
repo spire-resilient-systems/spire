@@ -106,7 +106,8 @@ void Process_RT_UDP_data_packet(Link *lk, sys_scatter *scat,
 				int32u type, int mode)
 {
     packet_header  *phdr;
-    int16u          data_len, ack_len;
+    int32u          data_len;
+    int16u          ack_len;
     udp_header     *hdr;
     char           *buff;
     Realtime_Data *rt_data;

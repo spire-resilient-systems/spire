@@ -21,13 +21,12 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
- *      
+ *   Jeff Seibert         View Change protocol 
+ * 
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
  * All rights reserved.
@@ -71,7 +70,6 @@ extern server_data_struct DATA;
 extern benchmark_struct   BENCH;
 
 /* Local functions */
-void UTIL_Load_Spines_Addresses(void); 
 void UTIL_Send_IP_Multicast(sys_scatter *scat);
 
 #if 0
@@ -125,7 +123,8 @@ int poseqcmp(const void *n1, const void *n2)
    return 0;
 }
 
-void Load_Addrs_From_File(char *fileName, int32 addrs[NUM_SERVER_SLOTS]) 
+
+void Load_Addrs_From_File(char *fileName, int32 addrs[MAX_NUM_SERVER_SLOTS]) 
 {
   FILE *f;
   int32u num_assigned, num_expected;
@@ -133,28 +132,31 @@ void Load_Addrs_From_File(char *fileName, int32 addrs[NUM_SERVER_SLOTS])
   int32 ip1,ip2,ip3,ip4;
   
   /* Initialize data structure with 0s */
-  for (server = 0; server < NUM_SERVER_SLOTS; server++)
+  for (server = 0; server < MAX_NUM_SERVER_SLOTS; server++)
     addrs[server] = 0;
   
   /* Open file */
   if((f = fopen(fileName, "r")) == NULL)
     Alarm(EXIT, "   ERROR Load_Addrs_From_File: Could not open the address file: %s\n", fileName);
+    Alarm(DEBUG, "Load_Addrs_From_File:Opened the address file: %s\n", fileName);
  
   /* Read file. Each line has the following format:
    *    server_id ip1.ip2.ip3.ip4
    */
   num_expected = 5;
   num_assigned = fscanf(f,"%d %d.%d.%d.%d", &server, &ip1, &ip2, &ip3, &ip4);
+  Alarm(STATUS,"read line args=%d\n",num_assigned);
   while (num_assigned == num_expected) {
     Alarm(DEBUG,"Load_Addrs_From_File: read server %d, IP: %d.%d.%d.%d "
                 "(%d/%d fields assigned correctly)\n", server, ip1, ip2, ip3,
                 ip4, num_assigned, num_expected);
 
     /* Sanity check input */
-    if (server <= 0 || server > NUM_SERVERS) {
+    if (server <= 0 || server > VAR.Num_Servers) {
         Alarm(EXIT, "ERROR: Load_Addrs_From_File: Invalid input. Config includes "
-                    "server %d outside valid range (1 - %d).\n", server, NUM_SERVERS);
+                    "server %d outside valid range (1 - %d).\n", server, VAR.Num_Servers);
     }
+    
     if (addrs[server] != 0) {
         Alarm(EXIT, "ERROR: Load_Addrs_From_File: Multiple entries for server "
                     "%d\n", server);
@@ -162,15 +164,18 @@ void Load_Addrs_From_File(char *fileName, int32 addrs[NUM_SERVER_SLOTS])
 
     /* Correctly formatted input. Store the address */
     addrs[server] = ((ip1 << 24 ) | (ip2 << 16) | (ip3 << 8) | ip4);
-
+    //Alarm(PRINT,"set addrs of server=%d and ip=%s\n",server,addrs[server]);  
     /* Read next line */
     num_assigned = fscanf(f,"%d %d.%d.%d.%d", &server, &ip1, &ip2, &ip3, &ip4);
   }
   
   /* Validate that every entry of the data structure was initialized */
-  for (server = 1; server <= NUM_SERVERS; server++) {
-    if (addrs[server] == 0)
+  for (server = 1; server <= VAR.Num_Servers; server++) {
+    if (addrs[server] == 0){
+        Alarm(PRINT,"********MS2022:Check server=%d \n",server);
+        fflush(stdout);
         Alarm(EXIT, "ERROR: Load_Addrs_From_File: Invalid input. Config missing server %d.\n", server);
+        }
   }
 
   fclose(f);
@@ -381,7 +386,7 @@ int32u UTIL_I_Am_Faulty()
   int32u ret;
 
   /* The first NUM_F servers are the ones considered faulty */
-  if(RECON_ATTACK && (VAR.My_Server_ID <= NUM_F))
+  if(RECON_ATTACK && (VAR.My_Server_ID <= VAR.F))
     ret = 1;
   else
     ret = 0;
@@ -658,6 +663,9 @@ char *UTIL_Type_To_String(int32u type)
   case CLIENT_RESPONSE:
     ret = "CLIENT_RESPONSE";
     break;
+  case CLIENT_OOB_CONFIG_MSG:
+    ret= "CLIENT_OOB_CONFIG_MSG";
+    break;
 
   default:
     ret = "UKNOWN TYPE!";
@@ -676,6 +684,10 @@ signed_message* UTIL_New_Signed_Message()
     Alarm(EXIT,"DAT_New_Signed_Message: Could not allocate memory.\n");
 
   memset(mess, 0, sizeof(packet_body));
+  //MS2022: Every signed message has global incarnation number
+  if(NET.program_type == NET_SERVER_PROGRAM_TYPE) {
+    mess->global_configuration_number = DATA.NM.global_configuration_number;
+  }
   return mess;
 }
 
@@ -694,6 +706,7 @@ void UTIL_RSA_Sign_Message(signed_message *mess)
 	VAR.My_Server_ID, UTIL_Stopwatch_Elapsed( &w ), mess->type );
 }
 
+
 /* Load addresses of all servers from a configuration file */
 void UTIL_Load_Addresses() 
 {
@@ -703,11 +716,13 @@ void UTIL_Load_Addresses()
   /* Open an address.config file and read in the addresses of all
    * servers. */
   sprintf(fileName, "%s/address.config", dir);
-  Alarm(DEBUG, "Reading addrs from %s\n", fileName);
+  Alarm(PRINT, "Reading server addrs from %s\n", fileName);
   Load_Addrs_From_File(fileName, NET.server_address);
   
 #ifdef SET_USE_SPINES
-  UTIL_Load_Spines_Addresses();
+  char sp_fileName[50];
+  sprintf(sp_fileName,"%s/spines_address.config",dir);
+  UTIL_Load_Spines_Addresses(sp_fileName);
 #endif
 }
 
@@ -864,11 +879,14 @@ void UTIL_Broadcast( signed_message *mess )
    * 2. Not using true mcast: Send to each server individually */
 
 #ifndef SET_USE_SPINES
-  if(USE_IP_MULTICAST)
-    UTIL_Send_IP_Multicast(&scat);
+  if(USE_IP_MULTICAST){
+    Alarm(DEBUG,"UTIL : USE_IP_MULTICAST Use True multicast\n");
+	UTIL_Send_IP_Multicast(&scat);
+   }
   else {
     int32u i;
-    for(i = 1; i <= NUM_SERVERS; i++) {
+    Alarm(DEBUG,"UTIL : Send to server Individually\n");
+    for(i = 1; i <= VAR.Num_Servers; i++) {
       if(i != VAR.My_Server_ID)
 	UTIL_Send_To_Server(mess, i);
     }
@@ -916,6 +934,7 @@ void UTIL_Broadcast( signed_message *mess )
         dest_addr.sin_family = AF_INET;
         dest_addr.sin_port   = htons(NET.spines_mcast_port);
         dest_addr.sin_addr.s_addr = htonl(NET.spines_daemon_address[i]);
+	
 
         length = (mess->len + sizeof(signed_message) + 
             (MT_Digests_(mess->mt_num) * DIGEST_SIZE));
@@ -930,7 +949,7 @@ void UTIL_Broadcast( signed_message *mess )
             DATA.VIEW.vc_stats_sent_bytes += length;
         }
 
-        //printf("  broadcasting type %s\n", UTIL_Type_To_String(mess->type));
+        //printf("  broadcasting type %s port=%d, address=%lu, socket=%d\n", UTIL_Type_To_String(mess->type),NET.spines_mcast_port, NET.spines_daemon_address[i],NET.Spines_Channel);
     
         ret = spines_sendto(NET.Spines_Channel, mess, length, 0, 
                 (struct sockaddr *)&dest_addr, 
@@ -981,7 +1000,7 @@ void UTIL_Print_Time()
 int32 UTIL_Get_Server_Address(int32u server) 
 {
   
-  if( (server > NUM_SERVERS) || (server <= 0) )
+  if( (server > VAR.Num_Servers) || (server <= 0) )
     return 0;
   
   return NET.server_address[server];
@@ -1008,7 +1027,7 @@ void UTIL_Test_Server_Address_Functions()
   int32u server;
   int32 address;
   
-  for(server = 1; server <= NUM_SERVERS; server++ ) {
+  for(server = 1; server <= VAR.Num_Servers; server++ ) {
     address = UTIL_Get_Server_Address(server);
     if(address != 0) {
       Alarm(PRINT,"Server: %d Address: "IPF"\n", server, IP(address));
@@ -1287,9 +1306,9 @@ int32u UTIL_Leader_Of_View(int32u view)
 {
   int32u rep;
 
-  rep = view % NUM_SERVERS;
+  rep = view % VAR.Num_Servers;
   if (rep == 0)
-    rep = NUM_SERVERS;
+    rep = VAR.Num_Servers;
 
   return rep;
 }
@@ -1327,7 +1346,7 @@ int32u UTIL_Bitmap_Num_Bits_Set(int32u *bm)
   int32u target;
   int32u ret = 0;
 
-  target = NUM_SERVERS;
+  target = VAR.Num_Servers;
 
   for(i = 1; i <= target; i++)
     if(UTIL_Bitmap_Is_Set(bm, i))
@@ -1352,7 +1371,7 @@ int32u UTIL_Bitmap_Is_Superset(int32u *bm_old, int32u *bm_new)
     if (tmp2 == 0)
         return 1;
 
-    return 0;
+
 }
 
 erasure_node *UTIL_New_Erasure_Node(int32u dest_bits, int32u type, 
@@ -1465,7 +1484,7 @@ void UTIL_Write_Client_Response(signed_message *mess)
     /*exit(0);*/
   }
   else
-    Alarm(DEBUG, "Sent %d TCP bytes\n", ret);
+    Alarm(DEBUG, "&&&&&&&MS2022: Sent %d TCP bytes to client on %s \n", ret,NET.client_addr.sun_path);
 }
 
 net_struct *UTIL_New_Net_Struct()
@@ -1494,18 +1513,18 @@ int32u NET_Add_To_Pending_Messages(signed_message *mess, int32u dest_bits,
 
   /* Broadcast: Send to all servers but me */
   if(dest_bits == BROADCAST) {
-    for(i = 1; i <= NUM_SERVERS; i++) {
+    for(i = 1; i <= VAR.Num_Servers; i++) {
       if(i != VAR.My_Server_ID) {
 	n->destinations[i] = 1;
 	n->num_remaining_destinations++;
       }
     }
-    assert(n->num_remaining_destinations == (NUM_SERVERS - 1));
+    assert(n->num_remaining_destinations == (VAR.Num_Servers - 1));
   }
 
   /* Non-broadcast: Send only to those marked as desinations */
   else {
-    for(i = 1; i <= NUM_SERVERS; i++) {
+    for(i = 1; i <= VAR.Num_Servers; i++) {
       if(i != VAR.My_Server_ID && UTIL_Bitmap_Is_Set(&dest_bits, i)) {
 	n->destinations[i] = 1;
 	n->num_remaining_destinations++;
@@ -1530,32 +1549,30 @@ int32u NET_Add_To_Pending_Messages(signed_message *mess, int32u dest_bits,
 #ifdef SET_USE_SPINES
 int32 UTIL_Get_Server_Spines_Address(int32u server) 
 {
-  if(server > NUM_SERVERS || server <= 0)
+  if(server > VAR.Num_Servers || server <= 0)
     return 0;
 	
   return NET.server_address_spines[server];
 }
 
-void UTIL_Load_Spines_Addresses() 
+void UTIL_Load_Spines_Addresses(char *fileName) 
 {
-  char fileName[50];
   char dir[100] = ".";
   int32u unique_spines;
   int32u server, i;
   
   /* Open spines_address.config file and read in spines address to use for each
    * replica */
-  sprintf(fileName,"%s/spines_address.config",dir);
   Alarm(DEBUG, "Reading Spines addrs from %s\n", fileName);
   Load_Addrs_From_File(fileName, NET.server_address_spines);
 
   /* Initialize list of unique spines daemons */
-  for (server = 1; server <= NUM_SERVERS; server++) {
+  for (server = 1; server <= VAR.Num_Servers; server++) {
     NET.spines_daemon_address[server] = 0;
   }
   NET.num_spines_daemons = 0;
   
-  for (server = 1; server <= NUM_SERVERS; server++) {
+  for (server = 1; server <= VAR.Num_Servers; server++) {
     unique_spines = 1;
     for (i = 1; i <= NET.num_spines_daemons; i++) {
       if (NET.server_address_spines[server] == NET.spines_daemon_address[i]) {

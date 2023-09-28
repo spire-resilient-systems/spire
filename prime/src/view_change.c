@@ -21,12 +21,13 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ * 
+ *
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -68,7 +69,7 @@ void VIEW_Initialize_Data_Structure()
     int32u i;
 
     /* Setup one-time initialization */
-    for (i = 1; i <= NUM_SERVERS; i++)
+    for (i = 1; i <= VAR.Num_Servers; i++)
         stdskl_construct(&DATA.VIEW.pc_set[i], sizeof(int32u), 
             sizeof(signed_message *), intcmp);
 
@@ -93,7 +94,7 @@ void VIEW_Initialize_Upon_View_Change()
 {
     int32u i;
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         DATA.VIEW.max_pc_seq[i] = 0;
     }
     
@@ -128,7 +129,7 @@ void VIEW_Clear_Data_Structures()
     signed_message *mess;
     signed_message **mess_arr;
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.VIEW.report[i] != NULL) {
             dec_ref_cnt(DATA.VIEW.report[i]);
             DATA.VIEW.report[i] = NULL;
@@ -168,7 +169,7 @@ void VIEW_Clear_Data_Structures()
         !stdhash_is_end(&DATA.VIEW.unique_partial_sig, &it); stdit_next(&it))
     {
         mess_arr = *(signed_message ***)stdit_val(&it);
-        for (i = 1; i <= NUM_SERVERS; i++) {
+        for (i = 1; i <= VAR.Num_Servers; i++) {
             if (mess_arr[i] != NULL)
                 dec_ref_cnt(mess_arr[i]);
         }
@@ -182,7 +183,7 @@ void VIEW_Clear_Data_Structures()
     }
     memset(DATA.VIEW.replay_digest, 0, DIGEST_SIZE);
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.VIEW.replay_prepare[i] != NULL) {
             dec_ref_cnt(DATA.VIEW.replay_prepare[i]);
             DATA.VIEW.replay_prepare[i] = NULL;
@@ -201,7 +202,7 @@ void VIEW_Upon_Reset()
 
     VIEW_Clear_Data_Structures();
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         stdskl_destruct(&DATA.VIEW.pc_set[i]);
     }
     stdhash_destruct(&DATA.VIEW.unique_vc_list);
@@ -288,18 +289,24 @@ void VIEW_Start_View_Change()
         /* First, grab the pre-prepare - TODO - resolve the parts issue*/
         size = UTIL_Message_Size(slot->pre_prepare_parts_msg[1]);
         memcpy(offset, slot->pre_prepare_parts_msg[1], size);
+ 	//print_PC_Set(pc);	
         pc->len += size;
         offset += size;
-
         /* Next, grab the 2f+k prepares */
         pcount = 0;
-        for (j = 1; j <= NUM_SERVERS && pcount < 2*VAR.F + VAR.K; j++) {
+        for (j = 1; j <= VAR.Num_Servers && pcount < 2*VAR.F + VAR.K; j++) {
             if (slot->prepare_certificate.prepare[j] == NULL)
                 continue;
 
             size = UTIL_Message_Size(slot->prepare_certificate.prepare[j]);
             memcpy(offset, slot->prepare_certificate.prepare[j], size);
-            pc->len += size;
+            signed_message *p_header;
+	    p_header=(signed_message *)offset;
+	    prepare_message *p_mess;
+	    p_mess= (prepare_message *) (p_header+1);
+	    //printf("j=%d, seq_num=%lu, view=%lu, digest: \n",j,p_mess->seq_num,p_mess->view);
+	    //OPENSSL_RSA_Print_Digest(p_mess->digest);
+	    pc->len += size;
             offset += size;
             pcount++;
         }
@@ -340,7 +347,7 @@ void VIEW_Start_View_Change()
     }
     UTIL_Stopwatch_Stop(&DATA.VIEW.vc_sw);
     Alarm(DEBUG, "\t[SUSP to Report/PC_Set] = %f\n", UTIL_Stopwatch_Elapsed(&DATA.VIEW.vc_sw));
-    Alarm(PRINT, "\tAdded Report and PC_Set to Pending\n");
+    Alarm(DEBUG, "\tAdded Report and PC_Set to Pending\n");
 }
 
 void VIEW_Process_Report(signed_message *mess)
@@ -609,7 +616,7 @@ void VIEW_Process_VC_Partial_Sig(signed_message *mess)
     stdhash_find(&DATA.VIEW.unique_partial_sig, &it, &v_psig->list);
     if (stdhash_is_end(&DATA.VIEW.unique_partial_sig, &it)) {
         mess_arr = (signed_message **)new_ref_cnt(MSG_ARRAY_OBJ);
-        memset(mess_arr, 0, sizeof(signed_message *) * NUM_SERVER_SLOTS);
+        memset(mess_arr, 0, sizeof(signed_message *) * MAX_NUM_SERVER_SLOTS);
         stdhash_insert(&DATA.VIEW.unique_partial_sig, &it, &v_psig->list, &mess_arr);
     }
 
@@ -629,7 +636,7 @@ void VIEW_Process_VC_Partial_Sig(signed_message *mess)
      * clearly we don't have enough votes at this point yet, and only
      * this message can potentially hit the threshold at this time */
     count = 0;
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (mess_arr[i] == NULL)
             continue;
 
@@ -916,7 +923,7 @@ void VIEW_Try_Send_Replay_Commit()
 
     /* If we have >= 2f+k matching replay prepares to the replay, send re_commit */
     count = 0;
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.VIEW.replay_prepare[i] == NULL)
             continue;
 
@@ -956,7 +963,7 @@ void VIEW_Try_Execute_Replay()
 
     /* If we have >= 2f+k+1 matching replay commits to the replay, execute */
     count = 0;
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.VIEW.replay_commit[i] == NULL)
             continue;
 
@@ -987,7 +994,7 @@ void VIEW_Try_Execute_Replay()
         DATA.ORD.seq = replay->startSeq;
         Alarm(PRINT, "I'm the Leader! View = %d\n", DATA.View);
         //printf("replay start seq = %d\n", replay->startSeq);
-        //for (i = 1; i <= NUM_SERVERS; i++)
+        //for (i = 1; i <= VAR.Num_Servers; i++)
         //    DATA.PO.max_num_sent_in_proof[i] = 0;
         ORDER_Periodically(0, NULL);
     }
@@ -1034,7 +1041,7 @@ void VIEW_Execute_Replay()
 
     /* Merge the pc_set lists from each replica in Replay-specified set
      * into a single hash table (no duplicates) */
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (!UTIL_Bitmap_Is_Set(&rep->list, i))
             continue;
 
@@ -1100,14 +1107,14 @@ void VIEW_Execute_Replay()
         pp->view = 0;
         pp->part_num = 1;
         pp->total_parts = 1;
-        pp->num_acks_in_this_message = NUM_SERVERS;
+        pp->num_acks_in_this_message = VAR.Num_Servers;
         memset(((char*)pp) + sizeof(pre_prepare_message), 0, 
                 pp->num_acks_in_this_message * sizeof(po_aru_signed_message));
         
         dummy_pp_part->len = pp->num_acks_in_this_message * 
                                 sizeof(po_aru_signed_message);
         prev_pp_part = dummy_pp_part;
-        /* Here, we just need a po_seq_pair array of size NUM_SERVERS
+        /* Here, we just need a po_seq_pair array of size VAR.Num_Servers
          * that is set to all zeros, so be borrow from last_executed */
         prev_made_elig = (po_seq_pair *)pp->last_executed;
     } else {
@@ -1198,7 +1205,7 @@ void VIEW_Execute_Replay()
              * that is greater than what we've sent, update our records so that
              * we don't think we are required to send a PO ARU with it - cause
              * no progress would actually be made if we did. */
-            for (j = 1; j <= NUM_SERVERS; j++) {
+            for (j = 1; j <= VAR.Num_Servers; j++) {
                 ps = PRE_ORDER_Proof_ARU(j, cum_acks);
                 if (PRE_ORDER_Seq_Compare(ps, DATA.PO.max_num_sent_in_proof[j]) > 0)
                     DATA.PO.max_num_sent_in_proof[j] = ps;
@@ -1206,7 +1213,7 @@ void VIEW_Execute_Replay()
 
             /* Apply the PO-ARUs contained in the proof matrix, checking for
              *   any inconsistencies. NULL vectors checked in function */
-            for (j = 0; j < NUM_SERVERS; j++) {
+            for (j = 0; j < VAR.Num_Servers; j++) {
                 signed_message *m = (signed_message *)&cum_acks[j];
                 PRE_ORDER_Process_PO_ARU(m);
             }
@@ -1234,14 +1241,14 @@ void VIEW_Execute_Replay()
                   sizeof(signed_message) + sizeof(pc_set_message));
             pp = (pre_prepare_message *)(pptr + 1);
 
-            for (j = 0; j < NUM_SERVERS; j++)
+            for (j = 0; j < VAR.Num_Servers; j++)
                 slot->made_eligible[j] = pp->last_executed[j];
 
         }
         /* This is the normal case, where we are just calculting the made_eligible
          * on this slot based on last_executed and the matrix of po_arus */
         else {
-            for (j = 0; j < NUM_SERVERS; j++) {
+            for (j = 0; j < VAR.Num_Servers; j++) {
                 ps = PRE_ORDER_Proof_ARU(j+1, slot->complete_pre_prepare.cum_acks);
                 if (PRE_ORDER_Seq_Compare(ps, slot->complete_pre_prepare.last_executed[j]) > 0) 
                     slot->made_eligible[j] = ps;

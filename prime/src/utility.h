@@ -26,7 +26,7 @@
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -88,6 +88,9 @@ void  UTIL_Load_Addresses               (void);
 void  UTIL_Test_Server_Address_Functions(void); 
 int32 UTIL_Get_Server_Address           (int32u server); 
 int32 UTIL_Get_Server_Spines_Address    (int32u server); 
+void UTIL_Load_Spines_Addresses(char *filename);
+void Load_Addrs_From_File(char *fileName, int32 addrs[MAX_NUM_SERVER_SLOTS]);
+
 
 /* Leader identification functions */
 int32u UTIL_I_Am_Leader(void);

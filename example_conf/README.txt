@@ -4,7 +4,7 @@ configuration files, and parts of Spire must currently be recompiled when these
 files are changed.
 
 The provided conf_6 configuration corresponds the default configuration of
-Spire 1.3.
+Spire 2.1.
 
 Each example configuration directory (e.g. conf_4, conf_6, conf_3+3+3+3)
 includes the following:

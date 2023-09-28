@@ -50,20 +50,20 @@ base_dir=.
 
 .PHONY: all clean plcs libs clean_libs prime clean_prime spines openplc pvb iec substation clean_substation
 
-SUBDIRS=hmis proxy modbus dnp3 benchmark plcs
+SUBDIRS=hmis proxy modbus dnp3 benchmark  
 SS_SUBDIRS= relay_emulator proxy_iec61850 benchmarks_ss trip_master_v2 trip_master
 
 all: base_prime $(SUBDIRS)
 	for dir in $(SUBDIRS); do \
     	( $(MAKE) -C $$dir); \
 	done
-	cd scada_master; make spire
+	cd scada_master; make spire; cd ../configuration_module; make; cd ../plcs; make 
 
 conf_spire: conf_prime $(SUBDIRS)
 	for dir in $(SUBDIRS); do \
     	( $(MAKE) -C $$dir); \
 	done
-	cd scada_master; make conf_spire
+	cd scada_master; make conf_spire;cd ../plcs; make
 
 
 
@@ -115,4 +115,4 @@ clean: clean_libs  clean_substation
 	for dir in $(SUBDIRS); do \
     	( $(MAKE) -C $$dir clean); \
 	done
-	cd scada_master; make clean
+	cd scada_master; make clean; cd ../configuration_module; make clean; cd ../plcs; make clean

@@ -21,12 +21,11 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -61,7 +60,7 @@ void RB_Initialize_Data_Structure()
 {
     int32u i;
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         stdhash_construct(&DATA.RB.instances[i], sizeof(int32u), 
                 sizeof(rb_slot *), NULL, NULL, 0);
     }
@@ -89,7 +88,7 @@ void RB_Upon_Reset()
     int32u i;
 
     RB_Clear_Slots();
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         stdhash_destruct(&DATA.RB.instances[i]);
     }
 }
@@ -104,7 +103,7 @@ void RB_Periodic_Retrans(int d1, void *d2)
     if (DATA.VIEW.executed_ord == 1 && DATA.PR.startup_finished == 1)
         return;
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         for (stdhash_begin(&DATA.RB.instances[i], &it); 
             !stdhash_is_end(&DATA.RB.instances[i], &it); stdit_next(&it))
         {
@@ -198,8 +197,8 @@ void RB_Process_Echo(signed_message *mess)
     //payload_size = sizeof(signed_message) + mess->len;
 
     if (rb_tag->view != DATA.View) {
-        Alarm(PRINT, "RB_Process_Echo: Invalid View %d, ours = %d\n",
-                rb_tag->view, DATA.View);
+        Alarm(PRINT, "RB_Process_Echo: Invalid View %d,from %d, ours = %d\n",
+                rb_tag->view, mess->machine_id,DATA.View);
         return;
     }
 
@@ -272,8 +271,8 @@ void RB_Process_Ready(signed_message *mess)
     //payload_size = sizeof(signed_message) + mess->len;
 
     if (rb_tag->view != DATA.View) {
-        Alarm(PRINT, "RB_Process_Echo: Invalid View %d, ours = %d\n",
-                rb_tag->view, DATA.View);
+        Alarm(PRINT, "RB_Process_Echo: Invalid View %d from %d, ours = %d\n",
+                rb_tag->view, mess->machine_id,DATA.View);
         return;
     }
 
@@ -346,7 +345,7 @@ void RB_Clear_Slots()
     stdit it;
     rb_slot *r_slot;
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         for (stdhash_begin(&DATA.RB.instances[i], &it); 
             !stdhash_is_end(&DATA.RB.instances[i], &it); stdit_next(&it))
         {
@@ -355,7 +354,7 @@ void RB_Clear_Slots()
                 dec_ref_cnt(r_slot->rb_msg);
             if (r_slot->rb_init)
                 dec_ref_cnt(r_slot->rb_init);
-            for (j = 1; j <= NUM_SERVERS; j++) {
+            for (j = 1; j <= VAR.Num_Servers; j++) {
                 if (r_slot->rb_echo[j])
                     dec_ref_cnt(r_slot->rb_echo[j]);
                 if (r_slot->rb_ready[j])

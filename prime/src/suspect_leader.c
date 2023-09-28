@@ -21,12 +21,13 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ * 
+ *
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -95,7 +96,7 @@ void SUSPECT_Initialize_Upon_View_Change()
     /* ------ TAT Leader ------ */
     /* Cleanup turnaround_times dll for new view */
     DATA.SUSP.max_tat = 0.0;
-    for (i = 1; i <= NUM_SERVERS; i++)
+    for (i = 1; i <= VAR.Num_Servers; i++)
         DATA.SUSP.reported_tats[i] = 0.0;
     DATA.SUSP.tat_leader = 0.0;
     stddll_clear(&DATA.SUSP.turnaround_times);
@@ -107,7 +108,7 @@ void SUSPECT_Initialize_Upon_View_Change()
     for (i = 0; i < PING_HIST; i++) {
         DATA.SUSP.ping_history[i].seq_num = 0;
     }
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         DATA.SUSP.tat_if_leader[i] = MAX_TAT_TIME;
         DATA.SUSP.tat_leader_ubs[i] = MAX_TAT_TIME;
     }
@@ -117,7 +118,7 @@ void SUSPECT_Initialize_Upon_View_Change()
 
     /* ------ New Leader ------ */
     DATA.SUSP.leader_suspected = 0;
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.SUSP.new_leader[i] != NULL) {
             dec_ref_cnt(DATA.SUSP.new_leader[i]);
             DATA.SUSP.new_leader[i] = NULL;
@@ -154,7 +155,7 @@ void SUSPECT_Upon_Reset()
     stddll_clear(&DATA.SUSP.turnaround_times);
     stddll_destruct(&DATA.SUSP.turnaround_times);
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
          if (DATA.SUSP.new_leader[i] != NULL) {
             dec_ref_cnt(DATA.SUSP.new_leader[i]);
             DATA.SUSP.new_leader[i] = NULL;
@@ -236,7 +237,7 @@ void SUSPECT_TAT_Measure_Periodically(int dummy, void *dummyp)
 void SUSPECT_Process_TAT_Measure(signed_message *mess)
 {
     int i;
-    double tats[NUM_SERVER_SLOTS];
+    double tats[VAR.Num_Servers+1];
     double prev_leader, accept;
     tat_measure_message *measure;
 
@@ -250,21 +251,27 @@ void SUSPECT_Process_TAT_Measure(signed_message *mess)
     if (measure->max_tat > DATA.SUSP.reported_tats[mess->machine_id]) {
         DATA.SUSP.reported_tats[mess->machine_id] = measure->max_tat;
     }
-
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    /*
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         tats[i] = DATA.SUSP.reported_tats[i];
+	printf("before sort tat[%d]: %f\n",i,tats[i]);
     }
-
-    //printf("tat_leader %f %f %f %f\n", tats[1], tats[2], tats[3], tats[4]);
-    qsort((void*)(tats+1), NUM_SERVERS, sizeof(double), doublecmp);
-
+    */
+    
+    qsort((void*)(tats+1), VAR.Num_Servers, sizeof(double), doublecmp);
+    /*
+    for (i = 1; i <= VAR.Num_Servers; i++) {
+	printf("after sort tat[%d]: %f\n",i,tats[i]);
+    }
+    */
     prev_leader = DATA.SUSP.tat_leader;
     DATA.SUSP.tat_leader = tats[VAR.F + VAR.K + 1];
+    //printf("New DATA.SUSP.tat_leader=%f\n",DATA.SUSP.tat_leader);
     if (DATA.SUSP.tat_leader > prev_leader) {
         accept = DATA.SUSP.tat_acceptable * VARIABILITY_KLAT;
         if (DATA.VIEW.view_change_done == 1)
             accept += (double)PRE_PREPARE_SEC + (double)(PRE_PREPARE_USEC)/1000000.0;
-        Alarm(PRINT, "[%u]: L=%f, rtt=%f, A=%f\n", 
+        Alarm(STATUS, "[%u]: L=%f, rtt=%f, A=%f\n", 
                 DATA.View, DATA.SUSP.tat_leader, DATA.SUSP.tat_acceptable, accept);
     }
     SUSPECT_Suspect_Leader();
@@ -311,7 +318,7 @@ void SUSPECT_Process_RTT_Ping (signed_message *mess)
         Alarm(DEBUG, "Process_RTT_Ping: Old View %d\n", ping->view);
         return;
     }
-
+    Alarm(DEBUG,"Got PING from %d\n",mess->machine_id);
     pong = SUSPECT_Construct_RTT_Pong(mess->machine_id, ping->ping_seq_num);
     pong_specific = (rtt_pong_message *)(pong + 1);
 
@@ -370,10 +377,10 @@ void SUSPECT_Process_RTT_Pong (signed_message *mess)
 
 void SUSPECT_Process_RTT_Measure (signed_message *mess)
 {
-    //double delta, t;
+    double delta, t;
     int i;
     rtt_measure_message *measure;
-    double prev_alpha, tats[NUM_SERVER_SLOTS];
+    double prev_alpha, tats[VAR.Num_Servers+1];
 
     measure = (rtt_measure_message*)(mess + 1);
     if (measure->view != DATA.View) {
@@ -397,11 +404,11 @@ void SUSPECT_Process_RTT_Measure (signed_message *mess)
          *   is now changing. Optimization: if this is the first time the alpha
          *   value is less than INF, send it right away (rather than waiting for
          *   the TAT_UB timeout) */
-        for (i = 1; i <= NUM_SERVERS; i++)
+        for (i = 1; i <= VAR.Num_Servers; i++)
             tats[i] = DATA.SUSP.tat_if_leader[i];
-        qsort((void*)(tats+1), NUM_SERVERS, sizeof(double), doublecmp);
+        qsort((void*)(tats+1), VAR.Num_Servers, sizeof(double), doublecmp);
         prev_alpha = DATA.SUSP.alpha;
-        DATA.SUSP.alpha = tats[NUM_SERVER_SLOTS-(VAR.F + VAR.K + 1)];
+        DATA.SUSP.alpha = tats[(VAR.Num_Servers+1)-(VAR.F + VAR.K + 1)];
         if (DATA.SUSP.alpha < MAX_TAT_TIME && prev_alpha == MAX_TAT_TIME) {
             E_dequeue(SUSPECT_TAT_UB_Periodically, 0, 0);
             SUSPECT_TAT_UB_Periodically(0, 0);
@@ -437,7 +444,7 @@ void SUSPECT_TAT_UB_Periodically(int dummy, void *dummyp)
 void SUSPECT_Process_TAT_UB (signed_message *mess)
 {
     int i;
-    double tats[NUM_SERVER_SLOTS];
+    double tats[VAR.Num_Servers+1];
     double prev_acceptable, accept;
     tat_ub_message *ub;
 
@@ -449,20 +456,21 @@ void SUSPECT_Process_TAT_UB (signed_message *mess)
     }
 
     if (ub->alpha < DATA.SUSP.tat_leader_ubs[mess->machine_id]) {
-        //printf("alpha lower %f\n", ub->alpha);
+        ///printf("alpha lower %f for server %d\n", ub->alpha,mess->machine_id);
         DATA.SUSP.tat_leader_ubs[mess->machine_id] = ub->alpha;
     }
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         tats[i] = DATA.SUSP.tat_leader_ubs[i];
     }
 
     //printf("tat_acceptable %f %f %f %f\n", tats[1], tats[2], tats[3], tats[4]);
-    qsort((void*)(tats+1), NUM_SERVERS, sizeof(double), doublecmp);
+    qsort((void*)(tats+1), VAR.Num_Servers, sizeof(double), doublecmp);
     prev_acceptable = DATA.SUSP.tat_acceptable;
 
-    if (tats[NUM_SERVER_SLOTS - (VAR.F + VAR.K + 1)] > MIN_RTT)
-        DATA.SUSP.tat_acceptable = tats[NUM_SERVER_SLOTS - (VAR.F + VAR.K + 1)];
+    //printf("tat_acceptable %f %f %f %f %f\n", tats[6], tats[7], tats[8], tats[9],tats[10]);
+    if (tats[(VAR.Num_Servers+1) - (VAR.F + VAR.K + 1)] > MIN_RTT)
+        DATA.SUSP.tat_acceptable = tats[(VAR.Num_Servers+1) - (VAR.F + VAR.K + 1)];
     else
         DATA.SUSP.tat_acceptable = MIN_RTT;
 
@@ -470,7 +478,7 @@ void SUSPECT_Process_TAT_UB (signed_message *mess)
         accept = DATA.SUSP.tat_acceptable * VARIABILITY_KLAT;
         if (DATA.VIEW.view_change_done == 1)
             accept += (double)PRE_PREPARE_SEC + (double)(PRE_PREPARE_USEC)/1000000.0;
-        Alarm(PRINT, "[%u]: L=%f, rtt=%f, A=%f\n", 
+        Alarm(STATUS, " [%u]: L=%f, rtt=%f, A=%f\n", 
                 DATA.View, DATA.SUSP.tat_leader, DATA.SUSP.tat_acceptable, accept);
     }
     SUSPECT_Suspect_Leader();
@@ -491,7 +499,10 @@ void SUSPECT_Suspect_Leader()
     if (DATA.SUSP.leader_suspected == 0 && DATA.SUSP.tat_leader > t) {
         Alarm(PRINT, "Leader suspicious: tat_leader %f > tat_acceptable %f\n", 
                 DATA.SUSP.tat_leader, t);
-        DATA.SUSP.leader_suspected = 1;
+        struct timeval now;
+	gettimeofday(&now,NULL);
+	Alarm(PRINT,"Timestamp sec=%lu\n",now.tv_sec);
+	DATA.SUSP.leader_suspected = 1;
         UTIL_Stopwatch_Start(&DATA.VIEW.vc_sw);
         new_leader = SUSPECT_Construct_New_Leader();
         //SIG_Add_To_Pending_Messages(new_leader, BROADCAST, UTIL_Get_Timeliness(NEW_LEADER));
@@ -536,7 +547,7 @@ void SUSPECT_Process_New_Leader(signed_message *mess)
      * clearly we don't have enough votes at this point yet, and only
      * this message can potentially hit the threshold at this time */
     count = 0;
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.SUSP.new_leader[i] == NULL)
             continue;
 
@@ -559,7 +570,10 @@ void SUSPECT_Process_New_Leader(signed_message *mess)
 
     /* Preinstall new view and start sending new_leader_proof messages */
     DATA.View = nlm_specific->new_view;
-    Alarm(PRINT, "READY for View Change: 2F+K+1 New_Leader\n");
+    Alarm(PRINT, "READY for View Change: 2F+K+1 New_Leader View=%d\n",DATA.View);
+    struct timeval now;
+    gettimeofday(&now,NULL);
+    Alarm(PRINT,"Timestamp sec=%lu\n",now.tv_sec);
     
     if (DATA.SUSP.new_leader_proof != NULL) {
         dec_ref_cnt(DATA.SUSP.new_leader_proof);

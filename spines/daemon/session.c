@@ -686,10 +686,10 @@ void Session_Read(int sk, int dummy, void *dummy_p)
         add_size = 0;
     }
 
-    /*
-     *Alarm(DEBUG, "* received_bytes: %d; partial_len: %d; read_len: %d; STATE: %d\n",
-     *          received_bytes, ses->partial_len, ses->read_len, ses->state);
-     */
+    
+     Alarm(DEBUG, "* received_bytes: %d; partial_len: %d; read_len: %d; STATE: %d\n",
+               received_bytes, ses->partial_len, ses->read_len, ses->state);
+     
 
     if(received_bytes + ses->partial_len < ses->read_len) {
         ses->partial_len += received_bytes;
@@ -699,7 +699,7 @@ void Session_Read(int sk, int dummy, void *dummy_p)
             ses->endianess_type = *((int32*)(ses->data));
 
             ses->received_len = 0;
-            ses->read_len = sizeof(int32);
+            ses->read_len = sizeof(int32u);
             ses->partial_len = 0;
             ses->state = READY_CTRL_SK;
         }
@@ -719,7 +719,7 @@ void Session_Read(int sk, int dummy, void *dummy_p)
             }
             Alarm(PRINT, "linked Spines Socket Channel %d with Control Channel %d\n", ses->sk, ses->ctrl_sk);
             ses->received_len = 0;
-            ses->read_len = sizeof(int32);
+            ses->read_len = sizeof(int32u);
             ses->partial_len = 0;
             ses->state = READY_LEN;
         }
@@ -744,6 +744,8 @@ void Session_Read(int sk, int dummy, void *dummy_p)
                     Disconnect_Reliable_Session(ses);
                 }
             }
+
+            Alarm(DEBUG,"Session total_len=%lu******\n",ses->total_len);
                 
 
             /* Set up to read data based on protocols used */
@@ -787,6 +789,7 @@ void Session_Read(int sk, int dummy, void *dummy_p)
                 ses->read_len = ses->total_len;
                 ses->frag_num = 1;
                 ses->frag_idx = 0;
+                Alarm(DEBUG,"Session_Read****: Got ses total len=%lu,read_len=%lu,received_len=%lu, partial_len=%lu\n",ses->total_len,ses->read_len,ses->received_len,ses->partial_len);
             }
             else
                 Alarm(PRINT, "Session_Read: Unexpected routing_used %d\r\n",
@@ -800,23 +803,28 @@ void Session_Read(int sk, int dummy, void *dummy_p)
             }
 
             ses->state = READY_DATA;
-            Alarm(DEBUG,"Finished READY_LEN, ses->read_len = %u, ses->partial_len = %u\r\n",
+            Alarm(DEBUG,"Finished READY_LEN, ses->read_len = %lu, ses->partial_len = %lu\r\n",
                         ses->read_len, ses->partial_len);
         }
         else if(ses->state == READY_DATA) {
             u_hdr = (udp_header*)ses->data;
             if(!Same_endian(ses->endianess_type)) {
+                Alarm(DEBUG,"Flipping UDP header\n");
                 Flip_udp_hdr(u_hdr);
+            }
+            else{
+            Alarm(DEBUG,"Not flipping udp header\n");
             }
             
             if (ses->routing_used == MIN_WEIGHT_ROUTING ||
                 ses->routing_used == SOURCE_BASED_ROUTING) {
+                Alarm(DEBUG,"In min weight routing ses->frag_num is %u\n",ses->frag_num);
                 if(ses->frag_num > 1) {
                     if(ses->frag_idx == 0) {
                         memcpy((void*)(&ses->save_hdr), (void*)u_hdr, sizeof(udp_header));
                     }
                     u_hdr->len = ses->read_len - sizeof(udp_header);
-                    
+                    Alarm(DEBUG,"Filled u_hdr->len=%lu *****\n",u_hdr->len); 
                     if(ses->r_data != NULL) {
                         r_add = (rel_udp_pkt_add*)(ses->data + sizeof(udp_header));
                         r_add->type = Set_endian(0);
@@ -825,18 +833,18 @@ void Session_Read(int sk, int dummy, void *dummy_p)
                     }
                 }
             }
-            
+            Alarm(DEBUG,"READY_DATA *** frag_num is %u and u_hdr->len=%lu\n",ses->frag_num,u_hdr->len); 
             u_hdr->seq_no = ses->seq_no;
             u_hdr->frag_num = (int16u)ses->frag_num; 
             u_hdr->frag_idx = (int16u)ses->frag_idx; 
             u_hdr->sess_id = (int16u)(ses->sess_id & 0x0000ffff);
-
+            
             ses->received_len += ses->read_len;
             if(ses->frag_idx > 0) {
                 ses->received_len -= sizeof(udp_header)+add_size;
             } 
             ses->frag_idx++;
-
+            Alarm(DEBUG,"****Process_Session_Packet called as state is READY_DATA with seq_no %u and len=%lu, frag_num %d\n",u_hdr->seq_no,u_hdr->len,u_hdr->frag_num);
             ret = Process_Session_Packet(ses);
            
             if(get_ref_cnt(ses->data) > 1) {
@@ -860,10 +868,10 @@ void Session_Read(int sk, int dummy, void *dummy_p)
                 if(ses->read_len > MAX_SPINES_MSG) {
                     ses->read_len = MAX_SPINES_MSG;
                 }
-                /*
-                 *Alarm(PRINT, "TOT total: %d; received: %d; read: %d\n",
-                 *     ses->total_len, ses->received_len, ses->read_len);
-                 */
+                
+                 Alarm(DEBUG, "TOT total: %d; received: %d; read: %d\n",
+                      ses->total_len, ses->received_len, ses->read_len);
+                 
                 memcpy((void*)(ses->data), (void*)(&ses->save_hdr), sizeof(udp_header));
                 ses->read_len += sizeof(udp_header);
                 ses->partial_len = sizeof(udp_header);
@@ -1119,7 +1127,7 @@ int Process_Session_Packet(Session *ses)
     type = (int32*)(ses->data + sizeof(udp_header));
     cmd = (udp_header*)(ses->data + sizeof(udp_header)+sizeof(int32));
     cmd_int = (int32*)(ses->data + sizeof(udp_header)+sizeof(int32));
-
+    Alarm(DEBUG,"Process_Session_Packet: udp_header->len is %u\n",hdr->len);
     if((hdr->len == 0) && (hdr->source == 0) && (hdr->dest == 0)) {
         /* Session command */
         type = (int32*)(ses->data + sizeof(udp_header));
@@ -1631,7 +1639,11 @@ int Process_Session_Packet(Session *ses)
         hdr->source_port = ses->port;
 
         if(hdr->len + sizeof(udp_header) == ses->read_len) {
+
+            Alarm(DEBUG,"hdr->len [%d] + sizeof(udp_header) == ses->read_len******\n",hdr->len);
             
+            Alarm(DEBUG, "hdr->len: %d; sizeof(udp_header): %d; ses->read_len: %d\n",
+                hdr->len, sizeof(udp_header), ses->read_len);
             routing = ((int) hdr->routing << ROUTING_BITS_SHIFT);
 
             msg_size_avail -= (MAX_PKTS_PER_MESSAGE * 
@@ -1689,7 +1701,7 @@ int Process_Session_Packet(Session *ses)
         }
         else {
             Alarm(PRINT, "Process_Session_Packet: Packed data... not available yet\n");
-            Alarm(PRINT, "hdr->len: %d; sizeof(udp_header): %d; ses->read_len: %d\n",
+            Alarm(DEBUG, "hdr->len: %d; sizeof(udp_header): %d; ses->read_len: %d\n",
                 hdr->len, sizeof(udp_header), ses->read_len);
         }
     }
@@ -2212,9 +2224,7 @@ int Session_Deliver_Data(Session *ses, char* buff, int16u len, int32u type, int 
     u_hdr = (udp_header *)buff;
 
 #if 0
-    Alarm(PRINT, "Session_Deliver_Data: src_port: %d; sess_id: %d; len: %d; len_rep: %d; seq_no: %d; frag_num: %d; frag_idx: %d\n",
-          u_hdr->source_port, u_hdr->sess_id, u_hdr->len, len, u_hdr->seq_no, 
-          u_hdr->frag_num, u_hdr->frag_idx);
+    Alarm(PRINT, "Session_Deliver_Data: src_port: %d; sess_id: %d; len: %d; len_rep: %d; seq_no: %d; frag_num: %d; frag_idx: %d\n",u_hdr->source_port, u_hdr->sess_id, u_hdr->len, len, u_hdr->seq_no, u_hdr->frag_num, u_hdr->frag_idx);
 #endif
 
     if(ses->routing_used == MIN_WEIGHT_ROUTING || ses->routing_used == SOURCE_BASED_ROUTING) {

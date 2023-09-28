@@ -26,7 +26,7 @@
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -47,6 +47,7 @@
 #define IPC_SOURCE     4
 
 void Init_Network(void);
+void Reconfig_Reset_Network(void);
 void Net_Srv_Recv(channel sk, int source, void * dummy_p);
 
 #ifdef SET_USE_SPINES

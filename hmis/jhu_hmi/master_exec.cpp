@@ -56,9 +56,12 @@ extern "C" {
     #include "net_wrapper.h"
     #include "def.h"
     #include "itrc.h"
+    #include "openssl_rsa.h"
 }
 
 void Process_Message(signed_message *);
+void Process_Config_Msg(signed_message * conf_mess,int mess_size);
+
 DATA *d = NULL;
 
 void Init_Master(DATA *dd) 
@@ -66,11 +69,42 @@ void Init_Master(DATA *dd)
     d = dd;
 }
 
+void Process_Config_Msg(signed_message * conf_mess,int mess_size){
+    config_message *c_mess;
+
+    if (mess_size!= sizeof(signed_message)+sizeof(config_message)){
+        printf("Config message is %d ,not expected size of %d\n",mess_size, sizeof(signed_message)+sizeof(config_message));
+        return;
+    }
+
+    if(!OPENSSL_RSA_Verify((unsigned char*)conf_mess+SIGNATURE_SIZE,
+                sizeof(signed_message)+conf_mess->len-SIGNATURE_SIZE,
+                (unsigned char*)conf_mess,conf_mess->machine_id,RSA_CONFIG_MNGR)){
+        printf("Benchmark: Config message signature verification failed\n");
+
+        return;
+    }
+    printf("Verified Config Message\n");
+    if(conf_mess->global_configuration_number<=My_Global_Configuration_Number){
+        printf("Got config=%u and I am already in %u config\n",conf_mess->global_configuration_number,My_Global_Configuration_Number);
+        return;
+    }
+    My_Global_Configuration_Number=conf_mess->global_configuration_number;
+//    My_curr_global_config_num = conf_mess->global_configuration_number;
+    c_mess=(config_message *)(conf_mess+1);
+    //Reset SM
+    Reset_SM_def_vars(c_mess->N,c_mess->f,c_mess->k,c_mess->num_cc_replicas, c_mess->num_cc,c_mess->num_dc);
+    Reset_SM_Replicas(c_mess->tpm_based_id,c_mess->replica_flag,c_mess->spines_ext_addresses,c_mess->spines_int_addresses);
+    printf("Reconf done \n");
+}
+
+
 int Read_From_Master(int s) 
 {
     int ret; //, remaining_bytes; 
     char buf[MAX_LEN];
     //signed_message *mess;
+    signed_message *cmess;
 
     /* ret = TCP_Read(s, buf, sizeof(signed_message));
     if(ret <= 0) {
@@ -94,6 +128,11 @@ int Read_From_Master(int s)
     ret = IPC_Recv(s, buf, MAX_LEN);
     if (ret < 0) printf("Read_From_Master: IPC_Rev failed\n");
     //printf("MESS RECIEVED \n");
+    cmess=(signed_message *)buf;
+    if(cmess->type ==  PRIME_OOB_CONFIG_MSG){
+        Process_Config_Msg((signed_message *)buf,ret);
+        return ret;
+    }
     Process_Message((signed_message *)buf);
 
     return ret;

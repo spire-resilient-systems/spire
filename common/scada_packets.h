@@ -58,9 +58,12 @@
 
 #define UPDATE 46
 #define CLIENT_RESPONSE 47
+#define PRIME_OOB_CONFIG_MSG 48
+#define CONFIG_KEYS_MSG 49
 #define PRIME_NO_OP 101
 #define PRIME_STATE_TRANSFER 102
 #define PRIME_SYSTEM_RESET 103
+#define PRIME_SYSTEM_RECONF 104
 
 /* SCADA-specific definitions */
 #define MAX_SWITCHES 10
@@ -130,6 +133,7 @@ enum crob_type{LATCH_ON, LATCH_OFF, PULSE_ON, PULSE_OFF};
  * Type of equipment inside of substations
  */
 enum substation_type {SWITCH, TRANSFORMER, BREAKER, BREAKER_FLIP, BREAKER_ON, BREAKER_OFF};
+enum key_types {SM_TC_PUB, SM_TC_PVT, PRIME_TC_PUB, PRIME_TC_PVT, PRIME_RSA_PUB, PRIME_RSA_PVT};
 
 /* Definition of these structs that are used
  * in both packets and data structures */
@@ -173,6 +177,7 @@ typedef struct dummy_signed_message {
 
     int32u incarnation;
     int32u monotonic_counter;
+    int32u global_configuration_number; /*MS2022:  Global configuration number to differntiate configurations*/
 
     /* Content of message follows */
 } signed_message;
@@ -207,6 +212,58 @@ typedef struct dummy_client_response_message {
     
     /* the update content follows */
 } client_response_message;
+
+typedef struct dummy_nm_message {
+ //New N
+   int32u N;
+ //f
+   int32u f;
+ //k
+   int32u k;
+ //num of sites
+   int32u num_sites;
+   int32u num_cc;
+   int32u num_dc;
+   int32u num_cc_replicas;
+   int32u num_dc_replicas;
+ //1-Max IPs - fill only needed Ips and rest NULL
+   int32u tpm_based_id[MAX_NUM_SERVER_SLOTS];
+   int replica_flag[MAX_NUM_SERVER_SLOTS];//1-CC , 2-DC
+   char sm_addresses[MAX_NUM_SERVER_SLOTS][32];
+   char spines_ext_addresses[MAX_NUM_SERVER_SLOTS][32];
+   int32 spines_ext_port;
+   char spines_int_addresses[MAX_NUM_SERVER_SLOTS][32];
+   int32 spines_int_port;
+   char prime_addresses[MAX_NUM_SERVER_SLOTS][32];
+ //start state
+   int initial_state;
+//start state hash
+   byte initial_state_digest[DIGEST_SIZE];
+   int32u frag_num;
+ //sm tc keys
+}config_message;
+
+typedef struct dummy_key_msg_header{
+    int32u frag_idx;
+    //key-types: sm_tc_pvt, prime_tc_pvt, prime_rsa_pvt, sm_tc_pub,prime_tc_pub, prime_rsa_pub
+}key_msg_header;
+
+typedef struct dummy_pvt_key_header{
+    int32u key_type;
+    int32u id;
+    int32u unenc_size;
+    int32u pvt_key_parts;
+    int32u pvt_key_part_size;
+    /*Note key contents [pvt_key_parts][pvt_key_part_size] */
+}pvt_key_header;
+
+typedef struct dummy_pub_key_header {
+    int32u key_type;
+    int32u id;
+    int32u size;
+    /*key contents of len size*/
+} pub_key_header;
+
 
 /****************************************************************/
 /*              SCADA SYSTEM MESSAGE DEFINITIONS                */
@@ -342,6 +399,7 @@ typedef struct dummy_benchmark_msg_d {
 #define REQ_SHARES (NUM_F + 1)
 
 typedef struct itrc_data_d {
+    char ipc_config[100];
     char ipc_local[100];
     char ipc_remote[100];
     char prime_keys_dir[100];
@@ -355,10 +413,12 @@ typedef struct itrc_data_d {
 typedef struct net_sock_d {
     int sp_int_s;
     int sp_ext_s;
+//    int sp_ctrl_s;
     int ipc_s;
     char ipc_remote[100];
     int inject_s;
     char inject_path[100];
+    int ipc_config_s;
 } net_sock;
 
 typedef struct itrc_queue_node_d {
@@ -429,6 +489,7 @@ signed_message *PKT_Construct_State_Xfer_Msg(int32u targ, int32u num_clients,
                                              seq_pair *latest, char *state, 
                                              int32u state_size);
 signed_message *PKT_Construct_Benchmark_Msg(seq_pair seq);
+signed_message *PKT_Construct_OOB_Config_Msg();
 int Var_Type_To_Int(char[]);
 char* Var_Type_To_String(int);
 int Seq_Pair_Compare(seq_pair p1, seq_pair p2);

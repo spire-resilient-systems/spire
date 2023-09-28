@@ -21,12 +21,11 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
  *  	
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -101,10 +100,12 @@ void clean_exit(int signum);
 
 /* Client Variables */
 extern network_variables NET;
+extern server_variables  VAR;
 
 int32u My_Client_ID;
 int32u My_Server_ID;
 
+int32u my_global_configuration_number;
 int32u my_incarnation;
 int32u update_count;
 double total_time;
@@ -118,7 +119,7 @@ int32u num_outstanding_updates;
 int32u send_to_server;
 int32u last_executed = 0;
 int32u executed[MAX_ACTIONS];
-int sd[NUM_SERVER_SLOTS];
+int sd[MAX_NUM_SERVER_SLOTS];
 util_stopwatch update_sw[MAX_ACTIONS];
 
 util_stopwatch sw;
@@ -148,7 +149,8 @@ int main(int argc, char** argv)
   update_count     = 0;
   time_stamp       = 0;
   total_time       = 0;
-  
+  //MS2022
+  //UTIL_Client_Load_Addresses(); 
   UTIL_Load_Addresses(); 
 
   E_init(); 
@@ -199,6 +201,8 @@ void Usage(int argc, char **argv)
   NET.My_Address = -1;
   My_Client_ID   =  0;
   My_Server_ID   =  0;
+  VAR.Num_Servers=6;
+  my_global_configuration_number = 0;
 
   while(--argc > 0) {
     argv++;
@@ -224,8 +228,8 @@ void Usage(int argc, char **argv)
     else if((argc > 1)&&(!strncmp(*argv, "-s", 2))) {
       sscanf(argv[1], "%d", &tmp);
       My_Server_ID = tmp;
-      if(My_Server_ID > NUM_SERVERS || My_Server_ID <= 0) {
-	Alarm(PRINT, "Server ID must be between 1 and %d\n", NUM_SERVERS);
+      if(My_Server_ID > MAX_NUM_SERVERS || My_Server_ID <= 0) {
+	Alarm(PRINT, "Server ID must be between 1 and %d\n", MAX_NUM_SERVERS);
 	exit(0);
       }
       argc--; argv++;
@@ -345,7 +349,7 @@ void Init_Client_Network(void)
   }
   /* Initialize the TCP sockets, one per server in my site */
   else {
-    for(i = 1; i <= NUM_SERVERS; i++) {
+    for(i = 1; i <= MAX_NUM_SERVERS; i++) {
 
       /* If we're sending to a particular server, set up a connection
        * with that server only. */
@@ -644,9 +648,9 @@ void Send_Update(int dummy, void *dummyp)
       send_to_server++;
       send_to_server = send_to_server % (NUM_SERVERS);
 #endif
-      send_to_server = rand() % NUM_SERVERS;
+      send_to_server = rand() % MAX_NUM_SERVERS;
       if(send_to_server == 0)
-        send_to_server = NUM_SERVERS;
+        send_to_server = MAX_NUM_SERVERS;
     }
 
     num_outstanding_updates++;

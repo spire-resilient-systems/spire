@@ -21,13 +21,12 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
- *      
+ *   Jeff Seibert         View Change protocol 
+ * 
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
  * All rights reserved.
@@ -53,6 +52,7 @@
 #define SIGNATURE_SIZE     128
 #define RSA_CLIENT         1
 #define RSA_SERVER         2
+#define RSA_NM             3 //MK Reconf: Network Manager
 
 /* Public functions */
 void OPENSSL_RSA_Init();
@@ -64,7 +64,7 @@ int OPENSSL_RSA_Verify( const unsigned char *message, size_t message_length,
 			unsigned char *signature, int32u server_number, 
 			int32u type ); 
  
-void OPENSSL_RSA_Read_Keys( int32u my_number, int32u type ); 
+void OPENSSL_RSA_Read_Keys( int32u my_number, int32u type,char *dir ); 
 
 void OPENSSL_RSA_Generate_Keys(void); 
 

@@ -450,7 +450,7 @@ int Net_Send_State_Updates(Prot_Def *p_def,        /* protocol definition to sen
 
 void Process_state_packet(Link  *lk,        /* link on which packet came in */
 			  char  *buf,       /* pointer to the message */
-			  int16u data_len,  /* data length in the packet */
+			  int32u data_len,  /* data length in the packet */
 			  int16u ack_len,   /* ack length in the packet */
 			  int32u type,      /* first four bytes of the message */
 			  int    mode)      /* type of link on which the message was received */

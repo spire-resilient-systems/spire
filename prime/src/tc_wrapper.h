@@ -26,7 +26,9 @@
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ * 
+ *
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -40,8 +42,8 @@
 
 //#include "data_structs.h"
 
-void TC_Read_Partial_Key( int32u server_no, int32u site_id );
-void TC_Read_Public_Key();
+void TC_Read_Partial_Key( int32u server_no, int32u site_id,char *dir );
+void TC_Read_Public_Key(char *dir);
 
 int32u TC_Generate_Sig_Share( byte* destination, byte* hash  ); 
 void TC_Initialize_Combine_Phase( int32u number );

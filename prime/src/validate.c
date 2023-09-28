@@ -21,13 +21,12 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
- *      
+ *   Jeff Seibert         View Change protocol 
+ * 
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
  * All rights reserved.
@@ -116,10 +115,21 @@ int32u VAL_Validate_Reset_ViewChange(reset_viewchange_message *reset_viewchange,
 int32u VAL_Validate_Reset_NewView(reset_newview_message *reset_newview, int32u num_bytes);
 int32u VAL_Validate_Reset_Certificate(reset_certificate_message *reset_cert, int32u num_bytes);
 
+// MK Reconf: To validate network manager's message
+int32u VAL_Validate_NM(nm_message *update, int32u num_bytes); 
+
 /* Determine if a message from the network is permitted to be processed
  * based on my current state (STARTUP, RESET, RECOVERY, NORMAL) */
 int32u VAL_State_Permits_Message(signed_message *mess)
 {
+   /*If reconfigurable Spire is running check if it is valid configuration*/
+   /*
+   if(RECONF==1){ 
+   	if(mess->global_configuration_number==0){
+        	return 0;
+       	}
+   }
+   */
     switch (DATA.PR.recovery_status[VAR.My_Server_ID])
     {
         case PR_STARTUP:
@@ -131,6 +141,7 @@ int32u VAL_State_Permits_Message(signed_message *mess)
                 case RESET_SHARE:
                 case RESET_PROPOSAL:
                 case RESET_CERT:
+		case CLIENT_OOB_CONFIG_MSG:
                   return 1;
                 default:
                   return 0;
@@ -152,6 +163,7 @@ int32u VAL_State_Permits_Message(signed_message *mess)
                 case RESET_VIEWCHANGE:
                 case RESET_NEWVIEW:
                 case RESET_CERT:
+		case CLIENT_OOB_CONFIG_MSG:
                     return 1;
                 default:
                     return 0;
@@ -175,6 +187,7 @@ int32u VAL_State_Permits_Message(signed_message *mess)
                 case PENDING_SHARE:
 
                 case UPDATE:
+		case CLIENT_OOB_CONFIG_MSG:
                     return 1;
                 default:
                     return 0;
@@ -218,6 +231,7 @@ int32u VAL_State_Permits_Message(signed_message *mess)
                 case INCARNATION_CERT:
 
                 case UPDATE:
+		case CLIENT_OOB_CONFIG_MSG:
                     return 1;
                 default:
                     return 0;
@@ -255,12 +269,14 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
         return;
   } */
   
+  Alarm(DEBUG,"VAL_Validate_Signed_Message passed\n");
   content = (byte*)(message + 1);
   num_content_bytes = num_bytes - sizeof(signed_message) - MT_Digests_(message->mt_num) * DIGEST_SIZE; /* always >= 0, since checked in Validate_Signed_Message */
 
   switch (message->type) {
 
   case UPDATE:
+    Alarm(DEBUG,"MS2022:Update\n");
     if((!VAL_Validate_Update((update_message *)(content), num_content_bytes))){
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -268,6 +284,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case PO_REQUEST:
+    Alarm(DEBUG,"MS2022:PO_REQUEST\n");
     if((!VAL_Validate_PO_Request((po_request_message *)content,
 				 num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -276,6 +293,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
     
   case PO_ACK:
+    Alarm(DEBUG,"MS2022:PO_ACK\n");
     if((!VAL_Validate_PO_Ack((po_ack_message *)content,
 			     num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -284,6 +302,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case PO_ARU:
+    Alarm(DEBUG,"MS2022:PO_ARU\n");
     if((!VAL_Validate_PO_ARU((po_aru_message *)content,
 			     num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -292,6 +311,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case PROOF_MATRIX:
+    Alarm(DEBUG,"MS2022:PROOF_MATRIX\n");
     if((!VAL_Validate_Proof_Matrix((proof_matrix_message *)content,
 				   num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -300,6 +320,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
     
   case PRE_PREPARE:
+    Alarm(DEBUG,"MS2022:PRE_PREPARE\n");
     if((!VAL_Validate_Pre_Prepare((pre_prepare_message *)content,
 				  num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -308,6 +329,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case PREPARE:
+    Alarm(DEBUG,"MS2022:PREPARE\n");
     if((!VAL_Validate_Prepare((prepare_message *)content,
 			      num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -316,6 +338,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
     
   case COMMIT:
+    Alarm(DEBUG,"MS2022:COMMIT\n");
     if((!VAL_Validate_Commit((commit_message *)content,
 			     num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -324,6 +347,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case TAT_MEASURE:
+    Alarm(DEBUG,"MS2022:TAT_MEASURE\n");
     if((!VAL_Validate_TAT_Measure((tat_measure_message *)content,
                  num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -332,6 +356,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RTT_PING:
+    Alarm(DEBUG,"MS2022:RTT_PING\n");
     if((!VAL_Validate_RTT_Ping((rtt_ping_message *)content,
                  num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -340,6 +365,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RTT_PONG:
+    Alarm(DEBUG,"MS2022:RTT_PONG\n");
     if((!VAL_Validate_RTT_Pong((rtt_pong_message *)content,
                  num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -348,6 +374,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RTT_MEASURE:
+    Alarm(DEBUG,"MS2022:RTT_MEASURE\n");
     if((!VAL_Validate_RTT_Measure((rtt_measure_message *)content,
                  num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -356,6 +383,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case TAT_UB:
+    Alarm(DEBUG,"MS2022:TAT_UB\n");
     if((!VAL_Validate_TAT_UB((tat_ub_message *)content,
                  num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -364,6 +392,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case NEW_LEADER:
+    Alarm(DEBUG,"MS2022:NEW_LEADER\n");
     if((!VAL_Validate_New_Leader((new_leader_message *)content,
                  num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -372,6 +401,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case NEW_LEADER_PROOF:
+    Alarm(DEBUG,"MS2022:NEW_LEADER_PROOF\n");
     if((!VAL_Validate_New_Leader_Proof((new_leader_proof_message *)content,
                  num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
@@ -380,6 +410,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RB_INIT:
+    Alarm(DEBUG,"MS2022:RB_INIT\n");
     if((!VAL_Validate_RB_Init((signed_message *)content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -387,6 +418,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RB_ECHO:
+    Alarm(DEBUG,"MS2022:RB_ECHO\n");
     if((!VAL_Validate_RB_Echo((signed_message *)content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -394,6 +426,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RB_READY:
+    Alarm(DEBUG,"MS2022:RB_READY\n");
     if((!VAL_Validate_RB_Ready((signed_message *)content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -401,6 +434,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case REPORT:
+    Alarm(DEBUG,"MS2022:REPORT\n");
     if((!VAL_Validate_Report((report_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -408,6 +442,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
   
   case PC_SET:
+    Alarm(DEBUG,"MS2022:PC_SET\n");
     if((!VAL_Validate_PC_Set((pc_set_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -415,6 +450,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
   
   case VC_LIST:
+    Alarm(DEBUG,"MS2022:VC_LIST\n");
     if((!VAL_Validate_VC_List((vc_list_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -422,6 +458,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
   
   case VC_PARTIAL_SIG:
+    Alarm(DEBUG,"MS2022:VC_PARTIAL_SIG\n");
     if((!VAL_Validate_VC_Partial_Sig((vc_partial_sig_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -429,6 +466,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
   
   case VC_PROOF:
+    Alarm(DEBUG,"MS2022:VC_PROOF\n");
     if((!VAL_Validate_VC_Proof((vc_proof_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -436,6 +474,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
   
   case REPLAY:
+    Alarm(DEBUG,"MS2022:REPLAY\n");
     if((!VAL_Validate_Replay((replay_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -443,6 +482,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
   
   case REPLAY_PREPARE:
+    Alarm(DEBUG,"MS2022:REPLAY_PREPARE\n");
     if((!VAL_Validate_Replay_Prepare((replay_prepare_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -450,6 +490,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
   
   case REPLAY_COMMIT:
+    Alarm(DEBUG,"MS2022:REPLAY_COMMIT\n");
     if((!VAL_Validate_Replay_Commit((replay_commit_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -457,6 +498,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
   
   case CATCHUP_REQUEST:
+    Alarm(DEBUG,"MS2022:CATCHUP_REQUEST\n");
     if((!VAL_Validate_Catchup_Request((catchup_request_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -464,6 +506,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case ORD_CERT:
+    Alarm(DEBUG,"MS2022:ORD_CERT\n");
     if((!VAL_Validate_ORD_Certificate((ord_certificate_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -471,6 +514,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case PO_CERT:
+    Alarm(DEBUG,"MS2022:PO_CERT\n");
     if((!VAL_Validate_PO_Certificate((po_certificate_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -478,6 +522,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case JUMP:
+    Alarm(DEBUG,"MS2022:JUMP\n");
     if((!VAL_Validate_Jump((jump_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -485,6 +530,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case NEW_INCARNATION:
+    Alarm(DEBUG,"MS2022:NEW_INCARNATION\n");
     if((!VAL_Validate_New_Incarnation((new_incarnation_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -492,6 +538,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case INCARNATION_ACK:
+    Alarm(DEBUG,"MS2022:INCARNATION_ACK\n");
     if((!VAL_Validate_Incarnation_Ack((incarnation_ack_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -499,6 +546,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case INCARNATION_CERT:
+    Alarm(DEBUG,"MS2022:INCARNATION_CERT\n");
     if((!VAL_Validate_Incarnation_Cert((incarnation_cert_message* )content, num_content_bytes, message->machine_id, message->incarnation))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -506,6 +554,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case PENDING_STATE:
+    Alarm(DEBUG,"MS2022:PENDING_STATE\n");
     if((!VAL_Validate_Pending_State((pending_state_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -513,6 +562,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case PENDING_SHARE:
+    Alarm(DEBUG,"MS2022:PENDING_SHARE\n");
     if((!VAL_Validate_Pending_Share((pending_share_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -520,6 +570,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RESET_VOTE:
+    Alarm(DEBUG,"MS2022:RESET_VOTE\n");
     if((!VAL_Validate_Reset_Vote((reset_vote_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -527,6 +578,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RESET_SHARE:
+    Alarm(DEBUG,"MS2022:RESET_SHARE\n");
     if((!VAL_Validate_Reset_Share((reset_share_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -534,6 +586,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RESET_PROPOSAL:
+    Alarm(DEBUG,"MS2022:RESET_PROPOSAL\n");
     if((!VAL_Validate_Reset_Proposal((reset_proposal_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -541,6 +594,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RESET_PREPARE:
+    Alarm(DEBUG,"MS2022:RESET_PREPARE\n");
     if((!VAL_Validate_Reset_Prepare((reset_prepare_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -548,6 +602,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RESET_COMMIT:
+    Alarm(DEBUG,"MS2022:RESET_COMMIT\n");
     if((!VAL_Validate_Reset_Commit((reset_commit_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -555,6 +610,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RESET_NEWLEADER:
+    Alarm(DEBUG,"MS2022:RESET_NEWLEADER\n");
     if((!VAL_Validate_Reset_NewLeader((reset_newleader_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -562,6 +618,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RESET_NEWLEADERPROOF:
+    Alarm(DEBUG,"MS2022:RESET_NEWLEADERPROOF\n");
     if((!VAL_Validate_Reset_NewLeaderProof((reset_newleaderproof_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -569,6 +626,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RESET_VIEWCHANGE:
+    Alarm(DEBUG,"MS2022:RESET_VIEWCHANGE\n");
     if((!VAL_Validate_Reset_ViewChange((reset_viewchange_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -576,6 +634,7 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RESET_NEWVIEW:
+    Alarm(DEBUG,"MS2022:RESET_NEWVIEW\n");
     if((!VAL_Validate_Reset_NewView((reset_newview_message* )content, num_content_bytes))) {
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
@@ -583,7 +642,16 @@ int32u VAL_Validate_Message(signed_message *message, int32u num_bytes)
     break;
 
   case RESET_CERT:
+    Alarm(DEBUG,"MS2022:RESET_CERT\n");
     if((!VAL_Validate_Reset_Certificate((reset_certificate_message* )content, num_content_bytes))) {
+      VALIDATE_FAILURE_LOG(message, num_bytes);
+      return 0;
+    }
+    break;
+  case CLIENT_OOB_CONFIG_MSG:
+    // MK Reconf: Validating Network Manager msg
+    Alarm(DEBUG,"MS2022**************:OOB NM MSG\n");
+    if((!VAL_Validate_NM((nm_message *)(content), num_content_bytes))){
       VALIDATE_FAILURE_LOG(message, num_bytes);
       return 0;
     }
@@ -609,6 +677,7 @@ int32u VAL_Validate_Signed_Message(signed_message *mess, int32u num_bytes,
 {
   int32u sig_type;
   int32u sender_id;
+  int32u msg_global_inc;
 
   /* Validate minimum message size */
   if (num_bytes < (sizeof(signed_message))) {
@@ -653,7 +722,8 @@ int32u VAL_Validate_Signed_Message(signed_message *mess, int32u num_bytes,
              sig_type == VAL_SIG_TYPE_MERKLE ||
              sig_type == VAL_SIG_TYPE_CLIENT ||
              sig_type == VAL_SIG_TYPE_TPM_SERVER ||
-             sig_type == VAL_SIG_TYPE_TPM_MERKLE) {
+             sig_type == VAL_SIG_TYPE_TPM_MERKLE ||
+             sig_type == VAL_SIG_TYPE_NM) {          // MK Reconf: Network Manager
     sender_id = mess->machine_id;
   } else {
     /* threshold signed */
@@ -680,6 +750,21 @@ int32u VAL_Validate_Signed_Message(signed_message *mess, int32u num_bytes,
     return 0;
   }
 
+  //MS2022: Check Global Incarnation Number
+  msg_global_inc = mess->global_configuration_number;
+  if (sig_type == VAL_SIG_TYPE_SERVER ||
+             sig_type == VAL_SIG_TYPE_MERKLE ||
+             sig_type == VAL_SIG_TYPE_CLIENT ||
+             sig_type == VAL_SIG_TYPE_TPM_SERVER ||
+             sig_type == VAL_SIG_TYPE_TPM_MERKLE){
+      if(msg_global_inc!=DATA.NM.global_configuration_number){
+        Alarm(PRINT,"Invalid global incarnation in signed message got %d mine %d\n",msg_global_inc,DATA.NM.global_configuration_number);
+	Alarm(PRINT,"type=%s, sender=%d\n",UTIL_Type_To_String(mess->type),mess->machine_id);
+        VALIDATE_FAILURE("Invalid global incarnation in signed message");
+	return 0;
+	}
+  }
+
   return 1; /* Passed all checks */
 }
 
@@ -702,7 +787,7 @@ int32u VAL_Signature_Type(signed_message *mess)
   switch(mess->type) {
 
   case UPDATE:
-    if (sender_id >= 1 && sender_id <= NUM_SERVERS) {
+    if (sender_id >= 1 && sender_id <= VAR.Num_Servers) {
         up = (update_message *)(mess + 1);
         if (mess->monotonic_counter > 0) {
             if (up->seq_num == 1) {
@@ -717,6 +802,10 @@ int32u VAL_Signature_Type(signed_message *mess)
     }
     else
       sig_type = VAL_SIG_TYPE_CLIENT;
+    break;
+
+  case CLIENT_OOB_CONFIG_MSG:
+    sig_type = VAL_SIG_TYPE_NM;
     break;
  
   case PO_ARU:
@@ -804,19 +893,23 @@ int32u VAL_Signature_Type(signed_message *mess)
  * return: 1 if sender is valid, 0 if sender is not valid */
 int32u VAL_Validate_Sender(int32u sig_type, int32u sender_id) 
 {
+  // Ms2022: Network Manager
+  if (sender_id == 0 && sig_type == VAL_SIG_TYPE_NM)
+      return 1;
   if (sender_id < 1) 
     return 0;
 
   if ((sig_type == VAL_SIG_TYPE_SERVER || sig_type == VAL_SIG_TYPE_MERKLE || 
        sig_type == VAL_SIG_TYPE_TPM_SERVER || sig_type == VAL_SIG_TYPE_TPM_MERKLE) 
-      && sender_id <= NUM_SERVERS) {
+      && sender_id <= VAR.Num_Servers) {
     return 1;
   } 
     
   if (sig_type == VAL_SIG_TYPE_CLIENT &&
       sender_id <= NUM_CLIENTS) {
     return 1;
-  }	
+  }
+
 
   return 0;
 }
@@ -871,6 +964,8 @@ int32u VAL_Validate_Incarnation(int32u sig_type, signed_message *mess)
         return 0;
     }
   }
+
+  // MK Reconf TODO: We can check the incarnation number here!
 
   /* All other SIG types do not / cannot require a valid incarnation */
   return 1;
@@ -930,6 +1025,22 @@ int32u VAL_Is_Valid_Signature(int32u sig_type, int32u sender_id,
       Alarm(PRINT,"  Sig Client Failed %d\n", mess->type);
     return ret; 
   }
+
+  if (sig_type == VAL_SIG_TYPE_NM) {
+
+    /* Check an RSA signature using openssl. A network manager sent the message. */
+    ret = 
+      OPENSSL_RSA_Verify( 
+       ((byte*)mess) + SIGNATURE_SIZE,
+       mess->len + sizeof(signed_message) - SIGNATURE_SIZE,
+       (byte*)mess, 
+       sender_id,
+       RSA_NM
+       );
+    if (ret == 0) 
+      Alarm(PRINT,"  Sig Network Manager Failed %d\n", mess->type);
+    return ret; 
+  }
   
   return 0;
 }
@@ -949,6 +1060,28 @@ int32u VAL_Validate_Update(update_message *update, int32u num_bytes)
 
   if (num_bytes > sizeof(update_message) + UPDATE_SIZE) {
     VALIDATE_FAILURE("Update too large");
+    return 0;
+  }
+  
+  return 1;
+}
+
+/* MK Reconf: Determine if a network manager msg is valid */
+int32u VAL_Validate_NM(nm_message *update, int32u num_bytes) 
+{
+  
+  /* Check to determine if the update is valid. We have already checked to
+   * see if the signature verified. We only need to make sure that the packet
+   * is large enough for the timestamp. */
+  Alarm(PRINT,"VAL_Validate_NM num_bytes=%d\n",num_bytes); 
+  Alarm(PRINT,"VAL_Validate_NM size of nm_message=%d\n",sizeof(nm_message)); 
+  if (num_bytes < sizeof(signed_message)) {
+    VALIDATE_FAILURE("Config msg too small");
+    return 0;
+  }
+
+  if (num_bytes !=  sizeof(nm_message)) {
+    VALIDATE_FAILURE("config msg size is not as expected");
     return 0;
   }
   
@@ -1029,7 +1162,7 @@ int32u VAL_Validate_PO_Ack(po_ack_message *po_ack, int32u num_bytes)
       VALIDATE_FAILURE("Invalid PO-Ack part seq_num");
       return 0;
     }    
-    if (part[p].originator < 1 || part[p].originator > NUM_SERVERS) {
+    if (part[p].originator < 1 || part[p].originator > VAR.Num_Servers) {
       VALIDATE_FAILURE("Invalid PO-Ack part originator");
       return 0;
     }    
@@ -1170,6 +1303,7 @@ int32u VAL_Validate_Commit(commit_message *commit, int32u num_bytes)
     VALIDATE_FAILURE("Commit: Bad seq");
     return 0;
   }
+  Alarm(DEBUG,"MS2022:Val_Validate_Commit success\n");
   
   return 1;
 }
@@ -1394,7 +1528,7 @@ int32u VAL_Validate_Report(report_message *report, int32u num_bytes)
     return 0;
   }
 
-  if (report->rb_tag.machine_id < 1 || report->rb_tag.machine_id > NUM_SERVERS) {
+  if (report->rb_tag.machine_id < 1 || report->rb_tag.machine_id > VAR.Num_Servers) {
     VALIDATE_FAILURE("Report: invalid machine id in rb_tag");
     return 0;
   }
@@ -1416,7 +1550,7 @@ int32u VAL_Validate_PC_Set(pc_set_message *pc, int32u num_bytes)
     return 0;
   }
 
-  if (pc->rb_tag.machine_id < 1 || pc->rb_tag.machine_id > NUM_SERVERS) {
+  if (pc->rb_tag.machine_id < 1 || pc->rb_tag.machine_id > VAR.Num_Servers) {
     VALIDATE_FAILURE("PC_Set: invalid machine id in rb_tag");
     return 0;
   }
@@ -1439,10 +1573,11 @@ int32u VAL_Validate_PC_Set(pc_set_message *pc, int32u num_bytes)
     VALIDATE_FAILURE("PC_Set: pre-prepare did not pass VAL function");
     return 0;
   }
-
+  Alarm(DEBUG,"PC_Set: pre-prepare validation pass\n");
   pp = (pre_prepare_message *)(mess + 1);
-
+  
   /* Construct the complete_pp from the pp we received */
+  memset(&complete_pp,0,sizeof(complete_pre_prepare_message));
   complete_pp.seq_num = pp->seq_num;
   complete_pp.view = pp->view;
   memcpy((byte *)&complete_pp.last_executed, &pp->last_executed, sizeof(pp->last_executed));
@@ -1450,9 +1585,10 @@ int32u VAL_Validate_PC_Set(pc_set_message *pc, int32u num_bytes)
   memcpy((byte *)&complete_pp.cum_acks, (byte *)(pp + 1),  
             sizeof(po_aru_signed_message) * pp->num_acks_in_this_message);
 
+
+
   /* Compute the digest of the PP */
   OPENSSL_RSA_Make_Digest((byte*)&complete_pp, sizeof(complete_pre_prepare_message), pp_digest);
-
   sum_len += msg_size;
   count = 0;
 
@@ -1482,7 +1618,13 @@ int32u VAL_Validate_PC_Set(pc_set_message *pc, int32u num_bytes)
 
     /* Calculate the digest of the commit, and compare it against the pp */
     if (!OPENSSL_RSA_Digests_Equal(pm->digest, pp_digest)) {
-        VALIDATE_FAILURE("PC_Set: prepare digest does not match pp digest");
+	printf("sender machine id=%lu,view=%lu,seq_num=%lu\n",pc->rb_tag.machine_id,pc->rb_tag.view,pc->rb_tag.seq_num);
+	printf("Preproposal DIgest: \n");
+	OPENSSL_RSA_Print_Digest(&pp->proposal_digest);
+	print_complete_pre_prepare(&complete_pp);
+	print_prepare(pm);
+	OPENSSL_RSA_Print_Digest(pm->digest);
+	VALIDATE_FAILURE("PC_Set: prepare digest does not match pp digest");
         return 0;
     }
 
@@ -1497,7 +1639,7 @@ int32u VAL_Validate_PC_Set(pc_set_message *pc, int32u num_bytes)
   }
   if (count != 2*VAR.F + VAR.K) {
     VALIDATE_FAILURE("PC_Set: not 2f+k prepare messages inside the pc_set");
-    Alarm(PRINT, "PC_Set: count = %d, needed %d\n", count, 2*VAR.F + VAR.K);
+    Alarm(DEBUG, "PC_Set: count = %d, needed %d\n", count, 2*VAR.F + VAR.K);
     return 0;
   }
 
@@ -1636,8 +1778,11 @@ int32u VAL_Validate_ORD_Certificate(ord_certificate_message *ord_cert, int32u nu
     VALIDATE_FAILURE("ORD_Certificate: pp seq_num does not match ord_cert seq_num");
     return 0;
   }
+  Alarm(DEBUG,"MS2022: pp->seq_num=%u, ord_cert->seq_num=%u\n",pp->seq_num,ord_cert->seq_num);
 
   /* Construct the complete_pp from the pp we received */
+  //MS2022
+  memset(&complete_pp,0,sizeof(complete_pre_prepare_message));
   complete_pp.seq_num = pp->seq_num;
   complete_pp.view = pp->view;
   memcpy((byte *)&complete_pp.last_executed, &pp->last_executed, sizeof(pp->last_executed));
@@ -1679,10 +1824,16 @@ int32u VAL_Validate_ORD_Certificate(ord_certificate_message *ord_cert, int32u nu
 
     /* Calculate the digest of the commit, and compare it against the pp */
     if (!OPENSSL_RSA_Digests_Equal(cm->digest, pp_digest)) {
-        VALIDATE_FAILURE("ORD_Certificate: commit digest does not match ord_cert digest");
+        Alarm(DEBUG,"MS2022:pp_digest\n");
+	OPENSSL_RSA_Print_Digest(pp_digest);
+        Alarm(DEBUG,"MS2022:cm->digest\n");
+	OPENSSL_RSA_Print_Digest(cm->digest);
+	VALIDATE_FAILURE("ORD_Certificate: commit digest does not match ord_cert digest");
         return 0;
     }
 
+        Alarm(DEBUG,"MS2022:pp_digest or cm->digest after equal\n");
+	//OPENSSL_RSA_Print_Digest(pp_digest);
     sum_len += msg_size;
     count++;
   }
@@ -1785,7 +1936,7 @@ int32u VAL_Validate_PO_Certificate(po_certificate_message *po_cert, int32u num_b
         incarnation_vector = pa_specific->preinstalled_incarnations;
     } else {
         if (memcmp(pa_specific->preinstalled_incarnations, incarnation_vector,
-                   sizeof(int32u) * NUM_SERVERS) != 0) {
+                   sizeof(int32u) * VAR.Num_Servers) != 0) {
             VALIDATE_FAILURE("PO_Certificate: incarnation vector mismatch");
             return 0;
         }
@@ -2114,7 +2265,7 @@ int32u VAL_Validate_Reset_Proposal(reset_proposal_message *reset_proposal, int32
     VALIDATE_FAILURE("Reset Proposal: not enough shares");
     return 0;
   }
-  if (reset_proposal->num_shares > NUM_SERVERS) {
+  if (reset_proposal->num_shares > VAR.Num_Servers) {
     VALIDATE_FAILURE("Reset Proposal: too many shares");
     return 0;
   }

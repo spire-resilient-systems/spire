@@ -379,10 +379,11 @@ int main(int argc, char* argv[])
     Usage(argc, argv);
 
     Alarm_set_types(PRINT|NETWORK|STATUS);
-    /*Alarm_set_types(PRINT|DEBUG|STATUS);*/
+    //Alarm_set_types(DEBUG|DATA_LINK|SESSION);
     Alarm_set_priority(SPLOG_INFO);
     Alarm_enable_timestamp_high_res(NULL);
 
+    Alarm(PRINT,"Size of packet header is %d\n",sizeof(packet_header));
     /* add the sigPIPE handler */
 #ifndef ARCH_PC_WIN95
     signal(SIGPIPE, SIG_IGN);

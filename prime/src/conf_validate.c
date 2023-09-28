@@ -28,7 +28,7 @@
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -1661,6 +1661,8 @@ int32u VAL_Validate_ORD_Certificate(ord_certificate_message *ord_cert, int32u nu
   }
 
   /* Construct the complete_pp from the pp we received */
+  //MS2022
+  memset(&complete_pp,0,sizeof(complete_pre_prepare_message));
   complete_pp.seq_num = pp->seq_num;
   complete_pp.view = pp->view;
   memcpy((byte *)&complete_pp.last_executed, &pp->last_executed, sizeof(pp->last_executed));

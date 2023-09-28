@@ -229,7 +229,6 @@ below to build Confidential Spire.
    PLCs that run on Linux
 
 2. Build Spire (from top-level Spire directory):
-
         make conf_spire
 
 ---
@@ -395,10 +394,11 @@ parameters in `common/def.h`
 
    To run:
 
-        cd prime/bin; ./conf_prime -i id
+        cd prime/bin; ./conf_prime -i id -g global_id
 
    The `id` of a Prime daemon must match the id of the SCADA Master that
    connects to it (and is running on the same machine as it).
+   For Confidential Spire, the `id` and `global_id` are same.
 
    Prime uses its configuration files to find the location of the internal
    Spines daemon to connect to (see Prime documentation).
@@ -528,10 +528,10 @@ To run this example, execute the following:
         cd scada_master; ./conf_scada_master 5 192.168.101.101:8100 192.168.101.101:8120
         cd scada_master; ./conf_scada_master 9 192.168.101.101:8100 192.168.101.101:8120
         cd scada_master; ./conf_scada_master 13 192.168.101.101:8100 192.168.101.101:8120
-        cd prime/bin; ./conf_prime -i 1
-        cd prime/bin; ./conf_prime -i 5
-        cd prime/bin; ./conf_prime -i 9
-        cd prime/bin; ./conf_prime -i 13
+        cd prime/bin; ./conf_prime -i 1 -g 1
+        cd prime/bin; ./conf_prime -i 5 -g 5
+        cd prime/bin; ./conf_prime -i 9 -g 9
+        cd prime/bin; ./conf_prime -i 13 -g 13
 
 - On control center 2 machine:
 
@@ -541,10 +541,10 @@ To run this example, execute the following:
         cd scada_master; ./conf_scada_master 6 192.168.101.102:8100 192.168.101.102:8120
         cd scada_master; ./conf_scada_master 10 192.168.101.102:8100 192.168.101.102:8120
         cd scada_master; ./conf_scada_master 14 192.168.101.102:8100 192.168.101.102:8120
-        cd prime/bin; ./conf_prime -i 2
-        cd prime/bin; ./conf_prime -i 6
-        cd prime/bin; ./conf_prime -i 10
-        cd prime/bin; ./conf_prime -i 14
+        cd prime/bin; ./conf_prime -i 2 -g 2
+        cd prime/bin; ./conf_prime -i 6 -g 6
+        cd prime/bin; ./conf_prime -i 10 -g 10
+        cd prime/bin; ./conf_prime -i 14 -g 14
 
 - On data center 1 machine:
 
@@ -552,9 +552,9 @@ To run this example, execute the following:
         cd scada_master; ./conf_scada_master 3 192.168.101.103:8100
         cd scada_master; ./conf_scada_master 7 192.168.101.103:8100
         cd scada_master; ./conf_scada_master 11 192.168.101.103:8100
-        cd prime/bin; ./conf_prime -i 3
-        cd prime/bin; ./conf_prime -i 7
-        cd prime/bin; ./conf_prime -i 11
+        cd prime/bin; ./conf_prime -i 3 -g 3
+        cd prime/bin; ./conf_prime -i 7 -g 7
+        cd prime/bin; ./conf_prime -i 11 -g 11
 
 - On data center 2 machine:
 
@@ -562,9 +562,9 @@ To run this example, execute the following:
         cd scada_master; ./conf_scada_master 4 192.168.101.104:8100
         cd scada_master; ./conf_scada_master 8 192.168.101.104:8100
         cd scada_master; ./conf_scada_master 12 192.168.101.104:8100
-        cd prime/bin; ./conf_prime -i 4
-        cd prime/bin; ./conf_prime -i 8
-        cd prime/bin; ./conf_prime -i 12
+        cd prime/bin; ./conf_prime -i 4 -g 4
+        cd prime/bin; ./conf_prime -i 8 -g 8
+        cd prime/bin; ./conf_prime -i 12 -g 12
 
 - On the PLC/RTU proxy machine:
 

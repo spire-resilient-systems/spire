@@ -21,12 +21,11 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -57,9 +56,9 @@ typedef struct dummy_recon_slot {
   int32u decoded;
 
   int32u num_parts_collected;
-  int32u part_collected[NUM_SERVER_SLOTS];
+  int32u part_collected[MAX_NUM_SERVER_SLOTS];
 
-  unsigned char parts[NUM_SERVER_SLOTS][PRIME_MAX_PACKET_SIZE];
+  unsigned char parts[MAX_NUM_SERVER_SLOTS][PRIME_MAX_PACKET_SIZE];
 
 } recon_slot;
 

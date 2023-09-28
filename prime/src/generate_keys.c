@@ -26,7 +26,9 @@
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ * 
+ *
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -42,8 +44,16 @@
 #include "def.h"
 #include "openssl_rsa.h"
 #include "tc_wrapper.h"
+#include "data_structs.h"
+#include "net_types.h"
+#include "objects.h"
+#include "network.h"
+#include "utility.h"
+#include "error_wrapper.h"
+#include "recon.h"
+#include "proactive_recovery.h"
 
-int main(int argc, char **args) 
+int main(int argc, char **argv) 
 {
   printf("Generating key files and writing them to ./keys directory.\n");
   

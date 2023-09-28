@@ -21,13 +21,12 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
- *      
+ *   Jeff Seibert         View Change protocol 
+ * 
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
  * All rights reserved.
@@ -78,7 +77,7 @@ void PR_Initialize_Data_Structure(void)
 
     now = E_get_time();
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         DATA.PR.preinstalled_incarnations[i] = 0;
         DATA.PR.installed_incarnations[i] = 0;
 
@@ -157,7 +156,7 @@ void PR_Clear_Reset_Data_Structures()
 {
     int32u i;
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
 
         /* Reset Prepares and Commits */
         if (DATA.PR.reset_prepare[i] != NULL) {
@@ -218,7 +217,7 @@ void PR_Upon_Reset()
     stdit it;
     signed_message *mess;
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
 
         if (DATA.PR.new_incarnation[i] != NULL) {
             dec_ref_cnt(DATA.PR.new_incarnation[i]);
@@ -378,7 +377,7 @@ void PR_Periodic_Retrans(int d1, void *d2)
              *  that we are giving up on - there should be incarnation_certificate in
              *  this case, and we are going to work on a new one with the updated
              *  timestamp and nonce (but same incarnation). */
-            for (i = 1; i <= NUM_SERVERS; i++) {
+            for (i = 1; i <= VAR.Num_Servers; i++) {
                 if (DATA.PR.recv_incarnation_ack[i] != NULL) {
                     dec_ref_cnt(DATA.PR.recv_incarnation_ack[i]);
                     DATA.PR.recv_incarnation_ack[i] = NULL;
@@ -397,7 +396,7 @@ void PR_Periodic_Retrans(int d1, void *d2)
     }
 
     /* Retransmit Incarnation Certificates (from any replica) that has yet to be installed */
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.PR.incarnation_cert[i] == NULL)
             continue;
 
@@ -418,8 +417,8 @@ void PR_Start_Recovery()
     /* DEBUG */
     /* int32u i, j;
     po_seq_pair ps = {0, 0};
-    for (i = 1; i <= NUM_SERVERS; i++) {
-        for (j = 0; j < NUM_SERVERS; j++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
+        for (j = 0; j < VAR.Num_Servers; j++) {
             if (PRE_ORDER_Seq_Compare(DATA.PO.cum_acks[i].cum_ack.ack_for_server[j], ps) != 0)
                 Alarm(PRINT, "Start_Recovery: cum_acks[%u].ack[%u] = (%u,%u) != (0,0)\n", i, j,
                             DATA.PO.cum_acks[i].cum_ack.ack_for_server[j].incarnation,
@@ -451,14 +450,13 @@ void PR_Process_New_Incarnation(signed_message *mess)
     /* For now, ignore my own new_incarnation messages */
     sender = mess->machine_id;
     if (sender == VAR.My_Server_ID) {
-        Alarm(DEBUG, "Ignoring my own new_incarnation message\n");
+        //Alarm(DEBUG, "Ignoring my own new_incarnation message\n");
         return;
     }
 
     /* Grab the specific new_incarnation information */
     ni = (new_incarnation_message *)(mess + 1);
-    Alarm(DEBUG, "Received NEW_INCARNATION from %d with incarnation %u and timestamp = %u\n", 
-            mess->machine_id, mess->incarnation, ni->timestamp);
+    Alarm(DEBUG, "Received NEW_INCARNATION from %d with incarnation %u and timestamp = %u, and nounce=%lu, config=%lu\n", mess->machine_id, mess->incarnation, ni->timestamp,ni->nonce,mess->global_configuration_number);
 
     /* Check the monotonic increasing sequence number */
     /*if (ni->monotonic_counter <= DATA.PR.monotonic_counter[sender]) {
@@ -586,6 +584,7 @@ void PR_Process_New_Incarnation(signed_message *mess)
     dest_bits = 0;
     UTIL_Bitmap_Set(&dest_bits, sender);
     if (DATA.PR.recovery_status[VAR.My_Server_ID] == PR_STARTUP) {
+        Alarm(STATUS,"MS2022: I am PR_STARTUP, so sending reset\n");
         response = PR_Construct_Reset_Vote(mess);
         SIG_Add_To_Pending_Messages(response, dest_bits, UTIL_Get_Timeliness(RESET_VOTE));
         dec_ref_cnt(response);
@@ -593,6 +592,7 @@ void PR_Process_New_Incarnation(signed_message *mess)
     /* I'm already a replica with a running system, run the recovery protocol */
     else if (DATA.PR.recovery_status[VAR.My_Server_ID] == PR_NORMAL) {
         /* If we had any previously stored incarnation_ack sent to this replica, remove it */
+        Alarm(STATUS,"MS2022: I am PR_NORMAL, so sending inc ack\n");
         if (DATA.PR.sent_incarnation_ack[sender] != NULL) {
             dec_ref_cnt(DATA.PR.sent_incarnation_ack[sender]);
             DATA.PR.sent_incarnation_ack[sender] = NULL;
@@ -793,13 +793,13 @@ void PR_Accept_Incarnation(int32u replica)
      * Normally, I would also throw away my created PO_Acks and reconstruct
      * them with the new vector, but in this case we are using a clever trick to just
      * update the vector, re-sign, and then send it off */
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         stdhash_begin(&DATA.PO.History[i], &it);
         while (!stdhash_is_end(&DATA.PO.History[i], &it)) {
             p_slot = *(po_slot**)stdit_val(&it);
 
             if (PRE_ORDER_Seq_Compare(p_slot->seq, DATA.PO.cum_aru[i]) > 0) {
-                for (j = 1; j <= NUM_SERVERS; j++) {
+                for (j = 1; j <= VAR.Num_Servers; j++) {
                     if (p_slot->ack[j] != NULL) {
                         dec_ref_cnt(p_slot->ack[j]);
                         p_slot->ack[j] = NULL;
@@ -828,7 +828,7 @@ void PR_Accept_Incarnation(int32u replica)
 
         /* Since we just cleared out PO_Acks, also roll back our knowledge
          * of what anyone Acked to their latest PO_ARU value? */
-        for (j = 1; j <= NUM_SERVERS; j++) {
+        for (j = 1; j <= VAR.Num_Servers; j++) {
             if (PRE_ORDER_Seq_Compare(DATA.PO.cum_max_acked[j][i], 
                 DATA.PO.cum_acks[j].cum_ack.ack_for_server[i-1]) > 0) 
             {
@@ -861,7 +861,7 @@ void PR_Accept_Incarnation(int32u replica)
         o_slot = *(ord_slot**)stdit_val(&it);
 
         if (!o_slot->ordered) {
-            for (j = 1; j <= NUM_SERVERS; j++) {
+            for (j = 1; j <= VAR.Num_Servers; j++) {
  
                 /* Whether or not we have a prepare certificate, we will be replacing
                  * our "weak" stored prepare (in the slot->prepare array) with a new one
@@ -880,7 +880,7 @@ void PR_Accept_Incarnation(int32u replica)
                         prepare_specific = (prepare_message *)(o_slot->prepare[j] + 1);
                         memcpy(prepare_specific->preinstalled_incarnations,
                                 DATA.PR.preinstalled_incarnations + 1, 
-                                sizeof(int32u) * NUM_SERVERS);
+                                sizeof(int32u) * VAR.Num_Servers);
                         SIG_Add_To_Pending_Messages(o_slot->prepare[j], BROADCAST,
                                 UTIL_Get_Timeliness(PREPARE));
                     }
@@ -901,7 +901,7 @@ void PR_Accept_Incarnation(int32u replica)
                         prepare_specific = (prepare_message *)(o_slot->prepare[j] + 1);
                         memcpy(prepare_specific->preinstalled_incarnations,
                                 DATA.PR.preinstalled_incarnations + 1, 
-                                sizeof(int32u) * NUM_SERVERS);
+                                sizeof(int32u) * VAR.Num_Servers);
                         SIG_Add_To_Pending_Messages(o_slot->prepare[j], BROADCAST,
                                 UTIL_Get_Timeliness(PREPARE));
                     }
@@ -920,7 +920,7 @@ void PR_Accept_Incarnation(int32u replica)
                         commit_specific = (commit_message *)(o_slot->commit[j] + 1);
                         memcpy(commit_specific->preinstalled_incarnations,
                                 DATA.PR.preinstalled_incarnations + 1, 
-                                sizeof(int32u) * NUM_SERVERS);
+                                sizeof(int32u) * VAR.Num_Servers);
                         SIG_Add_To_Pending_Messages(o_slot->commit[j], BROADCAST,
                                 UTIL_Get_Timeliness(COMMIT));
                     }
@@ -941,7 +941,7 @@ void PR_Accept_Incarnation(int32u replica)
                         commit_specific = (commit_message *)(o_slot->commit[j] + 1);
                         memcpy(commit_specific->preinstalled_incarnations,
                                 DATA.PR.preinstalled_incarnations + 1, 
-                                sizeof(int32u) * NUM_SERVERS);
+                                sizeof(int32u) * VAR.Num_Servers);
                         SIG_Add_To_Pending_Messages(o_slot->commit[j], BROADCAST,
                                 UTIL_Get_Timeliness(COMMIT));
                     }
@@ -982,7 +982,7 @@ void PR_Accept_Incarnation(int32u replica)
      * here (to limit the slow-down effect of recovering replicas) and 
      * explicitly send a catchup request now (rather than wait for timeout). */
     request = CATCH_Construct_Catchup_Request(FLAG_CATCHUP);
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.CATCH.sent_catchup_request[i] != NULL)
             dec_ref_cnt(DATA.CATCH.sent_catchup_request[i]);
         inc_ref_cnt(request);
@@ -1231,7 +1231,7 @@ void PR_Try_To_Complete_Recovery(int32u recent_replica)
     jm = (jump_message *)(DATA.PR.jump_message[recent_replica] + 1);
 
     memcpy(digest, jm->proposal_digest, DIGEST_SIZE);
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.PR.jump_message[i] == NULL)
             continue;
 
@@ -1252,7 +1252,7 @@ void PR_Try_To_Complete_Recovery(int32u recent_replica)
      * one to jump to */
     max_ord = 0;
     jump_targ = 0;
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
 
         if (!UTIL_Bitmap_Is_Set(&recovery_set, i))
             continue;
@@ -1326,7 +1326,7 @@ void PR_Try_To_Complete_Recovery(int32u recent_replica)
 
     /* Next, go through the replicas that gave us valid Pending state and apply
      * the shares (PO_Requests, Pre_Prepares) to our data structures */
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (!UTIL_Bitmap_Is_Set(&recovery_set, i))
             continue;
 
@@ -1414,7 +1414,7 @@ void PR_Process_Reset_Vote(signed_message *mess)
     rv = (reset_vote_message *)(mess + 1);
     ni = (new_incarnation_message *)(DATA.PR.new_incarnation[VAR.My_Server_ID] + 1);
 
-    Alarm(PRINT, "PR_Process_Reset_Vote: recv RESET_VOTE from %u\n", sender);
+    Alarm(DEBUG, "PR_Process_Reset_Vote: recv RESET_VOTE from %u\n", sender);
 
     /* Check that my current incarnation is the one being ACKed */
     if (rv->acked_incarnation != DATA.PR.new_incarnation_val[VAR.My_Server_ID]) {
@@ -1468,10 +1468,14 @@ void PR_Process_Reset_Vote(signed_message *mess)
         E_queue(PR_Rotate_Reset_Leader, 0, NULL, t); */
 
         /* Each replica constructs their reset share */
+	Alarm(DEBUG,"Sahiti****: Sending Reset Share as DATA.PR.reset_vote_count=%d,needed=%d\n",DATA.PR.reset_vote_count,2*VAR.F + VAR.K);
         share = PR_Construct_Reset_Share();
         SIG_Add_To_Pending_Messages(share, BROADCAST, UTIL_Get_Timeliness(RESET_SHARE));
         dec_ref_cnt(share);
     }
+	else{
+	Alarm(DEBUG,"Sahiti****: DATA.PR.reset_vote_count=%d,needed=%d\n",DATA.PR.reset_vote_count,2*VAR.F + VAR.K);
+	}
 }
 
 void PR_Process_Reset_Share(signed_message *mess)
@@ -1481,7 +1485,7 @@ void PR_Process_Reset_Share(signed_message *mess)
     sp_time t;
 
     sender = mess->machine_id;
-    Alarm(PRINT, "PR_Process_Reset_Share: recvd share from %u\n", sender);
+    Alarm(DEBUG, "PR_Process_Reset_Share: recvd share from %u\n", sender);
 
     if (DATA.View > 1 && !UTIL_I_Am_Leader())  {
         Alarm(PRINT, "PR_Process_Reset_Share: Not the leader and recvd share in view > 1\n");
@@ -1527,14 +1531,21 @@ void PR_Process_Reset_Share(signed_message *mess)
 
     /* We have reached the minimum 2f+k+1 shares needed to start the fresh system.
      * But all replicas (leader included) must wait at least the minimum delay
-     * to "ensure" enough time elapses to receive all correct replicas' shares */
+     * to "ensure" enough time elapses to receive all correct replicas' shares.
+     *
+     * During OOB reconfiguration, we will receive 2f+k+1 shares. But this is different 
+     * from above situation. Here, all replicas part of the new configuration 
+     * can immediately move to the new configuration and resume operation.
+     * */
+
     if (DATA.View == 1 && UTIL_I_Am_Leader()) {
-        t.sec  = 2*SYSTEM_RESET_MIN_WAIT_SEC; 
-        t.usec = 2*SYSTEM_RESET_MIN_WAIT_USEC;
-    } else {
-        t.sec  = SYSTEM_RESET_MIN_WAIT_SEC; 
-        t.usec = SYSTEM_RESET_MIN_WAIT_USEC;
-    }
+                t.sec  = 2*SYSTEM_RESET_MIN_WAIT_SEC; 
+                t.usec = 2*SYSTEM_RESET_MIN_WAIT_USEC;
+     }else {
+                t.sec  = SYSTEM_RESET_MIN_WAIT_SEC; 
+                t.usec = SYSTEM_RESET_MIN_WAIT_USEC;
+    	 }
+    
     E_queue(PR_Post_Shares_Delay, 0, NULL, t);
 }
 
@@ -1548,7 +1559,7 @@ void PR_Post_Shares_Delay(int d1, void *d2)
      * from and sent to the leader is considered in RESET mode, not startup. We
      * are locking in membership to only what we collect the first view. */
     if (DATA.View == 1) {
-        for (i = 1; i <= NUM_SERVERS; i++) {
+        for (i = 1; i <= VAR.Num_Servers; i++) {
             if (DATA.PR.reset_share[i] != NULL) {
                 if (DATA.PR.recovery_status[i] == PR_STARTUP)
                     DATA.PR.num_startup--;
@@ -1563,6 +1574,7 @@ void PR_Post_Shares_Delay(int d1, void *d2)
         DATA.PR.reset_proposal = PR_Construct_Reset_Proposal();
         SIG_Add_To_Pending_Messages(DATA.PR.reset_proposal, BROADCAST, 
             UTIL_Get_Timeliness(RESET_PROPOSAL));
+	Alarm(PRINT,"I am leader, so sent Reset Proposal\n");
     }
     /* Otherwise, mark that we can now process any proposal that may have arrived */
     else {
@@ -1575,7 +1587,7 @@ void PR_Post_Shares_Delay(int d1, void *d2)
 void PR_Process_Reset_Proposal(signed_message *mess_param)
 {
     int32u i, sender, length, size;
-    int32u share_count, valid_for_me, marked_share[NUM_SERVER_SLOTS];
+    int32u share_count, valid_for_me, marked_share[MAX_NUM_SERVER_SLOTS];
     signed_message *mess, *ptr, *reset_prepare;
     reset_proposal_message *rpm;
     reset_share_message *rsm, *stored_rsm;
@@ -1609,7 +1621,7 @@ void PR_Process_Reset_Proposal(signed_message *mess_param)
         mess = mess_param;
         rpm = (reset_proposal_message *)(mess + 1);
 
-        Alarm(PRINT, "PR_Process_Reset_Proposal: Recvd from %u\n", mess->machine_id);
+        Alarm(DEBUG, "PR_Process_Reset_Proposal: Recvd from %u\n", mess->machine_id);
 
         if (mess->machine_id != UTIL_Leader()) {
             Alarm(PRINT, "PR_Process_Reset_Proposal: Came from %u, not the leader %u\n",
@@ -1689,7 +1701,7 @@ void PR_Process_Reset_Proposal(signed_message *mess_param)
         }
        
         /* Check that the proposal covers at least my knowledge of the shares */
-        for (i = 1; i <= NUM_SERVERS; i++)
+        for (i = 1; i <= VAR.Num_Servers; i++)
             marked_share[i] = 0;
         length = sizeof(reset_proposal_message);
         share_ptr = (byte *)(rpm + 1);
@@ -1699,7 +1711,7 @@ void PR_Process_Reset_Proposal(signed_message *mess_param)
             ptr = (signed_message *)(share_ptr);
             rsm = (reset_share_message *)(ptr + 1);
 
-            printf("  %u = %u\n", ptr->machine_id, ptr->incarnation);
+            //printf("  %u = %u\n", ptr->machine_id, ptr->incarnation);
             if (DATA.PR.reset_share[ptr->machine_id] != NULL) {
 
                 stored_rsm = (reset_share_message *)(DATA.PR.reset_share[ptr->machine_id] + 1);
@@ -1851,7 +1863,7 @@ void PR_Process_Reset_Prepare(signed_message *mess)
     rpo = (reset_proposal_message *)(DATA.PR.reset_proposal + 1);
     OPENSSL_RSA_Make_Digest((byte*)rpo, DATA.PR.reset_proposal->len, proposal_digest);
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.PR.reset_prepare[i] == NULL)
             continue;
         
@@ -1916,7 +1928,7 @@ void PR_Process_Reset_Commit(signed_message *mess)
     rpo = (reset_proposal_message *)(proposal + 1);
     OPENSSL_RSA_Make_Digest((byte*)rpo, proposal->len, proposal_digest);
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.PR.reset_commit[i] == NULL)
             continue;
         
@@ -2009,20 +2021,28 @@ void PR_Execute_Reset_Proposal()
 
     /* Go through the installed incarnation vector and update the PO information
      * for the non-zero servers */
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.PR.installed_incarnations[i] == 0)
             continue;
 
         ps.incarnation = DATA.PR.installed_incarnations[i];
         ps.seq_num = 0;
-        if (PRE_ORDER_Seq_Compare(ps, DATA.PO.max_acked[i]) > 0)
-            DATA.PO.max_acked[i] = ps;
-        if (PRE_ORDER_Seq_Compare(ps, DATA.PO.aru[i]) > 0)
-            DATA.PO.aru[i] = ps;
-        if (PRE_ORDER_Seq_Compare(ps, DATA.PO.last_executed_po_reqs[i]) > 0)
+        if (PRE_ORDER_Seq_Compare(ps, DATA.PO.max_acked[i]) > 0){
+		DATA.PO.max_acked[i] = ps;
+                Alarm(DEBUG,"DATA.PO.max_acked[%d].inc=%lu, seq_num=%lu\n",i,DATA.PO.max_acked[i].incarnation,DATA.PO.max_acked[i].seq_num);
+	}
+        if (PRE_ORDER_Seq_Compare(ps, DATA.PO.aru[i]) > 0){
+            Alarm(DEBUG, "aru>0\n");
+		DATA.PO.aru[i] = ps;
+	}
+        if (PRE_ORDER_Seq_Compare(ps, DATA.PO.last_executed_po_reqs[i]) > 0){
+            Alarm(DEBUG, "last_executed_po_reqs>0\n");
             DATA.PO.last_executed_po_reqs[i] = ps;
-        if (PRE_ORDER_Seq_Compare(ps, DATA.PO.white_line[i]) > 0) 
+	}
+        if (PRE_ORDER_Seq_Compare(ps, DATA.PO.white_line[i]) > 0){ 
+            Alarm(DEBUG, "white line>0\n");
             DATA.PO.white_line[i] = ps;
+	}
         /* DATA.PO.cum_aru[i] = ps; */
         /* DATA.PO.max_num_sent_in_proof[i] = ps; */
     }
@@ -2053,7 +2073,7 @@ void PR_Process_Reset_NewLeader(signed_message *mess)
 
     rnl = (reset_newleader_message *)(mess + 1);
 
-    Alarm(PRINT, "Process Reset New_Leader from %u, new_view = %u, my_view = %u\n", 
+    Alarm(STATUS, "Process Reset New_Leader from %u, new_view = %u, my_view = %u\n", 
             mess->machine_id, rnl->new_view, DATA.View);
 
     /* Check if the message contains an old view */
@@ -2075,7 +2095,7 @@ void PR_Process_Reset_NewLeader(signed_message *mess)
     /* Now, count how many stored reset_newleader messages we have that match 
      * the one we just received */
     count = 0;
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.PR.reset_newleader[i] == NULL)
             continue;
 
@@ -2091,7 +2111,7 @@ void PR_Process_Reset_NewLeader(signed_message *mess)
 
     /* Preinstall the view, construct and start sending reset_newleaderproof message */
     DATA.View = rnl->new_view;
-    Alarm(PRINT, "Process_NL: Preinstalling view %u\n", DATA.View);
+    Alarm(STATUS, "Process_NL: Preinstalling view %u\n", DATA.View);
 
     if (DATA.PR.reset_newleaderproof != NULL)
         dec_ref_cnt(DATA.PR.reset_newleaderproof);
@@ -2221,7 +2241,7 @@ void PR_Process_Reset_ViewChange(signed_message *mess)
     reset_viewchange_message *rvc;
 
     rvc = (reset_viewchange_message *)(mess + 1);
-    Alarm(PRINT, "PR_Process_Reset_ViewChange Message. view %u, from %u\n", 
+    Alarm(STATUS, "PR_Process_Reset_ViewChange Message. view %u, from %u\n", 
                 rvc->rb_tag.view, mess->machine_id);
 
     /* Check the validity of the message */
@@ -2322,7 +2342,7 @@ void PR_Check_Complete_VC_State()
     if (!UTIL_Bitmap_Is_Superset(&rnv->list, &DATA.PR.reset_viewchange_bitmap)) {
         Alarm(DEBUG, "    Check_Reset_VC_State: do not contain complete newview state\n");
         Alarm(DEBUG, "    MINE   NEWVIEW\n");
-        for (i = 1; i <= NUM_SERVERS; i++) {
+        for (i = 1; i <= VAR.Num_Servers; i++) {
             Alarm(DEBUG, "[%d]   %u       %u\n", 
                     i, UTIL_Bitmap_Is_Set(&DATA.PR.reset_viewchange_bitmap, i), 
                     UTIL_Bitmap_Is_Set(&rnv->list, i));
@@ -2334,7 +2354,7 @@ void PR_Check_Complete_VC_State()
 
     /* Now, go through and find the most advanced proposal that had a 
      * legitimate prepare certificate to carry over to this new round */
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (!UTIL_Bitmap_Is_Set(&rnv->list, i))
             continue;
     
@@ -2379,7 +2399,7 @@ void PR_Check_Complete_VC_State()
          * them a fair chance to be judged on what I've collected */
         if (DATA.PR.reset_carry_over_proposal == NULL) {
             Alarm(PRINT, "No carry over, forwarding shares to %u\n", UTIL_Leader());
-            for (i = 1; i <= NUM_SERVERS; i++) {
+            for (i = 1; i <= VAR.Num_Servers; i++) {
                 if (DATA.PR.reset_share[i] != NULL)
                     UTIL_Send_To_Server(DATA.PR.reset_share[i], UTIL_Leader());
             }
@@ -2517,6 +2537,10 @@ void PR_Resume_Normal_Operation()
     //    PR_Send_Application_Reset();
 
     /* Next, startup all normal Prime periodic functions and timers */
+    Alarm(PRINT,"Called PR_Resume_Normal_operations\n");
+    if(DATA.NM.OOB_Reconfig_Inprogress){
+	 DATA.NM.OOB_Reconfig_Inprogress = 0;
+	}
     if (!UTIL_DLL_Is_Empty(&DATA.PO.po_request_dll))
         PRE_ORDER_Send_PO_Request();
     PRE_ORDER_Periodically(0, NULL);
@@ -2549,6 +2573,6 @@ void PR_Send_Application_Reset()
 
     up_contents->machine_id = VAR.My_Server_ID;
     up_contents->type = CLIENT_SYSTEM_RESET;
-
+    Alarm(PRINT,"MS2022: CLIENT_SYSTEM_RESET\n");
     ORDER_Execute_Event(event, 0, 1, 1);
 }

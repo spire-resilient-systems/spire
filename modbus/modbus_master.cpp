@@ -145,7 +145,7 @@ void Process_SM_Msg()
     slave = (int)feed->rtu;
     adr = (int)feed->offset;
     val = feed->val;
-    printf("Slave: %d, Value: %d, Adr: %d\n\n", slave, val, adr);
+    printf("Slave Process_SM_Msg: %d, Value: %d, Adr: %d\n\n", slave, val, adr);
 
     if(feed->type == TRANSFORMER || feed->type == BREAKER) {
         function     = rlModbus::ForceSingleCoil;
@@ -259,7 +259,7 @@ static void init(int ac, char **av)
             num_rtu++;
     }
 
-    printf("Done Finding number of RTU's\n");
+    printf("Done Finding number of RTU's : %d\n",num_rtu);
     // Setup default values for global variables
     use_socket       = 1;
     debug            = 1;
@@ -334,13 +334,22 @@ static void init(int ac, char **av)
             mod_array[i] = new rlModbus(1024, protocol);
             sock_array[i] = new rlSocket(ip,port,1);
             mod_array[i]->registerSocket(sock_array[i]);
+            int sock_ret=sock_array[i]->connect();
             printf("Connecting socket\n");
-            sock_array[i]->connect();
+            while (sock_ret<0){
+            
+                printf("MS2022: Error creating socket at ip:%s and port:%d return code=%d\n",ip,port,sock_ret);
+                sock_ret=sock_array[i]->connect();
+            fflush(stdout);
+            }
+            printf("MS2022: Set up socket at ip:%s and port:%d\n",ip,port);
+                fflush(stdout);
             if(sock_array[i]->isConnected())
                 printf("success connecting to %s:%d\n", ip, port);
             else
                 printf("WARNING: could not connect to %s:%d\n", ip, port);
 
+            fflush(stdout);
             cJSON * cycles = cJSON_GetObjectItem(rtu, "CYCLES");
             for(j = 0; j < cJSON_GetArraySize(cycles); j++) {
                 text = cJSON_GetArrayItem(cycles, j)->valuestring;
@@ -415,6 +424,10 @@ static void init(int ac, char **av)
     sprintf(itrc_main.ipc_local, "%s%s%d", (char *)RTU_IPC_MAIN, "modbus", My_ID);
     sprintf(itrc_main.ipc_remote, "%s%s%d", (char *)RTU_IPC_ITRC, "modbus", My_ID);
     ipc_sock = IPC_DGram_Sock(itrc_main.ipc_local);
+    if(ipc_sock<0){
+        printf("Modbus: Error creating ipc_sock %s\n",itrc_main.ipc_local);
+        
+    }
 
     // Grab the Num_RTU_Emulated and calculate Poll timeout frequency
     memset(&Poll_Period, 0, sizeof(struct timeval));
@@ -436,15 +449,19 @@ static int modbusCycle(int slave, int function, int start_adr, int num_register,
     int ret;
     int sent_function;
 
-    if(slave < 0 || slave >= 256)
+    if(slave < 0 || slave >= 256){
         return -1;
+        printf("MS2022: slave is %d\n",slave);
+    }
 
     if(poll_slave_counter[slave] > 0) {
         if (debug) printf("modbusCycle not polling slave %d: poll_slave_counter[%d]=%d\n",
                             slave, slave, poll_slave_counter[slave]);
         poll_slave_counter[slave] -= 1;
-        if( poll_slave_counter[slave] != 0)
+        if( poll_slave_counter[slave] != 0){
             return -1;
+            printf("MS2022: Poll slave =-1\n");
+        }
     }
 
     if (debug) printf("modbusRequest: slave=%d function=%d start_adr=%d num_register=%d\n",
@@ -458,8 +475,10 @@ static int modbusCycle(int slave, int function, int start_adr, int num_register,
     if (debug) printf("modbusResponse: ret=%d slave=%d function=%d data=%02x %02x %02x %02x\n",
                                     ret, slave, function, data[0], data[1], data[2], data[3]);
 
-    if (function != sent_function)
+    if (function != sent_function){
+        printf("MS2022: function=%d, sent_function=%d\n",function,sent_function);
         ret = -1;
+    }
 
     return ret;
 }

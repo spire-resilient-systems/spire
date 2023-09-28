@@ -79,6 +79,7 @@ extern "C" {
 unsigned int Seq_Num;
 int ipc_sock;
 itrc_data itrc_in, itrc_out;
+extern int32u My_Global_Configuration_Number;
 
 void itrc_init(int ac, char **av) 
 {
@@ -91,6 +92,7 @@ void itrc_init(int ac, char **av)
         exit(EXIT_FAILURE);
     }
 
+    My_Global_Configuration_Number = 0;
     Init_SM_Replicas();
 
     // NET Setup
@@ -100,7 +102,7 @@ void itrc_init(int ac, char **av)
     Type = HMI_TYPE;
     My_ID = JHU;
     //Prime_Client_ID = (NUM_SM + 1) + MAX_EMU_RTU + My_ID;
-    Prime_Client_ID = NUM_SM + MAX_EMU_RTU + My_ID;
+    Prime_Client_ID = MAX_NUM_SERVER_SLOTS + MAX_EMU_RTU + My_ID;
     My_IP = getIP();
     // Setup IPC for HMI main thread
     memset(&itrc_in, 0, sizeof(itrc_data));

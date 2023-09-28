@@ -740,6 +740,7 @@ int Link_Send(Link *lk, sys_scatter *scat)
 
   /* AB: added for cost accounting */
   packet_header *hdr;
+  packet_header *hdr2;
   udp_header *uhdr;
   Client_ID cid;
   int32 cost_count, *cost_count_ptr;
@@ -762,7 +763,10 @@ int Link_Send(Link *lk, sys_scatter *scat)
   if (Leg_Rate_Limit_kbps >= 0 && stdcarr_size(&leg->bucket_buf) >= Leg_Max_Buffered) {
     return ret;
   }
-
+  hdr2=(packet_header *)scat->elements[0].buf;
+  if(Is_intru_tol_data(hdr2->type)){
+      Alarm(DEBUG,"Sahiti***** IT data\n");
+  }
   /* AB: added for cost accounting */
   if (Print_Cost) {
     hdr = (packet_header *)scat->elements[0].buf;
@@ -792,7 +796,7 @@ int Link_Send(Link *lk, sys_scatter *scat)
   if (Leg_Rate_Limit_kbps < 0 || 
      (stdcarr_empty(&leg->bucket_buf) && total_bytes <= leg->bucket_bytes))
   {
-    Alarm(DEBUG, "Link_Send: sending %d bytes directly, %d bytes available\n", total_bytes, leg->bucket_bytes);
+    Alarm(DEBUG, "Link_Send: sending %d bytes directly, %d bytes available, dst: "IPF "\n", total_bytes, leg->bucket_bytes,IP(lk->leg->remote_interf->net_addr));
     ret = DL_send(lk->leg->local_interf->channels[lk->link_type], 
            lk->leg->remote_interf->net_addr,
            Port + lk->link_type,
@@ -836,7 +840,6 @@ int Link_Send(Link *lk, sys_scatter *scat)
     Suicide_Count = 0;
     Suicide_Timer = E_get_time();
   }*/
-
   return ret;
 }
 
@@ -1081,7 +1084,7 @@ void Fill_Leg_Bucket(int dummy, void* input_leg)
         Alarm(EXIT, "Fill_Leg_Bucket(): Bucket grew larger than max capacity\r\n");
 
     if (leg->bucket_bytes == Leg_Bucket_Cap) {
-        Alarm(DEBUG, "Fill_Leg_Bucket(): bucket was full!!\r\n");
+        //Alarm(DEBUG, "Fill_Leg_Bucket(): bucket was full!!\r\n");
         return;
     }
 

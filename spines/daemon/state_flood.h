@@ -126,7 +126,7 @@ typedef struct  State_Cell_d
 } State_Cell;
 
 void           Process_state_packet(Link *lk, char *buf, 
-				    int16u data_len, int16u ack_len, 
+				    int32u data_len, int16u ack_len, 
 				    int32u type, int mode);
 
 void           Net_Send_State_All(int lk_id, void *p_data); 

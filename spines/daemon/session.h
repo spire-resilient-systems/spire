@@ -146,10 +146,10 @@ typedef struct Session_d {
     int32  udp_port;
     char   client_stat;
     int16u port;
-    int32 total_len;
-    int32 read_len;
-    int32 received_len;
-    int32 partial_len;
+    int32u total_len;
+    int32u read_len;
+    int32u received_len;
+    int32u partial_len;
     int16u seq_no;
     int32 frag_num;
     int32 frag_idx;

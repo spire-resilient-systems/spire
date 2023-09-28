@@ -73,12 +73,65 @@ void assert_except(int ret, int except, char *s) {
   }
 }
 
+void TC_cleanup(){
+	int32u nsite;
+
+	 if(tc_partial_key){
+		printf("Freed existing partial key\n");
+		TC_IND_free(tc_partial_key);
+	  } 
+    	for ( nsite = 1; nsite <= TC_NUM_SITES; nsite++ ) {
+            if(tc_public_key[nsite]){ 
+		TC_PK_free(tc_public_key[nsite]);
+		printf("Freed existing pub key\n");
+		}
+    	}
+
+}
+
+void TC_Reload_Partial_Key( int32u server_no, int32u site_id, const char *keys_dir ) 
+{
+    char buf[100];;
+
+    if(tc_partial_key){
+	printf("Freed existing partial key\n");
+	TC_IND_free(tc_partial_key);
+	} 
+    sprintf(buf, 100, "%s/share%d_%d.pem", keys_dir, server_no - 1, site_id );
+    tc_partial_key = (TC_IND *)TC_read_share(buf);
+    //printf("Reloaded Partial key %s my id=%d\n",buf,server_no-1);
+    //TC_IND_Print(tc_partial_key);    
+}
+
 void TC_Read_Partial_Key( int32u server_no, int32u site_id, const char *keys_dir ) 
 {
     char buf[100];
  
     snprintf(buf, 100, "%s/share%d_%d.pem", keys_dir, server_no - 1, site_id );
     tc_partial_key = (TC_IND *)TC_read_share(buf);
+    //printf("Read Partial key %s my id=%d\n",buf,server_no-1);
+    //TC_IND_Print(tc_partial_key);    
+
+}
+
+void TC_Reload_Public_Key( const char *keys_dir ) 
+{
+    int32u nsite;
+    
+    char buf[100];
+    for ( nsite = 1; nsite <= TC_NUM_SITES; nsite++ ) {
+            if(tc_public_key[nsite]){ 
+		TC_PK_free(tc_public_key[nsite]);
+		printf("Freed existing pub key\n");
+		}
+    }
+
+    for ( nsite = 1; nsite <= TC_NUM_SITES; nsite++ ) {
+	    snprintf(buf, 100, "%s/pubkey_%d.pem", keys_dir, nsite);
+	    tc_public_key[nsite] = (TC_PK *)TC_read_public_key(buf);
+	    printf("Reload pub key %s\n",buf);
+	    TC_PK_Print(tc_public_key[nsite]);
+    }
 }
 
 void TC_Read_Public_Key( const char *keys_dir ) 
@@ -90,6 +143,8 @@ void TC_Read_Public_Key( const char *keys_dir )
     for ( nsite = 1; nsite <= TC_NUM_SITES; nsite++ ) {
 	    snprintf(buf, 100, "%s/pubkey_%d.pem", keys_dir, nsite);
 	    tc_public_key[nsite] = (TC_PK *)TC_read_public_key(buf);
+	    //printf("Read pub key %s\n",buf);
+	    //TC_PK_Print(tc_public_key[nsite]);
     }
 }
 
@@ -140,7 +195,7 @@ int32u TC_Generate_Sig_Share( byte* destination, byte* hash  )
       
 #if 0
     printf("Sig Share: %s\n", BN_bn2hex( signature->sig ));
-    printf("Sig Share Read Back: %s\n", BN_bn2hex( bn ));
+    //printf("Sig Share Read Back: %s\n", BN_bn2hex( bn ));
 #endif
 
     TC_IND_SIG_free( signature );
@@ -158,6 +213,7 @@ int32u TC_Generate_Sig_Share( byte* destination, byte* hash  )
 
 void TC_Initialize_Combine_Phase( int32u number ) 
 {
+    //printf("TC_Initialize_Combine_Phase %d machines\n",number);
     tc_partial_signatures = TC_SIG_Array_new( number );
 }
 
@@ -183,6 +239,7 @@ void TC_Add_Share_To_Be_Combined( int server_no, byte *share )
 
 void TC_Destruct_Combine_Phase( int32u number ) 
 {
+    //printf("TC_Destruct_Combine_Phase %d machines\n",number);
     TC_SIG_Array_free( tc_partial_signatures, number );
 }
 
@@ -200,7 +257,7 @@ void TC_Combine_Shares( byte *signature_dest, byte *digest )
     ret = TC_Combine_Sigs( tc_partial_signatures, tc_partial_key, 
 	    hash_bn, &combined_signature, 0);
     if (ret != TC_NOERROR)
-        printf("Error in TC_Combine_Sigs!\n");
+        printf("Error in TC_Combine_Sigs! error code is %d\n",ret);
 
     /* There is a probable security error here. We need to make sure
      * that we don't exit if there is an arithmetic error in the
@@ -211,8 +268,12 @@ void TC_Combine_Shares( byte *signature_dest, byte *digest )
 
     ret = TC_verify(hash_bn, combined_signature, 
 		tc_public_key[1]);    
-    if (ret != 1)
-        printf("TC_verify failed!!\n");
+    if (ret != 1){
+        printf("TC_verify failed error code=%d!!\n",ret);
+    	//printf("Verified Combined Sig: %s\n", BN_bn2hex( combined_signature ));
+    	//TC_PK_Print(tc_public_key[1]);
+	
+	}
 		//tc_public_key[VAR.My_Site_ID]); //XXX: if want to use for multi-site, will need to change this
 
     length = BN_num_bytes( combined_signature );
@@ -226,7 +287,8 @@ void TC_Combine_Shares( byte *signature_dest, byte *digest )
     }
     
     bn = BN_bin2bn( signature_dest, 128, NULL );
-
+    //printf("Verified Combined Sig: %s\n", BN_bn2hex( combined_signature ));
+    //TC_PK_Print(tc_public_key[1]);
 #if 0 
     if ( length < 128 ) {
 	printf("Combined Sig: %s\n", BN_bn2hex( combined_signature ));
@@ -255,12 +317,16 @@ int32u TC_Verify_Signature( int32u site, byte *signature, byte *digest )
 
     hash_bn = BN_bin2bn( digest, DIGEST_SIZE, NULL );
     sig_bn = BN_bin2bn( signature, SIGNATURE_SIZE, NULL );
-
+    //printf("Signature: %s\n",BN_bn2hex( signature ));
+    //printf("Sig_bn: %s\n",BN_bn2hex( (TC_SIG)sig_bn ));
     if ( site == 0 || site > TC_NUM_SITES ) {
 	ret = 0;
     } else {
 	ret = TC_verify(hash_bn, sig_bn, tc_public_key[site]);
+	//printf("TC_Verify return code %d\n",ret);
+	//TC_PK_Print(tc_public_key[1]);
     }
+
 
     BN_free( sig_bn );
     BN_free( hash_bn );
@@ -299,7 +365,7 @@ void TC_Generate(int req_shares, char *directory)
     num_sites = TC_NUM_SITES;
 
     for ( nsite = 1; nsite <= num_sites; nsite++ ) {
-        printf("Generating threshold crypto keys for site %d\n",nsite);
+        //printf("Generating threshold crypto keys for site %d\n",nsite);
         dealer = NULL;
         /* while ( dealer == NULL ) */
         dealer = TC_generate(keysize/2, n, k, 17);
@@ -309,3 +375,29 @@ void TC_Generate(int req_shares, char *directory)
     }
 
 }
+
+/* The following function takes args and generate the threshold shares and store them on disk. */
+void TC_with_args_Generate(int req_shares, char *directory, int faults,int rej_servers,int num_sites)
+{
+    TC_DEALER *dealer; //[TC_NUM_SITES+1];
+    int nsite;
+    int n, k, keysize;
+
+    keysize = 1024;
+    //rej_servers = NUM_K;
+    n = 3*faults+ 2*rej_servers +1;
+    k = req_shares;
+    //printf("*****TC_Gen N=%d\n",n);
+    for ( nsite = 1; nsite <= num_sites; nsite++ ) {
+        //printf("Generating threshold crypto keys for site %d\n",nsite);
+        dealer = NULL;
+        /* while ( dealer == NULL ) */
+        dealer = TC_generate(keysize/2, n, k, 17);
+
+        TC_write_shares(dealer, directory, nsite);
+        TC_DEALER_free(dealer);
+    }
+
+}
+
+

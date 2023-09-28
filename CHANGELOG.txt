@@ -1,3 +1,10 @@
+Version 2.1 Alpha - September 29, 2023
+   Added reconfiguration capability to Spire
+	* Changes to SCADA Master to support reconfiguration
+	* We modified Prime 3.3 heavily to support reconfiguration in the context of Spire
+	* We modified Spines 5.5 lightly to support reconfiguration in the context of Spire
+ 	* Configuration Manager and Configuration Agent programs are added 
+
 Version 2.0 - January 27, 2023
     * Added two new components:
     1. Spire for the Substation:

@@ -26,7 +26,9 @@
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ * 
+ *
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -72,21 +74,21 @@ void assert_except(int ret, int except, char *s) {
   }
 }
 
-void TC_Read_Partial_Key( int32u server_no, int32u site_id ) 
+void TC_Read_Partial_Key( int32u server_no, int32u site_id,char *dir ) 
 {
     char buf[100];
-    char dir[100] = "./keys";
+    //char dir[100] = "./keys";
  
     sprintf(buf, "%s/share%d_%d.pem", dir, server_no - 1, site_id );
     tc_partial_key = (TC_IND *)TC_read_share(buf);
 }
 
-void TC_Read_Public_Key() 
+void TC_Read_Public_Key(char *dir) 
 {
     int32u nsite;
     
     char buf[100];
-    char dir[100] = "./keys";
+    //char dir[100] = "./keys";
 
     for ( nsite = 1; nsite <= NUM_SITES; nsite++ ) {
 	    sprintf(buf,"%s/pubkey_%d.pem", dir, nsite);
@@ -294,8 +296,8 @@ void TC_Generate(int req_shares, char *directory)
 
 	keysize = 1024;
 	faults = NUM_F;
-    rej_servers = NUM_K;
-    n = 3*faults+ 2*rej_servers +1;
+    	rej_servers = NUM_K;
+    	n = 3*faults+ 2*rej_servers +1;
 	k = req_shares;
 	//k = 2*faults+ rej_servers +1;
 	num_sites = NUM_SITES;

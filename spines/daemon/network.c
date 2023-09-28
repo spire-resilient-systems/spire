@@ -123,7 +123,7 @@ void Flip_pack_hdr(packet_header *pack_hdr)
   pack_hdr->type	  = Flip_int32(pack_hdr->type);
   pack_hdr->sender_id	  = Flip_int32(pack_hdr->sender_id);
   pack_hdr->ctrl_link_id  = Flip_int32(pack_hdr->ctrl_link_id);
-  pack_hdr->data_len	  = Flip_int16(pack_hdr->data_len);
+  pack_hdr->data_len	  = Flip_int32(pack_hdr->data_len);
   pack_hdr->ack_len	  = Flip_int16(pack_hdr->ack_len);
   pack_hdr->seq_no	  = Flip_int16(pack_hdr->seq_no);
 }
@@ -1010,10 +1010,10 @@ int Read_UDP(Interface *local_interf, channel sk, int mode, sys_scatter *scat)
   
   pack_hdr        = (packet_header *) scat->elements[0].buf;
   remaining_bytes = stripped_bytes - sizeof(packet_header);
-  
   if (!Same_endian(pack_hdr->type))
       Flip_pack_hdr(pack_hdr);
 
+  //Alarmp(SPLOG_INFO,NETWORK,"Sahiti: pack_hdr->len = %lu, seq num=%u\n",pack_hdr->data_len,pack_hdr->seq_no); 
   pack_type = pack_hdr->type;
   
   if (Conf_IT_Link.Intrusion_Tolerance_Mode == 1 &&

@@ -520,7 +520,7 @@ static int setup_mcast()
 static void print_notice()
 {
   Alarm( PRINT, "/==================================================================================\\\n");
-  Alarm( PRINT, "| Spire 2.0 b                                                                       |\n");
+  Alarm( PRINT, "| Spire 2.1 Alpha                                                                   |\n");
   Alarm( PRINT, "| Copyright (c) 2017-2023 Johns Hopkins University                                  |\n");
   Alarm( PRINT, "| All rights reserved.                                                              |\n");
   Alarm( PRINT, "|                                                                                   |\n");
@@ -542,7 +542,7 @@ static void print_notice()
   Alarm( PRINT, "| WWW:     www.dsn.jhu/spire   www.dsn.jhu.edu                                      |\n");
   Alarm( PRINT, "| Contact: spire@dsn.jhu.edu                                                        |\n");
   Alarm( PRINT, "|                                                                                   |\n");
-  Alarm( PRINT, "| Version 2.0, Built Jan 27, 2023                                             |\n");
+  Alarm( PRINT, "| Version 2.1 Alpha, Built Sept 29, 2023                                            |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use               |\n");
   Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                         |\n");
