@@ -1309,7 +1309,7 @@ int Net_Rel_Sess_Send(Session *ses, char *buff, int16u len)
 	}
 
 	Alarm(DEBUG, "session send: %d\n", ses->sk);
-	ret = DL_send_connected(ses->sk,  &scat );
+	ret = DL_send_gen(ses->sk,  &scat );
 
 	Alarm(DEBUG, "sent: %d -> %d\n", ses->sk, ret);
 
