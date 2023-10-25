@@ -20,7 +20,7 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain, 
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):

@@ -19,7 +19,7 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2003-2020 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -341,7 +341,7 @@ int main(int argc, char* argv[])
 
     Alarm( PRINT, "/===========================================================================\\\n");
     Alarm( PRINT, "| Spines                                                                    |\n");
-    Alarm( PRINT, "| Copyright (c) 2017-2023 Johns Hopkins University                          |\n"); 
+    Alarm( PRINT, "| Copyright (c) 2003 - 2020 Johns Hopkins University                        |\n"); 
     Alarm( PRINT, "| All rights reserved.                                                      |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| Spines is licensed under the Spines Open-Source License.                  |\n");
@@ -354,7 +354,7 @@ int main(int argc, char* argv[])
     Alarm( PRINT, "|    John Lane Schultz         jschultz@spreadconcepts.com                  |\n");
     Alarm( PRINT, "|    Daniel Obenshain          dano@cs.jhu.edu                              |\n");
     Alarm( PRINT, "|    Thomas Tantillo           tantillo@cs.jhu.edu                          |\n");
-    Alarm( PRINT, "|    Amy Babay                 babay@pitt.edu                               |\n");
+    Alarm( PRINT, "|    Amy Babay                 babay@cs.jhu.edu                             |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| Major Contributors:                                                       |\n");
     Alarm( PRINT, "|    John Lane                 johnlane@cs.jhu.edu                          |\n");
