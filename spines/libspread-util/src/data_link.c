@@ -140,6 +140,34 @@ int DL_recvfrom(channel chan, sys_scatter *scat, int *src_address, unsigned shor
   return ret;
 }
 
+void DL_set_large_buffers(channel chan)
+{
+    int i, on, ret;
+    sockopt_len_t onlen;
+
+    for( i=10; i <= 2000; i+=5 )
+    {   
+        on = 1024*i;
+
+        ret = setsockopt( chan, SOL_SOCKET, SO_SNDBUF, (void *)&on, 4); 
+        if (ret < 0 ) break;
+
+        ret = setsockopt( chan, SOL_SOCKET, SO_RCVBUF, (void *)&on, 4); 
+        if (ret < 0 ) break;
+
+        onlen = sizeof(on);
+        ret= getsockopt( chan, SOL_SOCKET, SO_SNDBUF, (void *)&on, &onlen );
+        if( on < i*1024 ) break;
+        Alarmp( SPLOG_INFO, DATA_LINK, "DL_set_large_buffers: set sndbuf %d, ret is %d\n", on, ret );
+
+        onlen = sizeof(on);
+        ret= getsockopt( chan, SOL_SOCKET, SO_RCVBUF, (void *)&on, &onlen );
+        if( on < i*1024 ) break;
+        Alarmp( SPLOG_INFO, DATA_LINK, "DL_set_large_buffers: set rcvbuf %d, ret is %d\n", on, ret );
+    }   
+    Alarmp( SPLOG_INFO, DATA_LINK, "DL_set_large_buffers: set sndbuf/rcvbuf to %d\n", 1024*(i-5) );
+}
+
 /********************************************************************************
  * Creates a broad/multicast IP datagram socket with options.  Exits on failures.
  *

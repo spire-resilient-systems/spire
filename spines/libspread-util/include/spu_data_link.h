@@ -63,6 +63,8 @@ int	DL_send( channel chan, int32 address, int16 port, const sys_scatter *scat );
 int	DL_recv( channel chan, sys_scatter *scat );
 int	DL_recvfrom( channel chan, sys_scatter *scat, int *src_address, unsigned short *src_port );
 
+void    DL_set_large_buffers(channel chan);
+
 channel DL_init_channel_gen(int32 channel_type, const spu_addr *mcast_address, const spu_addr *interface_address);
 int     DL_join_multicast_gen(channel chan, const spu_addr *mcast_addr, const spu_addr *if_addr);
 int     DL_send_gen(channel chan, const sys_scatter *scat);

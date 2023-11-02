@@ -331,6 +331,7 @@ void Init_Session(void)
      * */
     Ses_UDP_Channel = DL_init_channel(SEND_CHANNEL | RECV_CHANNEL,
                                       (int16)(Port+SESS_UDP_PORT), 0, INADDR_ANY /*My_Address*/);
+    DL_set_large_buffers(Ses_UDP_Channel);
 
     E_attach_fd(Ses_UDP_Channel, READ_FD, Session_UDP_Read, 0, 
                     NULL, LOW_PRIORITY );
