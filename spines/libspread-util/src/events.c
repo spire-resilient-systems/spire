@@ -18,12 +18,13 @@
  * The Creators of Spread are:
  *  Yair Amir, Michal Miskin-Amir, Jonathan Stanton, John Schultz.
  *
- *  Copyright (C) 1993-2009 Spread Concepts LLC <info@spreadconcepts.com>
+ *  Copyright (C) 1993-2016 Spread Concepts LLC <info@spreadconcepts.com>
  *
  *  All Rights Reserved.
  *
  * Major Contributor(s):
  * ---------------
+ *    Amy Babay            babay@cs.jhu.edu - accelerated ring protocol.
  *    Ryan Caudy           rcaudy@gmail.com - contributions to process groups.
  *    Claudiu Danilov      claudiu@acm.org - scalable wide area support.
  *    Cristina Nita-Rotaru crisn@cs.purdue.edu - group communication security.
@@ -38,14 +39,17 @@
 
 #include "arch.h"
 
-/* undef redefined variables under windows */
+/* NOTE: undef redefined errno values under windows in arch.h */
 #ifdef ARCH_PC_WIN95
-#undef EINTR
-#undef EAGAIN
-#undef EWOULDBLOCK
-#undef EINPROGRESS
+#  undef EINVAL
+#  undef EINTR
+#  undef EAGAIN
+#  undef EWOULDBLOCK
+#  undef EINPROGRESS
+#  undef EALREADY
+#  undef EIO
+#  undef ENOMEM
 #endif
-
 #include <errno.h>
 
 #ifndef	ARCH_PC_WIN95
@@ -57,7 +61,7 @@
 #include <dlfcn.h>
 #else 	/* ARCH_PC_WIN95 */
 
-#include <winsock.h>
+#include <winsock2.h>
 #include <sys/timeb.h>
 
 #endif	/* ARCH_PC_WIN95 */
@@ -67,6 +71,9 @@
 #include "spu_objects.h"    /* For memory */
 #include "spu_memory.h"     /* for memory */
 #include "spu_alarm.h"
+
+#define SPU_EVENTS_EXIT_NORMAL     1
+#define SPU_EVENTS_EXIT_ASYNC_SAFE 2
 
 typedef	struct dummy_t_event {
 	sp_time		t;
@@ -90,8 +97,6 @@ typedef struct dummy_fd_queue {
         int             num_active_fds;
 	fd_event	events[MAX_FD_EVENTS];
 } fd_queue;
-
-static sp_time E_get_time_monotonic(void);
 
 static	time_event	*Time_queue;
 static	sp_time		Now;
@@ -130,7 +135,7 @@ int 	E_init(void)
         ret = Mem_init_object(TIME_EVENT, "time_event", sizeof(time_event), 100,0);
         if (ret < 0)
         {
-                Alarm(EXIT, "E_Init: Failure to Initialize TIME_EVENT memory objects\n");
+          Alarmp(SPLOG_FATAL, EVENTS, "E_Init: Failure to Initialize TIME_EVENT memory objects\n");
         }
 
 	for ( i=0; i < NUM_PRIORITY; i++ )
@@ -146,105 +151,134 @@ int 	E_init(void)
 
 	E_get_time_monotonic();
 
-	Alarm( EVENTS, "E_init: went ok\n");
+	Alarmp( SPLOG_INFO, EVENTS, "E_init: went ok\n");
 
 	return( 0 );
 }
 
 sp_time	E_get_time(void)
-{
-        sp_time t;
-
 #ifndef	ARCH_PC_WIN95
-        struct timeval  read_time;
+{
+        struct timeval read_time;
+        sp_time        t;
 
-#if HAVE_STRUCT_TIMEZONE
-        struct timezone dummy_tz;
-#else
-	sp_time		dummy_tz;
-#endif
-	int		ret;
-
-	ret = gettimeofday( &read_time, &dummy_tz );
-	if ( ret < 0 ) Alarm( EXIT, "E_get_time: gettimeofday problems.\n" );
+	if ( gettimeofday( &read_time, NULL ) )
+            Alarmp( SPLOG_FATAL, EVENTS, "E_get_time: gettimeofday failed with %d '%s'\n", errno, strerror( errno ) );
+        
         t.sec  = read_time.tv_sec;
         t.usec = read_time.tv_usec;
 
+        return t;
+}
 #else	/* ARCH_PC_WIN95 */
-
+{
 	struct _timeb timebuffer;
+        sp_time       t;
 
 	_ftime( &timebuffer );
 
-	t.sec   = timebuffer.time;
-	t.usec  = timebuffer.millitm;
+	t.sec   = (long) timebuffer.time;
+	t.usec  = (long) timebuffer.millitm;
 	t.usec *= 1000;	
 
-#endif	/* ARCH_PC_WIN95 */
-#if 0
-	Alarm( EVENTS, "E_get_time: time is (%d, %d)\n", t.sec, t.usec);
-#endif
-	return ( t );
+        return t;
 }
+#endif	/* ARCH_PC_WIN95 */
 
-static sp_time E_get_time_monotonic(void)
+/* TODO: add a monotonic clock for Windows (QueryPerformanceCounter, QueryPerformanceFrequency), OSX too */
+/* TODO: implement division as 64b multiplication by a fixed point reciprocal: http://homepage.divms.uiowa.edu/~jones/bcd/divide.html */
+
+sp_time E_get_time_monotonic(void)
 #ifdef HAVE_CLOCK_GETTIME_CLOCK_MONOTONIC
 {
-  struct timespec t;
+        struct timespec t;
 
-  if (clock_gettime(CLOCK_MONOTONIC, &t) != 0) {
-    Alarm( EXIT, "E_get_time_monotonic: clock_gettime problems: %d '%s'\n", errno, strerror(errno) );
-  }
+        if ( clock_gettime( CLOCK_MONOTONIC, &t ) )
+            Alarmp( SPLOG_FATAL, EVENTS, "E_get_time_monotonic: clock_gettime failed with %d '%s'\n", errno, strerror( errno ) );
+        
+        Now.sec  = (long) t.tv_sec;
+        Now.usec = (long) ( ( t.tv_nsec + 500 ) / 1000 );
 
-  Now.sec  = t.tv_sec;
-  Now.usec = (t.tv_nsec + 500) / 1000;
-
-  return Now;
+        return Now;
 }
 #else
 {
-  Now = E_get_time();
+        Now = E_get_time();
 
-  return Now;
+        return Now;
 }
 #endif
 
-sp_time	E_sub_time( sp_time t, sp_time delta_t )
+sp_time E_neg_time( sp_time t )
 {
-	sp_time	res;
+        t.sec  = -t.sec;
+        t.usec = -t.usec;
 
-	res.sec  = t.sec  - delta_t.sec;
-	res.usec = t.usec - delta_t.usec;
-	if ( res.usec < 0 )
-	{
-		res.usec = res.usec + 1000000;
-		res.sec--;
-	} 
-	if ( res.sec < 0 ) Alarm( EVENTS, "E_sub_time: negative time result.\n");
-	return ( res );
+        return t;
 }
 
 sp_time	E_add_time( sp_time t, sp_time delta_t )
 {
-	sp_time	res;
+        /* we assume that .usec is in open range (-1000000, +1000000) */
+        
+	t.sec  += delta_t.sec;
+	t.usec += delta_t.usec;
 
-	res.sec  = t.sec  + delta_t.sec;
-	res.usec = t.usec + delta_t.usec;
-	if ( res.usec > 1000000 )
+        /* force .usec to be back in open range (-1000000, +1000000) */
+        
+	if ( t.usec >= 1000000 )
 	{
-		res.usec = res.usec - 1000000;
-		res.sec++;
+		t.usec -= 1000000;
+		++t.sec;
 	}
-	return ( res );
+        else if ( t.usec <= -1000000 )
+        {
+                t.usec += 1000000;
+                --t.sec;
+        }
+
+        /* enforce that .sec and .usec have same sign */
+        
+        if ( t.sec > 0 )
+        {
+                if ( t.usec < 0 )
+                {
+                        t.usec += 1000000;
+                        --t.sec;
+                }
+        }
+        else if ( t.sec < 0 )
+        {
+                if ( t.usec > 0 )
+                {
+                        t.usec -= 1000000;
+                        ++t.sec;
+                }
+        }
+        
+	return t;
+}
+
+sp_time	E_sub_time( sp_time t, sp_time delta_t )
+{
+        return E_add_time( t, E_neg_time( delta_t ) );
 }
 
 int	E_compare_time( sp_time t1, sp_time t2 )
 {
-	if	( t1.sec  > t2.sec  ) return (  1 );
-	else if ( t1.sec  < t2.sec  ) return ( -1 );
-	else if ( t1.usec > t2.usec ) return (  1 );
-	else if ( t1.usec < t2.usec ) return ( -1 );
-	else			      return (  0 );
+	if ( t1.sec > t2.sec  )
+                return 1;
+        
+	if ( t1.sec < t2.sec  )
+                return -1;
+        
+	if ( t1.usec > t2.usec )
+                return 1;
+        
+	if ( t1.usec < t2.usec )
+                return -1;
+        
+	return 0;
 }
 
 int 	E_queue( void (* func)( int code, void *data ), int code, void *data,
@@ -276,14 +310,14 @@ int 	E_queue( void (* func)( int code, void *data ), int code, void *data,
 			Time_queue = Time_queue->next;
 			dispose( t_pre );
 			deleted = 1;
-			Alarm( EVENTS, "E_queue: dequeued a (first) simillar event\n" );
+			Alarmp( SPLOG_INFO, EVENTS, "E_queue: dequeued a (first) similar event\n" );
 		}
 	}
 	if( Time_queue == NULL )
 	{
 		t_e->next  = NULL;
 		Time_queue = t_e;
-		Alarm( EVENTS, "E_queue: (only) event queued func 0x%x code %d data 0x%x in future (%u:%u)\n",t_e->func,t_e->code, t_e->data, delta_time.sec, delta_time.usec );
+		Alarmp( SPLOG_INFO, EVENTS, "E_queue: (only) event queued func 0x%x code %d data 0x%x in future (%u:%u)\n",t_e->func,t_e->code, t_e->data, delta_time.sec, delta_time.usec );
 		return( 0 );
 	}else{
 		compare = E_compare_time ( t_e->t, Time_queue->t );
@@ -292,7 +326,7 @@ int 	E_queue( void (* func)( int code, void *data ), int code, void *data,
 			t_e->next   = Time_queue;
 			Time_queue  = t_e;
 			inserted    = 1;
-			Alarm( EVENTS, "E_queue: (first) event queued func 0x%x code %d data 0x%x in future (%u:%u)\n",t_e->func,t_e->code, t_e->data, delta_time.sec,delta_time.usec );
+			Alarmp( SPLOG_INFO, EVENTS, "E_queue: (first) event queued func 0x%x code %d data 0x%x in future (%u:%u)\n",t_e->func,t_e->code, t_e->data, delta_time.sec,delta_time.usec );
 		}
 	}
 	t_pre    = Time_queue ; 
@@ -307,7 +341,7 @@ int 	E_queue( void (* func)( int code, void *data ), int code, void *data,
 			dispose( t_post );
 			t_post = t_pre->next;
 			deleted = 1;
-			Alarm( EVENTS, "E_queue: dequeued a simillar event\n" );
+			Alarmp( SPLOG_INFO, EVENTS, "E_queue: dequeued a simillar event\n" );
 			continue;
 		}
 
@@ -319,7 +353,7 @@ int 	E_queue( void (* func)( int code, void *data ), int code, void *data,
 				t_pre->next = t_e;
 				t_e->next   = t_post;
 				inserted    = 1;
-				Alarm( EVENTS, "E_queue: event queued for func 0x%x code %d data 0x%x in future (%u:%u)\n",t_e->func,t_e->code, t_e->data, delta_time.sec, delta_time.usec );
+				Alarmp( SPLOG_INFO, EVENTS, "E_queue: event queued for func 0x%x code %d data 0x%x in future (%u:%u)\n",t_e->func,t_e->code, t_e->data, delta_time.sec, delta_time.usec );
 			}
 		}
 
@@ -331,7 +365,7 @@ int 	E_queue( void (* func)( int code, void *data ), int code, void *data,
 	{
 		t_pre->next = t_e;
 		t_e->next   = NULL;
-		Alarm( EVENTS, "E_queue: (last) event queued func 0x%x code %d data 0x%x in future (%u:%u)\n",t_e->func,t_e->code, t_e->data, delta_time.sec,delta_time.usec );
+		Alarmp( SPLOG_INFO, EVENTS, "E_queue: (last) event queued func 0x%x code %d data 0x%x in future (%u:%u)\n",t_e->func,t_e->code, t_e->data, delta_time.sec,delta_time.usec );
 	}
 
 	return( 0 );
@@ -345,7 +379,7 @@ int 	E_dequeue( void (* func)( int code, void *data ), int code,
 
 	if( Time_queue == NULL )
 	{
-		Alarm( EVENTS, "E_dequeue: no such event\n" );
+		Alarmp( SPLOG_INFO, EVENTS, "E_dequeue: no such event\n" );
 		return( -1 );
 	}
 
@@ -356,7 +390,7 @@ int 	E_dequeue( void (* func)( int code, void *data ), int code,
 		t_ptr = Time_queue;
 		Time_queue = Time_queue->next;
 		dispose( t_ptr );
-		Alarm( EVENTS, "E_dequeue: first event dequeued func 0x%x code %d data 0x%x\n",func,code, data);
+		Alarmp( SPLOG_INFO, EVENTS, "E_dequeue: first event dequeued func 0x%x code %d data 0x%x\n",func,code, data);
 		return( 0 );
 	}
 
@@ -370,13 +404,13 @@ int 	E_dequeue( void (* func)( int code, void *data ), int code,
 		{
 			t_pre->next = t_ptr->next;
 			dispose( t_ptr );
-			Alarm( EVENTS, "E_dequeue: event dequeued func 0x%x code %d data 0x%x\n",func,code, data);
+			Alarmp( SPLOG_INFO, EVENTS, "E_dequeue: event dequeued func 0x%x code %d data 0x%x\n",func,code, data);
 			return( 0 );
 		}
 		t_pre = t_ptr;
 	}
 
-	Alarm( EVENTS, "E_dequeue: no such event\n" );
+	Alarmp( SPLOG_INFO, EVENTS, "E_dequeue: no such event\n" );
 	return( -1 );
 }
 
@@ -388,7 +422,7 @@ int 	E_in_queue( void (* func)( int code, void *data ), int code,
 
 	if( Time_queue == NULL )
 	{
-	    Alarm( EVENTS, "E_in_queue: no such event\n" );
+	    Alarmp( SPLOG_INFO, EVENTS, "E_in_queue: no such event\n" );
 		return( 0 );
 	}
 
@@ -396,7 +430,7 @@ int 	E_in_queue( void (* func)( int code, void *data ), int code,
             Time_queue->data == data &&
             Time_queue->code == code )
 	{
-		Alarm( EVENTS, "E_in_queue: found event in queue func 0x%x code %d data 0x%x\n",func,code, data);
+		Alarmp( SPLOG_INFO, EVENTS, "E_in_queue: found event in queue func 0x%x code %d data 0x%x\n",func,code, data);
 		return( 1 );
 	}
 
@@ -408,13 +442,13 @@ int 	E_in_queue( void (* func)( int code, void *data ), int code,
                     t_ptr->data == data &&
                     t_ptr->code == code )   
 		{
-		    Alarm( EVENTS, "E_in_queue: found event in queue func 0x%x code %d data 0x%x\n",func,code, data);
+		    Alarmp( SPLOG_INFO, EVENTS, "E_in_queue: found event in queue func 0x%x code %d data 0x%x\n",func,code, data);
 			return(1);
 		}
 		t_pre = t_ptr;
 	}
 
-	Alarm( EVENTS, "E_in_queue: no such event\n" );
+	Alarmp( SPLOG_INFO, EVENTS, "E_in_queue: no such event\n" );
 	return( 0 );
 }
 
@@ -429,7 +463,7 @@ void	E_delay( sp_time t )
 #ifndef ARCH_PC_WIN95
         if (select(0, NULL, NULL, NULL, &tmp_t ) < 0)
         {
-                Alarm( EVENTS, "E_delay: select delay returned error: %s\n", strerror(errno));
+                Alarmp( SPLOG_INFO, EVENTS, "E_delay: select delay returned error: %s\n", strerror(errno));
         }
 #else  /* ARCH_PC_WIN95 */
         SleepEx( tmp_t.tv_sec*1000+tmp_t.tv_usec/1000, 0 );
@@ -505,7 +539,7 @@ void    E_time_events( sp_time start, sp_time stop, fd_event *fev, time_event *t
 
 
     if ( (fev != NULL && tev != NULL) || (fev == NULL && tev == NULL) ) {
-        Alarm( EXIT, "E_time_events: Bug! called with invalid fev (0x%x)  and tev (0x%x) pointers. Exactly one must be non NULL\n", fev, tev);
+        Alarmp( SPLOG_FATAL, EVENTS, "E_time_events: Bug! called with invalid fev (0x%x)  and tev (0x%x) pointers. Exactly one must be non NULL\n", fev, tev);
     }
 
     ev_dur = E_sub_time( stop, start );
@@ -557,23 +591,23 @@ int	E_attach_fd( int fd, int fd_type,
 	int	num_fds;
 	int	j;
 
-	if( priority < 0 || priority > NUM_PRIORITY )
+	if( priority < 0 || priority >= NUM_PRIORITY )
 	{
-		Alarm( PRINT, "E_attach_fd: invalid priority %d for fd %d with fd_type %d\n", priority, fd, fd_type );
+		Alarmp( SPLOG_PRINT, EVENTS, "E_attach_fd: invalid priority %d for fd %d with fd_type %d\n", priority, fd, fd_type );
 		return( -1 );
 	}
-	if( fd_type < 0 || fd_type > NUM_FDTYPES )
+	if( fd_type < 0 || fd_type >= NUM_FDTYPES )
 	{
-		Alarm( PRINT, "E_attach_fd: invalid fd_type %d for fd %d with priority %d\n", fd_type, fd, priority );
+		Alarmp( SPLOG_PRINT, EVENTS, "E_attach_fd: invalid fd_type %d for fd %d with priority %d\n", fd_type, fd, priority );
 		return( -1 );
 	}
 #ifndef	ARCH_PC_WIN95
 	/* Windows bug: Reports FD_SETSIZE of 64 but select works on all
 	 * fd's even ones with numbers greater then 64.
 	 */
-        if( fd < 0 || fd > FD_SETSIZE )
+        if( fd < 0 || fd >= FD_SETSIZE )
         {
-                Alarm( PRINT, "E_attach_fd: invalid fd %d (max %d) with fd_type %d with priority %d\n", fd, FD_SETSIZE, fd_type, priority );
+                Alarmp( SPLOG_PRINT, EVENTS, "E_attach_fd: invalid fd %d (max %d) with fd_type %d with priority %d\n", fd, FD_SETSIZE - 1, fd_type, priority );
                 return( -1 );
         }
 #endif
@@ -587,7 +621,7 @@ int	E_attach_fd( int fd, int fd_type,
                         if ( !(Fd_queue[priority].events[j].active) )
                                 Fd_queue[priority].num_active_fds++;
                         Fd_queue[priority].events[j].active = TRUE;
-			Alarm( PRINT, 
+			Alarmp( SPLOG_INFO, EVENTS, 
 				"E_attach_fd: fd %d with type %d exists & replaced & activated\n", fd, fd_type );
 			return( 1 );
 		}
@@ -595,7 +629,7 @@ int	E_attach_fd( int fd, int fd_type,
 	num_fds = Fd_queue[priority].num_fds;
 
         if ( num_fds == MAX_FD_EVENTS ) {
-                Alarm( PRINT, "E_attach_fd: Reached Maximum number of events. Recompile with larger MAX_FD_EVENTS\n");
+                Alarmp( SPLOG_PRINT, EVENTS, "E_attach_fd: Reached Maximum number of events. Recompile with larger MAX_FD_EVENTS\n");
                 return( -1 );
         }
 	Fd_queue[priority].events[num_fds].fd	   = fd;
@@ -608,7 +642,7 @@ int	E_attach_fd( int fd, int fd_type,
         Fd_queue[priority].num_active_fds++;
 	if( Active_priority <= priority ) FD_SET( fd, &Fd_mask[fd_type] );
 
-	Alarm( EVENTS, "E_attach_fd: fd %d, fd_type %d, code %d, data 0x%x, priority %d Active_priority %d\n",
+	Alarmp( SPLOG_INFO, EVENTS, "E_attach_fd: fd %d, fd_type %d, code %d, data 0x%x, priority %d Active_priority %d\n",
 		fd, fd_type, code, data, priority, Active_priority );
 
 	return( 0 );
@@ -616,32 +650,56 @@ int	E_attach_fd( int fd, int fd_type,
 
 int 	E_detach_fd( int fd, int fd_type )
 {
-	int	i,j;
+	int	i;
 	int	found;
 
-	if( fd_type < 0 || fd_type > NUM_FDTYPES )
+	if( fd_type < 0 || fd_type >= NUM_FDTYPES )
 	{
-		Alarm( PRINT, "E_detach_fd: invalid fd_type %d for fd %d\n", fd_type, fd );
+		Alarmp( SPLOG_PRINT, EVENTS, "E_detach_fd: invalid fd_type %d for fd %d\n", fd_type, fd );
 		return( -1 );
 	}
 
 	found = 0;
 	for( i=0; i < NUM_PRIORITY; i++ )
-	    for( j=0; j < Fd_queue[i].num_fds; j++ )
+        {
+            if( E_detach_fd_priority( fd, fd_type, i ) == 0 )
+            {
+                found = 1;
+            }
+	}
+
+	if( ! found ) return( -1 );
+
+	return( 0 );
+}
+
+int 	E_detach_fd_priority( int fd, int fd_type, int priority )
+{
+	int	i;
+	int	found;
+
+	if( fd_type < 0 || fd_type >= NUM_FDTYPES )
+	{
+		Alarmp( SPLOG_PRINT, EVENTS, "E_detach_fd: invalid fd_type %d for fd %d\n", fd_type, fd );
+		return( -1 );
+	}
+
+	found = 0;
+	for( i=0; i < Fd_queue[priority].num_fds; i++ )
+	{
+	    if( ( Fd_queue[priority].events[i].fd == fd ) && ( Fd_queue[priority].events[i].fd_type == fd_type ) )
 	    {
-		if( ( Fd_queue[i].events[j].fd == fd ) && ( Fd_queue[i].events[j].fd_type == fd_type ) )
-		{
-                        if (Fd_queue[i].events[j].active)
-                                Fd_queue[i].num_active_fds--;
-			Fd_queue[i].num_fds--;
-			Fd_queue[i].events[j] = Fd_queue[i].events[Fd_queue[i].num_fds];
+                    if (Fd_queue[priority].events[i].active)
+                            Fd_queue[priority].num_active_fds--;
+	            Fd_queue[priority].num_fds--;
+		    Fd_queue[priority].events[i] = Fd_queue[priority].events[Fd_queue[priority].num_fds];
 
-			FD_CLR( fd, &Fd_mask[fd_type] );
-			found = 1;
+		    FD_CLR( fd, &Fd_mask[fd_type] );
+		    found = 1;
 
-			break; /* from the j for only */
-		}
-	    }
+		    break;
+            }
+	}
 
 	if( ! found ) return( -1 );
 
@@ -653,9 +711,9 @@ int     E_deactivate_fd( int fd, int fd_type )
 	int	i,j;
 	int	found;
 
-	if( fd_type < 0 || fd_type > NUM_FDTYPES )
+	if( fd_type < 0 || fd_type >= NUM_FDTYPES )
 	{
-		Alarm( PRINT, "E_deactivate_fd: invalid fd_type %d for fd %d\n", fd_type, fd );
+		Alarmp( SPLOG_PRINT, EVENTS, "E_deactivate_fd: invalid fd_type %d for fd %d\n", fd_type, fd );
 		return( -1 );
 	}
 
@@ -685,9 +743,9 @@ int     E_activate_fd( int fd, int fd_type )
 	int	i,j;
 	int	found;
 
-	if( fd_type < 0 || fd_type > NUM_FDTYPES )
+	if( fd_type < 0 || fd_type >= NUM_FDTYPES )
 	{
-		Alarm( PRINT, "E_activate_fd: invalid fd_type %d for fd %d\n", fd_type, fd );
+		Alarmp( SPLOG_PRINT, EVENTS, "E_activate_fd: invalid fd_type %d for fd %d\n", fd_type, fd );
 		return( -1 );
 	}
 
@@ -717,9 +775,9 @@ int 	E_set_active_threshold( int priority )
 	int	fd_type;
 	int	i,j;
 
-	if( priority < 0 || priority > NUM_PRIORITY )
+	if( priority < 0 || priority >= NUM_PRIORITY )
 	{
-		Alarm( PRINT, "E_set_active_threshold: invalid priority %d\n", priority );
+		Alarmp( SPLOG_PRINT, EVENTS, "E_set_active_threshold: invalid priority %d\n", priority );
 		return( -1 );
 	}
 
@@ -739,16 +797,16 @@ int 	E_set_active_threshold( int priority )
                 	FD_SET( Fd_queue[i].events[j].fd, &Fd_mask[fd_type] );
 	    }
 
-	Alarm( EVENTS, "E_set_active_threshold: changed to %d\n",Active_priority);
+	Alarmp( SPLOG_INFO, EVENTS, "E_set_active_threshold: changed to %d\n",Active_priority);
 
 	return( priority );
 }
 
 int	E_num_active( int priority )
 {
-	if( priority < 0 || priority > NUM_PRIORITY )
+	if( priority < 0 || priority >= NUM_PRIORITY )
 	{
-		Alarm( PRINT, "E_num_active: invalid priority %d\n", priority );
+		Alarmp( SPLOG_PRINT, EVENTS, "E_num_active: invalid priority %d\n", priority );
 		return( -1 );
 	}
 	return( Fd_queue[priority].num_active_fds );
@@ -782,7 +840,7 @@ static	const sp_time		mili_sec 	= {     0, 1000};
 #endif
     for( Exit_events = 0 ; !Exit_events ; )
     {
-	Alarm( EVENTS, "E_handle_events: next event \n");
+	Alarmp( SPLOG_INFO, EVENTS, "E_handle_events: next event \n");
 
 	/* Handle time events */
 	timeout = long_timeout;
@@ -807,9 +865,9 @@ static	const sp_time		mili_sec 	= {     0, 1000};
 #endif
 			temp_ptr = Time_queue;
 			Time_queue = Time_queue->next;
-			Alarm( EVENTS, "E_handle_events: exec time event \n");
+			Alarmp( SPLOG_INFO, EVENTS, "E_handle_events: exec time event \n");
 #ifdef TESTTIME 
-                        Alarm( DEBUG, "Events: TimeEv is %d %d late\n",tmp_late.sec, tmp_late.usec); 
+                        Alarmp( SPLOG_DEBUG, EVENTS, "Events: TimeEv is %d %d late\n",tmp_late.sec, tmp_late.usec); 
 #endif
                         ev_start = Now;
 			temp_ptr->func( temp_ptr->code, temp_ptr->data );
@@ -833,14 +891,14 @@ static	const sp_time		mili_sec 	= {     0, 1000};
 #ifdef TESTTIME
         stop = E_get_time_monotonic();
         tmp_late = E_sub_time(stop, start);
-        Alarm(DEBUG, "Events: TimeEv's took %d %d to handle\n", tmp_late.sec, tmp_late.usec); 
+        Alarmp( SPLOG_DEBUG, EVENTS, "Events: TimeEv's took %d %d to handle\n", tmp_late.sec, tmp_late.usec); 
 #endif
 	/* Handle fd events   */
 	for( i=0; i < NUM_FDTYPES; i++ )
 	{
 		current_mask[i] = Fd_mask[i];
 	}
-	Alarm( EVENTS, "E_handle_events: poll select\n");
+	Alarmp( SPLOG_INFO, EVENTS, "E_handle_events: poll select\n");
 #ifdef TESTTIME
         req_time = zero_sec;
 #endif
@@ -857,7 +915,7 @@ static	const sp_time		mili_sec 	= {     0, 1000};
 		{
 			current_mask[i] = Fd_mask[i];
 		}
-		Alarm( EVENTS, "E_handle_events: select with timeout (%d, %d)\n",
+		Alarmp( SPLOG_INFO, EVENTS, "E_handle_events: select with timeout (%d, %d)\n",
 			timeout.sec,timeout.usec );
 #ifdef TESTTIME
                 req_time = E_add_time(req_time, timeout);
@@ -870,7 +928,7 @@ static	const sp_time		mili_sec 	= {     0, 1000};
 #ifdef TESTTIME
         start = E_get_time_monotonic();
         tmp_late = E_sub_time(start, stop);
-        Alarm( DEBUG, "Events: Waiting for fd or timout took %d %d asked for %d %d\n", tmp_late.sec, tmp_late.usec, req_time.sec, req_time.usec);
+        Alarmp( SPLOG_DEBUG, EVENTS, "Events: Waiting for fd or timout took %d %d asked for %d %d\n", tmp_late.sec, tmp_late.usec, req_time.sec, req_time.usec);
 #endif
 	/* Handle all high and medium priority fd events */
 	for( i=NUM_PRIORITY-1,treated=0; 
@@ -883,7 +941,7 @@ static	const sp_time		mili_sec 	= {     0, 1000};
 		fd_type = Fd_queue[i].events[j].fd_type;
 		if( FD_ISSET( fd, &current_mask[fd_type] ) )
 		{
-		    Alarm( EVENTS, "E_handle_events: exec handler for fd %d, fd_type %d, priority %d\n", 
+		    Alarmp( SPLOG_INFO, EVENTS, "E_handle_events: exec handler for fd %d, fd_type %d, priority %d\n", 
 					fd, fd_type, i );
 #ifdef BADCLOCK
 		    Now = E_add_time( Now, mili_sec );
@@ -922,7 +980,7 @@ static	const sp_time		mili_sec 	= {     0, 1000};
 #ifdef TESTTIME
         stop = E_get_time_monotonic();
         tmp_late = E_sub_time(stop, start);
-        Alarm(DEBUG, "Events: High & Med took %d %d time to handle\n", tmp_late.sec, tmp_late.usec);
+        Alarmp(SPLOG_DEBUG, EVENTS, "Events: High & Med took %d %d time to handle\n", tmp_late.sec, tmp_late.usec);
 #endif
 	/* Handle one low priority fd event. 
            However, verify that Active_priority still allows LOW_PRIORITY events. 
@@ -940,7 +998,7 @@ static	const sp_time		mili_sec 	= {     0, 1000};
 	    {
 		Round_robin = ( j + 1 ) % Fd_queue[LOW_PRIORITY].num_fds;
 
-		Alarm( EVENTS , "E_handle_events: exec ext fd event \n");
+		Alarmp( SPLOG_INFO, EVENTS , "E_handle_events: exec ext fd event \n");
 #ifdef BADCLOCK
                 Now = E_add_time( Now, mili_sec );
                 clock_sync++;
@@ -969,7 +1027,7 @@ static	const sp_time		mili_sec 	= {     0, 1000};
 #ifdef TESTTIME
         start = E_get_time_monotonic();
         tmp_late = E_sub_time(start, stop);
-        Alarm(DEBUG, "Events: Low priority took %d %d to handle\n", tmp_late.sec, tmp_late.usec);
+        Alarmp(SPLOG_DEBUG, EVENTS, "Events: Low priority took %d %d to handle\n", tmp_late.sec, tmp_late.usec);
 #endif
     }
  end_handler:
@@ -980,16 +1038,19 @@ static	const sp_time		mili_sec 	= {     0, 1000};
      * in the for loop.
      */
 
+    if (Exit_events == SPU_EVENTS_EXIT_ASYNC_SAFE) 
+      Alarmp(SPLOG_INFO, EVENTS, "E_handle_events: exiting due to call to E_exit_events_async_safe() (e.g. - signal handler)\n");
+
     return;
 }
 
 void 	E_exit_events(void)
 {
-	Alarm( EVENTS, "E_exit_events:\n");
-	Exit_events = 1;
+	Alarmp( SPLOG_INFO, EVENTS, "E_exit_events:\n");
+	Exit_events = SPU_EVENTS_EXIT_NORMAL;
 }
 
 void    E_exit_events_async_safe(void)
 {
-    Exit_events = 1;
+        Exit_events = SPU_EVENTS_EXIT_ASYNC_SAFE;
 }

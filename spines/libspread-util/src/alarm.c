@@ -18,12 +18,13 @@
  * The Creators of Spread are:
  *  Yair Amir, Michal Miskin-Amir, Jonathan Stanton, John Schultz.
  *
- *  Copyright (C) 1993-2009 Spread Concepts LLC <info@spreadconcepts.com>
+ *  Copyright (C) 1993-2016 Spread Concepts LLC <info@spreadconcepts.com>
  *
  *  All Rights Reserved.
  *
  * Major Contributor(s):
  * ---------------
+ *    Amy Babay            babay@cs.jhu.edu - accelerated ring protocol.
  *    Ryan Caudy           rcaudy@gmail.com - contributions to process groups.
  *    Claudiu Danilov      claudiu@acm.org - scalable wide area support.
  *    Cristina Nita-Rotaru crisn@cs.purdue.edu - group communication security.
@@ -33,29 +34,34 @@
  */
 
 #include "arch.h"
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <time.h>
-#include <assert.h>
 
-/* undef redefined variables under windows */
+/* NOTE: undef redefined errno values under windows in arch.h */
 #ifdef ARCH_PC_WIN95
+#  undef EINVAL
 #  undef EINTR
 #  undef EAGAIN
 #  undef EWOULDBLOCK
 #  undef EINPROGRESS
+#  undef EALREADY
+#  undef EIO
+#  undef ENOMEM
+#  ifndef va_copy
+#    define va_copy(d,s) ((d) = (s))
+#  endif
 #endif
 #include <errno.h>
 
-#ifdef HAVE_GOOD_VARGS
-#  include <stdarg.h>
-#endif
+#include <stdio.h>
+#include <stdlib.h>
+#include <stdarg.h>
+#include <string.h>
+#include <time.h>
+#include <assert.h>
 
 #include "spu_alarm.h"
 #include "spu_events.h"
 
-#define MAX_ALARM_MESSAGE_BUF 256
+#define MAX_ALARM_MESSAGE_BUF 1024
 
 static const char Alarm_Warning_High_Res[]  = "*** WARNING *** Alarmp: High precision timestamp output failed!\n";
 static const char Alarm_Warning_Timestamp[] = "*** WARNING *** Alarmp: Timestamp didn't fit in default size buffer!\n";
@@ -68,8 +74,8 @@ static void Threaded_Alarm_Append(const char *str, size_t str_len);
 static void Threaded_Alarm_Exit(void);
 #endif
 
-static int32    Alarm_type_mask = PRINT | EXIT  ;
-static int16    Alarm_cur_priority = SPLOG_DEBUG ;
+int32u Alarm_type_mask    = (PRINT | EXIT);
+int16u Alarm_cur_priority = SPLOG_DEBUG;
 
 static alarm_realtime_handler *Alarm_realtime_print_handler = NULL;
 
@@ -80,23 +86,6 @@ static const char *DEFAULT_TIMESTAMP_FORMAT = "%m/%d/%y %H:%M:%S";
 /* alternate longer default timestamp "[%a %d %b %Y %H:%M:%S]"; */
 
 static int      AlarmInteractiveProgram = FALSE;
-
-/* priority_level_active returns true if the priority level is active (i.e. should be printed)
- * given the currently allowed priority levels.
- */
-static bool priority_level_active( int16 priority )
-{
-    return( Alarm_cur_priority <= ( priority & SPLOG_PRIORITY_FIELDS ) );
-}
-
-/* is_priority_set() checks whether the specific priority_to_check value is set
- * in the 'priority' variable passed in.
- * If value is set, then it returns true, otherwise it returns false. 
- */
-static bool is_priority_set( int16 priority, int16 priority_to_check )
-{
-    return( (priority & SPLOG_PRIORITY_FIELDS) == priority_to_check );
-}
 
 /* is_priority_flag_active() checks whether the specific priority_flag is set
  * in the 'priority' variable passed in.
@@ -116,14 +105,12 @@ static void Output_Msg(const char *msg, int msg_len)
 #endif
 }
 
-#ifdef HAVE_GOOD_VARGS
-
 static void Internal_Alarmp(int16 priority, int32 mask, char *message, va_list ap)
 {
-    /* log event if in mask and of higher priority, or if FATAL event, always log */
-
-    if (((Alarm_type_mask & mask) != 0 && priority_level_active(priority)) || is_priority_set(priority, SPLOG_FATAL)) {
-
+    if ( ALARMP_NEEDED( priority, mask ) )
+    {
+        int       will_exit = ( ( mask & EXIT ) || ( priority & SPLOG_PRIORITY_FIELDS ) == SPLOG_FATAL );
+      
         char      buf[MAX_ALARM_MESSAGE_BUF];
         char     *alloc_buf = NULL;
         char     *tot_ptr   = buf;
@@ -134,71 +121,81 @@ static void Internal_Alarmp(int16 priority, int32 mask, char *message, va_list a
         int       msg_len   = 0;
         int       tmp;
         time_t    time_now;
-        struct tm tm_now;
+        struct tm tm_now, *tm_ptr;
         va_list   ap_copy;
 	sp_time   t;
 
-        if (Alarm_timestamp_format != NULL && !is_priority_flag_active(priority, SPLOG_NODATE)) {
-
+        if (Alarm_timestamp_format != NULL && !is_priority_flag_active(priority, SPLOG_NODATE))
+        {
 	    t        = E_get_time();
 	    time_now = t.sec;
 	    
-#ifdef HAVE_LOCALTIME_R
-            localtime_r(&tm_now, &time_now);
+#ifndef HAVE_LOCALTIME_R
+            tm_ptr = localtime(&time_now);  /* NOTE: not thread safe; but hopefully worst case is we get an incorrect timestamp */
 #else
-            tm_now = *localtime(&time_now);  /* NOTE: not thread safe; but worst case is we get an incorrect timestamp */
+            tm_ptr = localtime_r(&tm_now, &time_now);
 #endif
 
-            ts_len = (int) strftime(ts_ptr, MAX_ALARM_MESSAGE_BUF - 1, Alarm_timestamp_format, &tm_now);  /* reserve 1 char for space appended below */
+            if (tm_ptr != NULL)
+            {
+#ifndef HAVE_LOCALTIME_R
+              tm_now = *tm_ptr;
+#endif
+              ts_len = (int) strftime(ts_ptr, MAX_ALARM_MESSAGE_BUF - 1, Alarm_timestamp_format, &tm_now);  /* reserve 1 char for space appended below */
+            }
+            else                                                                                            /* on localtime failure just print secs since epoch */
+              ts_len = (int) snprintf(ts_ptr, MAX_ALARM_MESSAGE_BUF - 1, "%ld", (long) t.sec);              /* reserve 1 char for space appended below */
 
 	    /* ensure ts_len in half open range [0, MAX_ALARM_MESSAGE_BUF - 1) */
 
-	    if (ts_len >= MAX_ALARM_MESSAGE_BUF - 1) {
+	    if (ts_len >= MAX_ALARM_MESSAGE_BUF - 1)
 	        ts_len = MAX_ALARM_MESSAGE_BUF - 2;
-	    }
 
-	    if (ts_len < 0) {
+	    if (ts_len < 0)
 	        ts_len = 0;
-	    }
 
 	    ts_ptr[ts_len] = '\0';
 
-            if (ts_len != 0) {  /* strftime output successfully fit into ts_ptr; optionally append sub-second precision */
+            if (ts_len != 0)  /* strftime output (possibly truncated) successfully fit into ts_ptr; optionally append sub-second precision */
+            {
+	        if ( Alarm_timestamp_high_res )
+                {
+		    tmp = snprintf(ts_ptr + ts_len, MAX_ALARM_MESSAGE_BUF - 1 - ts_len, ".%06lu", t.usec);  /* always nul terminates bc size param >= 1 */
 
-	        if ( Alarm_timestamp_high_res ) {
-
-		    tmp = snprintf(ts_ptr + ts_len, MAX_ALARM_MESSAGE_BUF - 1 - ts_len, ".%06lu", t.usec);  /* always nul terminates */
-
-		    if (tmp != 7) {
+		    if (tmp != 7)
+                    {
 		        Output_Msg(Alarm_Warning_High_Res, sizeof(Alarm_Warning_High_Res) - 1);
 			tmp = 0;
 		    }
 
-		    if ((ts_len += tmp) >= MAX_ALARM_MESSAGE_BUF - 1) {
+		    if ((ts_len += tmp) >= MAX_ALARM_MESSAGE_BUF - 1)
+                    {
 		        Output_Msg(Alarm_Warning_Timestamp, sizeof(Alarm_Warning_Timestamp) - 1);
 		        ts_len = MAX_ALARM_MESSAGE_BUF - 2;  /* adjust ts_len to reflect snprintf truncation */
 		    }
 		}
 
-                ts_ptr[ts_len]   = ' ';        /* append space for single alarm string */
+                ts_ptr[ts_len]   = ' ';        /* append space for single alarm string; NOTE: above always ensures space for these writes */
 		ts_ptr[++ts_len] = '\0';
 
                 msg_ptr = ts_ptr + ts_len;
 		tot_len = ts_len;
-
-	    } else {
-	        Output_Msg(Alarm_Warning_Timestamp, sizeof(Alarm_Warning_Timestamp) - 1);
 	    }
+            else
+	        Output_Msg(Alarm_Warning_Timestamp, sizeof(Alarm_Warning_Timestamp) - 1);
         }
 
-        va_copy(ap_copy, ap);                               /* make a copy of param list in case of vsnprintf truncation */
-        msg_len  = vsnprintf(msg_ptr, MAX_ALARM_MESSAGE_BUF - tot_len, message, ap);
+        va_copy(ap_copy, ap);                              /* make a copy of param list in case of vsnprintf truncation */
+        
+        if ((msg_len = vsnprintf(msg_ptr, MAX_ALARM_MESSAGE_BUF - tot_len, message, ap)) < 0)  /* failure; on Windows can be buffer too small */
+          msg_len = 4 * MAX_ALARM_MESSAGE_BUF;
+        
         tot_len += msg_len;
 
-        if (tot_len >= MAX_ALARM_MESSAGE_BUF) {             /* alarm string doesn't fit in buf; dynamically allocate big enough buffer */
-
-            if ((alloc_buf = (char*) malloc(sizeof(Alarm_Warning_Alloc) - 1 + tot_len + 1)) != NULL) {
-
+        if (tot_len >= MAX_ALARM_MESSAGE_BUF)              /* failure; try dynamically allocating a bigger buffer */
+        {
+            if ((alloc_buf = (char*) malloc(sizeof(Alarm_Warning_Alloc) - 1 + tot_len + 1)) != NULL)
+            {
                 tot_ptr  = alloc_buf;
                 tot_len  = sizeof(Alarm_Warning_Alloc) - 1;
 		memcpy(tot_ptr, Alarm_Warning_Alloc, tot_len);                            /* prepend dynamic allocation warning string */
@@ -208,13 +205,15 @@ static void Internal_Alarmp(int16 priority, int32 mask, char *message, va_list a
 		tot_len += ts_len;
 
                 msg_ptr  = ts_ptr + ts_len;
-                tmp      = vsnprintf(msg_ptr, msg_len + 1, message, ap_copy);             /* write msg after timestamp */
-                assert(tmp == msg_len);
+                
+                if ((tmp = vsnprintf(msg_ptr, msg_len + 1, message, ap_copy)) < 0)        /* write msg after timestamp */
+                  tmp = msg_len;
+
                 msg_len  = tmp;
 		tot_len += msg_len;
-
-            } else {                                                                      /* dynamic alloc failed; overwrite warning + truncate msg in buf */
-
+            }
+            else                                                                          /* dynamic alloc failed; overwrite warning + truncate msg in buf */
+            {
 	        memcpy(tot_ptr + MAX_ALARM_MESSAGE_BUF - sizeof(Alarm_Warning_Truncate), Alarm_Warning_Truncate, sizeof(Alarm_Warning_Truncate));
                 msg_len          = MAX_ALARM_MESSAGE_BUF - ts_len - 1;
 		tot_len          = MAX_ALARM_MESSAGE_BUF - 1;
@@ -226,35 +225,33 @@ static void Internal_Alarmp(int16 priority, int32 mask, char *message, va_list a
 
 	Output_Msg(tot_ptr, tot_len);
 
-        if (ts_len != 0) {
+        if (ts_len != 0)
             ts_ptr[--ts_len] = '\0';                        /* overwrite appended space between timestamp and msg with nul terminator */
-        }
 
-        if (Alarm_realtime_print_handler != NULL && 
-            (is_priority_flag_active(priority, SPLOG_REALTIME) || is_priority_set(priority, SPLOG_FATAL))) {
-
+        if (Alarm_realtime_print_handler != NULL && (will_exit || is_priority_flag_active(priority, SPLOG_REALTIME)))
+        {
             tmp = Alarm_realtime_print_handler(priority, mask, ts_ptr, ts_len, msg_ptr, msg_len);
 
-            if (tmp) {
+            if (tmp)
 	        Output_Msg(Alarm_Warning_Realtime, sizeof(Alarm_Warning_Realtime) - 1);
-            }
         }
 
-        if (alloc_buf != NULL) {                            /* clean up any dynamically allocated buffer */
+        if (alloc_buf != NULL)                              /* clean up any dynamically allocated buffer */
             free(alloc_buf);
-        }
-    }
-
-    if ((EXIT & mask) != 0 || is_priority_set(priority, SPLOG_FATAL)) {
-
+   
+        if (will_exit)
+        {
 #ifndef USE_THREADED_ALARM
-        fprintf(stdout, "Exit caused by Alarm(EXIT)\n");
-        abort();
-        exit(0);
+          fprintf(stdout, "Exit caused by Alarm!\n");
+#  ifndef ARCH_PC_WIN95
+          abort();
+#  else
+          exit(1);
+#  endif
 #else
-        Threaded_Alarm_Exit();
+          Threaded_Alarm_Exit();
 #endif
-
+        }
     }
 }
 
@@ -279,59 +276,6 @@ void Alarm( int32 mask, char *message, ... )
         Internal_Alarmp(SPLOG_WARNING, mask, message, ap);
         va_end(ap);
 }
-
-#else
-
-void Alarm( int32 mask, char *message, 
-            void *ptr1, void *ptr2, void *ptr3, void *ptr4, 
-            void *ptr5, void *ptr6, void *ptr7, void *ptr8,
-            void *ptr9, void *ptr10, void*ptr11, void *ptr12,
-            void *ptr13, void *ptr14, void *ptr15, void *ptr16,
-            void *ptr17, void *ptr18, void *ptr19, void *ptr20)
-{
-        if ( ( Alarm_type_mask & mask ) && priority_level_active(SPLOG_WARNING) )
-        {
-            if ( Alarm_timestamp_format != NULL )
-            {
-		char timestamp[42];
-		struct tm *tm_now;
-		time_t time_now;
-		size_t length;
-		size_t length2;
-		sp_time t = E_get_time();
-
-		time_now = t.sec;
-		tm_now   = localtime(&time_now);
-		length   = strftime(timestamp, sizeof(timestamp) - 1, Alarm_timestamp_format, tm_now);  /* -1 reserves a char for appended ' ' below */
-
-		if (length != 0) {
-
-			if ( Alarm_timestamp_high_res && length <= sizeof(timestamp) - 1 ) {
-
-				if ((length2 = snprintf(timestamp + length, sizeof(timestamp) - 1 - length, ".%06lu", t.usec)) < sizeof(timestamp) - 1 - length) {
-					length += length2;
-				}
-				/* else attempted print will be overwritten immediately below by appending ' ' */
-			}
-
-			timestamp[length]   = ' ';
-			timestamp[++length] = '\0';
-			fwrite(timestamp, sizeof(char), length, stdout);
-			timestamp[--length] = '\0';
-		}
-            }
-            printf(message, ptr1, ptr2, ptr3, ptr4, ptr5, ptr6, ptr7, ptr8, ptr9, ptr10, ptr11, ptr12, ptr13, ptr14, ptr15, ptr16, ptr17, ptr18, ptr19, ptr20 );
-
-        }
-        if ( EXIT & mask )
-        {
-            printf("Exit caused by Alarm(EXIT)\n");
-            abort();
-            exit( 0 );
-        }
-}
-
-#endif /* HAVE_GOOD_VARGS */
 
 void Alarm_set_interactive(void) 
 {
@@ -697,9 +641,12 @@ static void Threaded_Alarm_Exit(void)
       }
     }
 
-    fprintf(stdout, "Exit caused by Threaded Alarm(EXIT)\n");
+    fprintf(stdout, "Exit caused by Alarm!\n");
+#ifndef ARCH_PC_WIN95
     abort();
-    exit(0);
+#else
+    exit(1);
+#endif
   }
 }
 

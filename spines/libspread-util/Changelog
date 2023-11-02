@@ -1,3 +1,53 @@
+October 27, 2023 v5.0.2
+-----------------------
+
+Bugfixes to spu_data_link.h and spu_scatter.h that were missing definitions
+Protected definition of LOC_INLINE by #ifndef and change from __inline__ to inline
+
+August 20, 2018 v5.0.1
+----------------------
+
+5.0.1 Spread release
+
+February 1, 2017 v5.0.0
+-----------------------
+
+No changes versus v5.0.0 RC2.
+
+January 23, 2017 v5.0.0 RC2
+---------------------------
+
+Exported E_get_time_monotonic to events API
+Reworked time functions
+
+November 22, 2016 v5.0.0 RC1
+----------------------------
+
+Major rewrite of data_link.c to support IPv6.
+Addition of spu_addr.[ch] to support handling multiple kinds of sockaddr addresses.
+Added DL_*_gen functions to work with spu_addr's.
+On Windows, use winsock2.h (and associated library) rather than winsock.h.
+Exported alarm mask types used by library itself: EXIT, DATA_LINK, MEMORY, EVENTS.
+Changed the values of alarm mask types.
+Swapped the values of SPLOG_PRINT and SPLOG_FATAL.
+Changed the semantics of SPLOG_PRINT: program will now always print regardless of mask on event type.
+Changed the semantics of SPLOG_FATAL: program will now always print when exiting (or aborting).
+Added ALARMP_NEEDED macro which will return if a given (priority, mask) will currently print or not.  This can be used to avoid needless calls to Alarmp (e.g. - for very common events).
+Changed all usages of Alarm to Alarmp within library at the SP_INFO priority level.
+
+Wed Mar 27 23:27:08 2013  Jonathan Stanton  <jonathan@spreadconcepts.com>
+
+	* configure.in: Change test for clock_gettime(CLOCK_MONOTONIC) to runtime test from compile test. 
+
+Wed Mar 27 22:51:12 2013  Jonathan Stanton  <jonathan@spreadconcepts.com>
+
+	* arch.h, src/events.c, src/alarm.c: Windows portability fixes provided by Juan Pizzorno. 
+
+Tue Mar 12 07:08:28 2013  Jonathan Stanton  <jonathan@spreadconcepts.com>
+
+	* src/events.c (E_attach_fd): Change Alarm priority from PRINT to EVENTS so non-error FD attach 
+	does not log every time. 
+
 Mon Jun 18 13:24:41 2012  Jonathan Stanton  <jonathan@spreadconcepts.com>
 
 	* src/data_link.c (DL_init_channel): Fix DL_init_channels algorithm for selecting which
