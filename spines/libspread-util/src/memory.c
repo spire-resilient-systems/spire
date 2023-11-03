@@ -18,12 +18,13 @@
  * The Creators of Spread are:
  *  Yair Amir, Michal Miskin-Amir, Jonathan Stanton, John Schultz.
  *
- *  Copyright (C) 1993-2009 Spread Concepts LLC <info@spreadconcepts.com>
+ *  Copyright (C) 1993-2016 Spread Concepts LLC <info@spreadconcepts.com>
  *
  *  All Rights Reserved.
  *
  * Major Contributor(s):
  * ---------------
+ *    Amy Babay            babay@cs.jhu.edu - accelerated ring protocol.
  *    Ryan Caudy           rcaudy@gmail.com - contributions to process groups.
  *    Claudiu Danilov      claudiu@acm.org - scalable wide area support.
  *    Cristina Nita-Rotaru crisn@cs.purdue.edu - group communication security.
@@ -208,7 +209,7 @@ void            Mem_init_object_abort( int32u obj_type, char *obj_name, int32u s
 
         ret = Mem_init_object( obj_type, obj_name, size, threshold, initial );
         if (ret < 0 ) {
-                Alarm( EXIT, "Mem_init_object_abort: Failed to initialize a/an %s object\n", obj_name);
+          Alarmp( SPLOG_FATAL, MEMORY, "Mem_init_object_abort: Failed to initialize a/an %s object\n", obj_name);
         }
 }
 /* Input: valid object type, name of object, threshold/watermark value for this object, initial objects to create
@@ -243,7 +244,7 @@ int            Mem_init_object(int32u obj_type, char *obj_name, int32u size, uns
                 assert(initial == 0);
         }
         
-        Alarm( PRINT, __FILE__ ":%d: Setting mem pool threshold to 0! Not using pool ... only meant for valgrinding!\n", __LINE__ );
+        Alarmp(SPLOG_WARNING, MEMORY, __FILE__ ":%d: Setting mem pool threshold to 0! Not using pool ... only meant for valgrinding!\n", __LINE__ );
 	threshold = 0;
 #endif	
         
@@ -284,7 +285,7 @@ int            Mem_init_object(int32u obj_type, char *obj_name, int32u size, uns
                         
                         if ( elem == NULL ) 
                         {
-                                Alarm(MEMORY, "mem_init_object: Failure to calloc an initial object. Returning with existant buffers\n");
+                                Alarmp(SPLOG_INFO, MEMORY, "mem_init_object: Failure to calloc an initial object. Returning with existant buffers\n");
                                 mem_error = 1;
                                 break;
                         }
@@ -335,7 +336,7 @@ void *          new(int32u obj_type)
                         
                 if ( elem == NULL ) 
                 {
-                        Alarm(MEMORY, "mem_alloc_object: Failure to calloc an object. Returning NULL object\n");
+                        Alarmp(SPLOG_INFO, MEMORY, "mem_alloc_object: Failure to calloc an object. Returning NULL object\n");
                         return(NULL);
                 }
 
@@ -371,7 +372,7 @@ void *          new(int32u obj_type)
                 }
 #endif
                 
-                Alarm(MEMORY, "new: creating pointer 0x%x to object type %d named %s\n", elem + 1, obj_type, Objnum_to_String(obj_type));
+                Alarmp(SPLOG_INFO, MEMORY, "new: creating pointer 0x%x to object type %d named %s\n", elem + 1, obj_type, Objnum_to_String(obj_type));
         } else
         {
                 assert(Mem[obj_type].num_obj_inpool > 0 );
@@ -380,7 +381,7 @@ void *          new(int32u obj_type)
                 Mem[obj_type].list_head = elem->next;
                 Mem[obj_type].num_obj_inpool--;
                 
-                Alarm(MEMORY, "new: reusing pointer 0x%x to object type %d named %s\n", elem + 1, obj_type, Objnum_to_String(obj_type));
+                Alarmp(SPLOG_INFO, MEMORY, "new: reusing pointer 0x%x to object type %d named %s\n", elem + 1, obj_type, Objnum_to_String(obj_type));
         }
 
 #ifndef NDEBUG
@@ -430,7 +431,7 @@ void *          Mem_alloc( unsigned int length)
         
         if ( elem == NULL )
         {
-                Alarm(MEMORY, "mem_alloc: Failure to calloc a block. Returning NULL block\n");
+                Alarmp(SPLOG_INFO, MEMORY, "mem_alloc: Failure to calloc a block. Returning NULL block\n");
                 return(NULL);
         }
 
@@ -527,7 +528,7 @@ void            dispose(void *object)
 	assert(Mem_Obj_Allocated > 0);
 	assert(Mem_Bytes_Allocated >= sizeof( free_list_elem ) + head_ptr->block_len );
 
-        Alarm(MEMORY, "dispose: disposing pointer 0x%x to object type %d named %s\n", object, obj_type, Objnum_to_String(obj_type));
+        Alarmp(SPLOG_INFO, MEMORY, "dispose: disposing pointer 0x%x to object type %d named %s\n", object, obj_type, Objnum_to_String(obj_type));
 
         Mem[obj_type].num_obj_inuse--;
         Mem_Obj_Inuse--;
