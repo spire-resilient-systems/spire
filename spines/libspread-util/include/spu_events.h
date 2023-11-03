@@ -90,6 +90,7 @@ int     E_in_queue( void (* func)( int code, void *data ), int code,
    *data pointer */
 int 	E_dequeue( void (* func)( int code, void *data ), int code,
 		   void *data );
+void    E_dequeue_all_time_events();
 
 void	E_delay( sp_time t );
 

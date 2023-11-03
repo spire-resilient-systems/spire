@@ -414,6 +414,18 @@ int 	E_dequeue( void (* func)( int code, void *data ), int code,
 	return( -1 );
 }
 
+void    E_dequeue_all_time_events()
+{
+    time_event *t_ptr;
+
+    while (Time_queue != NULL)
+    {
+        t_ptr = Time_queue;
+        Time_queue = Time_queue->next;
+        dispose( t_ptr );
+    }
+}
+
 int 	E_in_queue( void (* func)( int code, void *data ), int code,
 		   void *data )
 {
