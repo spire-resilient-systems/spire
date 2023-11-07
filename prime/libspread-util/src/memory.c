@@ -18,12 +18,13 @@
  * The Creators of Spread are:
  *  Yair Amir, Michal Miskin-Amir, Jonathan Stanton, John Schultz.
  *
- *  Copyright (C) 1993-2009 Spread Concepts LLC <info@spreadconcepts.com>
+ *  Copyright (C) 1993-2016 Spread Concepts LLC <info@spreadconcepts.com>
  *
  *  All Rights Reserved.
  *
  * Major Contributor(s):
  * ---------------
+ *    Amy Babay            babay@cs.jhu.edu - accelerated ring protocol.
  *    Ryan Caudy           rcaudy@gmail.com - contributions to process groups.
  *    Claudiu Danilov      claudiu@acm.org - scalable wide area support.
  *    Cristina Nita-Rotaru crisn@cs.purdue.edu - group communication security.
@@ -50,6 +51,8 @@
 #define NO_REF_CNT             -1
 #define MAX_MEM_OBJECTS         200
 
+#define mem_header_ptr(obj) ( &( ( free_list_elem * ) ( obj ) - 1 )->header )
+
 /************************
  * Global Variables 
  ************************/
@@ -75,6 +78,13 @@ typedef struct mem_header_d
         size_t   block_len;
 } mem_header;
 
+typedef union free_list_elem
+{
+  mem_header            header;
+  union free_list_elem *next;
+  
+} free_list_elem;
+
 #define MAX_OBJNAME 35
 #define DEFAULT_OBJNAME "Unknown Obj"
 
@@ -97,7 +107,7 @@ typedef struct mem_info_d
         unsigned int    max_obj_inuse;
 #endif
         unsigned int    num_obj_inpool;
-        void            **list_head;
+        free_list_elem *list_head;
 } mem_info;
 
 static mem_info Mem[MAX_MEM_OBJECTS];
@@ -193,16 +203,13 @@ unsigned int Mem_max_bytes(int32u objtype)
  * Internal functions
  **********************/
 
-#define mem_header_ptr(obj)   ( (mem_header *) (((char *)obj) - sizeof(mem_header)) )
-
-
 void            Mem_init_object_abort( int32u obj_type, char *obj_name, int32u size, unsigned int threshold, unsigned int initial )
 {
         int     ret;
 
         ret = Mem_init_object( obj_type, obj_name, size, threshold, initial );
         if (ret < 0 ) {
-                Alarm( EXIT, "Mem_init_object_abort: Failed to initialize a/an %s object\n", obj_name);
+          Alarmp( SPLOG_FATAL, MEMORY, "Mem_init_object_abort: Failed to initialize a/an %s object\n", obj_name);
         }
 }
 /* Input: valid object type, name of object, threshold/watermark value for this object, initial objects to create
@@ -228,7 +235,7 @@ int            Mem_init_object(int32u obj_type, char *obj_name, int32u size, uns
                 
                 Initialized = TRUE;
         }
-#endif
+
         assert(!(Mem[obj_type].exist));
 
         if( obj_type == BLOCK_OBJECT )
@@ -236,15 +243,20 @@ int            Mem_init_object(int32u obj_type, char *obj_name, int32u size, uns
                 assert(threshold == 0);
                 assert(initial == 0);
         }
-
-#ifndef NDEBUG
-	threshold = 0;  /* TODO: for valgrinding only; delete me */
+        
+        Alarmp(SPLOG_WARNING, MEMORY, __FILE__ ":%d: Setting mem pool threshold to 0! Not using pool ... only meant for valgrinding!\n", __LINE__ );
+	threshold = 0;
 #endif	
         
         Mem[obj_type].exist = TRUE;
         Mem[obj_type].size = size;
+        
+#ifndef  MEM_DISABLE_CACHE
         Mem[obj_type].threshold = threshold;
-
+#else
+        Mem[obj_type].threshold = 0;
+#endif
+        
         if (obj_name == NULL || strlen(obj_name) > MAX_OBJNAME) {
             strncpy(Mem[obj_type].obj_name, DEFAULT_OBJNAME, MAX_OBJNAME);
         } else {
@@ -252,10 +264,6 @@ int            Mem_init_object(int32u obj_type, char *obj_name, int32u size, uns
         }
         Mem[obj_type].obj_name[MAX_OBJNAME] = '\0';
 
-        /* Only enabled when MEM_DISABLE_CACHE set. Disable threshold so all memory is dellocated at dispose() */
-#ifdef  MEM_DISABLE_CACHE
-        Mem[obj_type].threshold = 0;
-#endif
 #ifndef NDEBUG
         Mem[obj_type].num_obj = 0;
         Mem[obj_type].bytes_allocated = 0;
@@ -269,49 +277,25 @@ int            Mem_init_object(int32u obj_type, char *obj_name, int32u size, uns
         {
                 /* Create 'initial' objects */
                 int i;
-                mem_header *head_ptr;
-                void  ** body_ptr;
+                free_list_elem *elem;
+                
                 for(i = initial; i > 0; i--)
                 {
-                        head_ptr = (mem_header *) calloc(1, sizeof(mem_header) + sizeobj(obj_type) );
-                        if (head_ptr == NULL) 
+                        elem = ( free_list_elem * ) calloc( 1, sizeof( free_list_elem ) + sizeobj( obj_type ) );
+                        
+                        if ( elem == NULL ) 
                         {
-                                Alarm(MEMORY, "mem_init_object: Failure to calloc an initial object. Returning with existant buffers\n");
+                                Alarmp(SPLOG_INFO, MEMORY, "mem_init_object: Failure to calloc an initial object. Returning with existant buffers\n");
                                 mem_error = 1;
                                 break;
                         }
 
-
-                        head_ptr->obj_type = obj_type;
-                        head_ptr->block_len = sizeobj(obj_type);
-			head_ptr->ref_cnt = NO_REF_CNT;
-                        /* We add 1 because pointer arithm. states a pointer + 1 equals a pointer
-                         * to the next element in an array where each element is of a particular size.
-                         * in this case that size is 8 (or 12) 
-                         * (since it is a pointer to a struct of a 32bit int and a size_t)
-                         * so adding one actually moves the pointer 8 (or 12) bytes forward!
-                         */
-                        body_ptr = (void **) (head_ptr + 1);
-
-#ifdef TESTING
- printf("alignment objtype = %u\n", __alignof__(head_ptr->obj_type));
- printf("alignment blocklen = %u\n", __alignof__(head_ptr->block_len));
-  printf("initial  head = 0x%x\n", head_ptr);
-  printf("initial body = 0x%x\n", body_ptr);
- printf("alignment head = %u\n", __alignof__(head_ptr)); 
- printf("alignment body = %u\n", __alignof__(body_ptr));
- printf("sizeof body pointer = %u\n", sizeof(body_ptr));
- printf("size head = %u\t size body = %u\n", sizeof(mem_header), sizeobj(obj_type)); 
-#endif
-
-                        /* TODO: we should store the link to next in mem_header_ptr(object) rather than in body bc object might be less than sizeof(void*) in size */
-
-                        *body_ptr = (void *) Mem[obj_type].list_head;
-                        Mem[obj_type].list_head = body_ptr;
+                        elem->next                = Mem[ obj_type ].list_head;
+                        Mem[ obj_type ].list_head = elem;
                         Mem[obj_type].num_obj_inpool++;
 #ifndef NDEBUG
                         Mem[obj_type].num_obj++;
-                        Mem[obj_type].bytes_allocated += (sizeobj(obj_type) + sizeof(mem_header));
+                        Mem[obj_type].bytes_allocated += sizeof( free_list_elem ) + sizeobj( obj_type );
 #endif
                 }
 #ifndef NDEBUG
@@ -342,32 +326,26 @@ int            Mem_init_object(int32u obj_type, char *obj_name, int32u size, uns
  */
 void *          new(int32u obj_type)
 {
+        free_list_elem *elem;
 
         assert(Mem_valid_objtype(obj_type));
 
         if (Mem[obj_type].list_head == NULL) 
         {
-                mem_header *    head_ptr;
-                
-                head_ptr = (mem_header *) calloc(1, sizeof(mem_header) + sizeobj(obj_type) );
-                if (head_ptr == NULL) 
+                elem = ( free_list_elem * ) calloc( 1, sizeof( free_list_elem ) + sizeobj( obj_type ) );
+                        
+                if ( elem == NULL ) 
                 {
-                        Alarm(MEMORY, "mem_alloc_object: Failure to calloc an object. Returning NULL object\n");
+                        Alarmp(SPLOG_INFO, MEMORY, "mem_alloc_object: Failure to calloc an object. Returning NULL object\n");
                         return(NULL);
                 }
-                head_ptr->obj_type = obj_type;
-                head_ptr->block_len = sizeobj(obj_type);
-		head_ptr->ref_cnt  = NO_REF_CNT;
 
 #ifndef NDEBUG
 		assert(Mem[obj_type].num_obj + 1 > Mem[obj_type].num_obj);
                 Mem[obj_type].num_obj++;
 
-		assert(Mem[obj_type].num_obj_inuse + 1 > Mem[obj_type].num_obj_inuse);
-                Mem[obj_type].num_obj_inuse++;
-
-		assert(Mem[obj_type].bytes_allocated + (sizeobj(obj_type) + sizeof(mem_header)) > Mem[obj_type].bytes_allocated);
-                Mem[obj_type].bytes_allocated += (sizeobj(obj_type) + sizeof(mem_header));
+		assert(Mem[obj_type].bytes_allocated + sizeof( free_list_elem ) + sizeobj( obj_type ) > Mem[obj_type].bytes_allocated);
+                Mem[obj_type].bytes_allocated += sizeof( free_list_elem ) + sizeobj( obj_type );
 
                 if (Mem[obj_type].bytes_allocated > Mem[obj_type].max_bytes)
                 {
@@ -377,19 +355,12 @@ void *          new(int32u obj_type)
                 {       
                         Mem[obj_type].max_obj = Mem[obj_type].num_obj;
                 }
-                if (Mem[obj_type].num_obj_inuse > Mem[obj_type].max_obj_inuse)
-                {
-                        Mem[obj_type].max_obj_inuse = Mem[obj_type].num_obj_inuse;
-                }
 
-		assert(Mem_Bytes_Allocated + (sizeobj(obj_type) + sizeof(mem_header)) > Mem_Bytes_Allocated);
-                Mem_Bytes_Allocated += (sizeobj(obj_type) + sizeof(mem_header));
+		assert(Mem_Bytes_Allocated + sizeof( free_list_elem ) + sizeobj( obj_type ) > Mem_Bytes_Allocated);
+                Mem_Bytes_Allocated += sizeof( free_list_elem ) + sizeobj( obj_type );
 
 		assert(Mem_Obj_Allocated + 1 > Mem_Obj_Allocated);
                 Mem_Obj_Allocated++;
-
-		assert(Mem_Obj_Inuse + 1 > Mem_Obj_Inuse);
-                Mem_Obj_Inuse++;
 
                 if (Mem_Bytes_Allocated > Mem_Max_Bytes) 
                 {
@@ -399,59 +370,43 @@ void *          new(int32u obj_type)
                 {
                         Mem_Max_Objects = Mem_Obj_Allocated;
                 }
-                if (Mem_Obj_Inuse > Mem_Max_Obj_Inuse)
-                {
-                        Mem_Max_Obj_Inuse = Mem_Obj_Inuse;
-                }
-
 #endif
-#ifdef TESTING
-        printf("alloc:object = 0x%x\n", head_ptr + 1);
-        printf("alloc:mem_headerptr = 0x%x\n", head_ptr);
-        printf("alloc:objtype = %u:\n", head_ptr->obj_type);
-        printf("alloc:blocklen = %u:\n", head_ptr->block_len);
-#endif
-        Alarm(MEMORY, "new: creating pointer 0x%x to object type %d named %s\n", head_ptr + 1, obj_type, Objnum_to_String(obj_type));
-
-                return((void *) (head_ptr + 1));
+                
+                Alarmp(SPLOG_INFO, MEMORY, "new: creating pointer 0x%x to object type %d named %s\n", elem + 1, obj_type, Objnum_to_String(obj_type));
         } else
         {
-		/* TODO: we should store the link to next in mem_header_ptr(object) rather than in body bc object might be less than sizeof(void*) in size */
-
-                void ** body_ptr;
                 assert(Mem[obj_type].num_obj_inpool > 0 );
 
-                body_ptr = Mem[obj_type].list_head;
-                Mem[obj_type].list_head = (void *) *(body_ptr);
+                elem                    = Mem[ obj_type ].list_head;
+                Mem[obj_type].list_head = elem->next;
                 Mem[obj_type].num_obj_inpool--;
-#ifndef NDEBUG
-		assert(Mem[obj_type].num_obj_inuse + 1 > Mem[obj_type].num_obj_inuse);
-                Mem[obj_type].num_obj_inuse++;
-
-                if (Mem[obj_type].num_obj_inuse > Mem[obj_type].max_obj_inuse)
-                {
-                        Mem[obj_type].max_obj_inuse = Mem[obj_type].num_obj_inuse;
-                }
-
-		assert(Mem_Obj_Inuse + 1 > Mem_Obj_Inuse);
-                Mem_Obj_Inuse++;
-
-                if (Mem_Obj_Inuse > Mem_Max_Obj_Inuse)
-                {
-                        Mem_Max_Obj_Inuse = Mem_Obj_Inuse;
-                }
-
-#endif
-#ifdef TESTING
-        printf("pool:object = 0x%x\n", body_ptr);
-        printf("pool:mem_headerptr = 0x%x\n", mem_header_ptr((void *) body_ptr));
-        printf("pool:objtype = %u:\n", mem_header_ptr((void *) body_ptr)->obj_type);
-        printf("pool:blocklen = %u:\n", mem_header_ptr((void *) body_ptr)->block_len);
-#endif
-                Alarm(MEMORY, "new: reusing pointer 0x%x to object type %d named %s\n", body_ptr, obj_type, Objnum_to_String(obj_type));
-
-                return((void *) (body_ptr));
+                
+                Alarmp(SPLOG_INFO, MEMORY, "new: reusing pointer 0x%x to object type %d named %s\n", elem + 1, obj_type, Objnum_to_String(obj_type));
         }
+
+#ifndef NDEBUG
+        assert(Mem[obj_type].num_obj_inuse + 1 > Mem[obj_type].num_obj_inuse);
+        Mem[obj_type].num_obj_inuse++;
+        
+        if (Mem[obj_type].num_obj_inuse > Mem[obj_type].max_obj_inuse)
+                Mem[obj_type].max_obj_inuse = Mem[obj_type].num_obj_inuse;
+
+        assert(Mem_Obj_Inuse + 1 > Mem_Obj_Inuse);
+        Mem_Obj_Inuse++;
+        
+        if (Mem_Obj_Inuse > Mem_Max_Obj_Inuse)
+                Mem_Max_Obj_Inuse = Mem_Obj_Inuse;
+#endif
+
+        {
+                mem_header *head_ptr = &elem->header;
+                
+                head_ptr->obj_type  = obj_type;
+                head_ptr->block_len = sizeobj(obj_type);
+                head_ptr->ref_cnt   = NO_REF_CNT;
+        }
+
+        return ( void * ) ( elem + 1 );
 }
 
 
@@ -461,6 +416,7 @@ void *          new(int32u obj_type)
  */
 void *          Mem_alloc( unsigned int length)
 {
+        free_list_elem *elem;
         mem_header * head_ptr;
 
         if (length == 0) { return(NULL); }
@@ -470,17 +426,19 @@ void *          Mem_alloc( unsigned int length)
                 Mem[BLOCK_OBJECT].size = 0;
                 Mem[BLOCK_OBJECT].threshold = 0;
         }
-
         
-        head_ptr = (mem_header *) calloc(1, sizeof(mem_header) + length);
-        if (head_ptr == NULL) 
+        elem = ( free_list_elem * ) calloc( 1, sizeof( free_list_elem ) + length );
+        
+        if ( elem == NULL )
         {
-                Alarm(MEMORY, "mem_alloc: Failure to calloc a block. Returning NULL block\n");
+                Alarmp(SPLOG_INFO, MEMORY, "mem_alloc: Failure to calloc a block. Returning NULL block\n");
                 return(NULL);
         }
-        head_ptr->obj_type = BLOCK_OBJECT;
+
+        head_ptr            = &elem->header;
+        head_ptr->obj_type  = BLOCK_OBJECT;
         head_ptr->block_len = length;
-	head_ptr->ref_cnt = NO_REF_CNT;
+	head_ptr->ref_cnt   = NO_REF_CNT;
 
 #ifndef NDEBUG
 
@@ -490,8 +448,8 @@ void *          Mem_alloc( unsigned int length)
 	assert(Mem[BLOCK_OBJECT].num_obj_inuse + 1 > Mem[BLOCK_OBJECT].num_obj_inuse);
         Mem[BLOCK_OBJECT].num_obj_inuse++;
 
-	assert(Mem[BLOCK_OBJECT].bytes_allocated + (length + sizeof(mem_header)) > Mem[BLOCK_OBJECT].bytes_allocated);
-        Mem[BLOCK_OBJECT].bytes_allocated += (length + sizeof(mem_header));
+	assert(Mem[BLOCK_OBJECT].bytes_allocated + sizeof( free_list_elem ) + length > Mem[BLOCK_OBJECT].bytes_allocated);
+        Mem[BLOCK_OBJECT].bytes_allocated += sizeof( free_list_elem ) + length;
 
         if (Mem[BLOCK_OBJECT].bytes_allocated > Mem[BLOCK_OBJECT].max_bytes)
         {
@@ -506,8 +464,8 @@ void *          Mem_alloc( unsigned int length)
                 Mem[BLOCK_OBJECT].max_obj_inuse = Mem[BLOCK_OBJECT].num_obj_inuse;
         }
         
-	assert(Mem_Bytes_Allocated + (length + sizeof(mem_header)) > Mem_Bytes_Allocated);
-        Mem_Bytes_Allocated += (length + sizeof(mem_header));
+	assert(Mem_Bytes_Allocated + sizeof( free_list_elem ) + length > Mem_Bytes_Allocated);
+        Mem_Bytes_Allocated += sizeof( free_list_elem ) + length;
 
 	assert(Mem_Obj_Allocated + 1 > Mem_Obj_Allocated);
         Mem_Obj_Allocated++;
@@ -529,7 +487,7 @@ void *          Mem_alloc( unsigned int length)
         }
 
 #endif        
-        return((void *) (head_ptr + 1));
+        return ( void * ) ( elem + 1 );
 }
 
 
@@ -541,17 +499,22 @@ void            dispose(void *object)
 {
         int32u obj_type;
 	int32  ref_cnt;
+        free_list_elem *elem;
+        mem_header     *head_ptr;
 
         if (object == NULL) { return; }
 
-        obj_type = mem_header_ptr(object)->obj_type;
-	ref_cnt  = mem_header_ptr(object)->ref_cnt;
+        elem     = ( free_list_elem * ) object - 1;
+        head_ptr = &elem->header;
+        
+        obj_type = head_ptr->obj_type;
+	ref_cnt  = head_ptr->ref_cnt;
 
 #ifdef TESTING
         printf("disp:object = 0x%x\n", object);
-        printf("disp:mem_headerptr = 0x%x\n", mem_header_ptr(object));
-        printf("disp:objtype = %u:\n", mem_header_ptr(object)->obj_type);
-        printf("disp:blocklen = %u:\n", mem_header_ptr(object)->block_len);
+        printf("disp:mem_headerptr = 0x%x\n", head_ptr);
+        printf("disp:objtype = %u:\n", head_ptr->obj_type);
+        printf("disp:blocklen = %u:\n", head_ptr->block_len);
 #endif
 
         assert(Mem_valid_objtype(obj_type));
@@ -560,12 +523,12 @@ void            dispose(void *object)
 #ifndef NDEBUG
         assert(Mem[obj_type].num_obj_inuse > 0);
         assert(Mem[obj_type].num_obj > 0);
-        assert(Mem[obj_type].bytes_allocated >= (mem_header_ptr(object)->block_len + sizeof(mem_header)));
+        assert(Mem[ obj_type ].bytes_allocated >= sizeof( free_list_elem ) + head_ptr->block_len ) );
 	assert(Mem_Obj_Inuse > 0);
 	assert(Mem_Obj_Allocated > 0);
-	assert(Mem_Bytes_Allocated >= (mem_header_ptr(object)->block_len + sizeof(mem_header)));
+	assert(Mem_Bytes_Allocated >= sizeof( free_list_elem ) + head_ptr->block_len );
 
-        Alarm(MEMORY, "dispose: disposing pointer 0x%x to object type %d named %s\n", object, obj_type, Objnum_to_String(obj_type));
+        Alarmp(SPLOG_INFO, MEMORY, "dispose: disposing pointer 0x%x to object type %d named %s\n", object, obj_type, Objnum_to_String(obj_type));
 
         Mem[obj_type].num_obj_inuse--;
         Mem_Obj_Inuse--;
@@ -580,21 +543,15 @@ void            dispose(void *object)
         {
 #ifndef NDEBUG
                 Mem[obj_type].num_obj--;
-		Mem[obj_type].bytes_allocated -= (mem_header_ptr(object)->block_len + sizeof(mem_header));
+		Mem[obj_type].bytes_allocated -= sizeof( free_list_elem ) + head_ptr->block_len;
                 Mem_Obj_Allocated--;
-		Mem_Bytes_Allocated -= (mem_header_ptr(object)->block_len + sizeof(mem_header));
+		Mem_Bytes_Allocated -= sizeof( free_list_elem ) + head_ptr->block_len;
 #endif
-                free(mem_header_ptr(object));
-
+                free( elem );
         } else 
         {
-                void ** body_ptr;
-                
-		/* TODO: we should store the link to next in mem_header_ptr(object) rather than in body bc object might be less than sizeof(void*) in size */
-  
-                body_ptr = (void **) object;
-                *body_ptr = (void *) Mem[obj_type].list_head;
-                Mem[obj_type].list_head = body_ptr;
+                elem->next                = Mem[ obj_type ].list_head;
+                Mem[ obj_type ].list_head = elem;
 		assert(Mem[obj_type].num_obj_inpool + 1 > Mem[obj_type].num_obj_inpool);
                 Mem[obj_type].num_obj_inpool++;
         }
@@ -635,14 +592,13 @@ void *      Mem_copy(const void *object)
         }
         if (new_object == NULL) { return(NULL); }
 
-        new_object =(void*)
- memcpy(new_object, object, mem_header_ptr(object)->block_len);
+        memcpy(new_object, object, mem_header_ptr(object)->block_len);
 
         mem_header_ptr(new_object)->obj_type = mem_header_ptr(object)->obj_type;
         mem_header_ptr(new_object)->block_len = mem_header_ptr(object)->block_len;
+        mem_header_ptr(new_object)->ref_cnt   = NO_REF_CNT;
 
         return(new_object);
-
 }
 
 /* Input: a size of memory block desired

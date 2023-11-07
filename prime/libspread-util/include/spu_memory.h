@@ -18,12 +18,13 @@
  * The Creators of Spread are:
  *  Yair Amir, Michal Miskin-Amir, Jonathan Stanton, John Schultz.
  *
- *  Copyright (C) 1993-2009 Spread Concepts LLC <info@spreadconcepts.com>
+ *  Copyright (C) 1993-2016 Spread Concepts LLC <info@spreadconcepts.com>
  *
  *  All Rights Reserved.
  *
  * Major Contributor(s):
  * ---------------
+ *    Amy Babay            babay@cs.jhu.edu - accelerated ring protocol.
  *    Ryan Caudy           rcaudy@gmail.com - contributions to process groups.
  *    Claudiu Danilov      claudiu@acm.org - scalable wide area support.
  *    Cristina Nita-Rotaru crisn@cs.purdue.edu - group communication security.
@@ -157,6 +158,7 @@ int     Mem_valid_objtype(int32u objtype);
  */
 int32u  Mem_Obj_Type(const void *object);
 
+#ifndef NDEBUG
 extern LOC_INLINE unsigned int Mem_total_bytes(void);
 extern LOC_INLINE unsigned int Mem_total_max_bytes(void);
 extern LOC_INLINE unsigned int Mem_total_inuse(void);
@@ -170,6 +172,7 @@ extern LOC_INLINE unsigned int Mem_obj_in_app(int32u objtype);
 extern LOC_INLINE unsigned int Mem_max_in_app(int32u objtype);
 extern LOC_INLINE unsigned int Mem_obj_total(int32u objtype);    
 extern LOC_INLINE unsigned int Mem_max_obj(int32u objtype);
+#endif /* NDEBUG */
 
 #endif /* MEMORY_H */
 

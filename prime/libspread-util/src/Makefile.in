@@ -23,9 +23,9 @@ VPATH=@srcdir@ $(top_srcdir)/src
 #     : minor  -- inc for backwards compatible change (add new api, but not break or remove old one)
 #     : bugfix -- inc for bugfix that is fully compatible
 
-LIBFULLVERSION=4.2.0
-LIBCOMPATVERSION=4.0
-LIBVERSION=4
+LIBFULLVERSION=5.0.0
+LIBCOMPATVERSION=5.0
+LIBVERSION=5
 
 PATHS=-I. -I$(top_srcdir)/src -I../include -I$(top_srcdir)/include
 
@@ -62,7 +62,7 @@ EXEEXT=@EXEEXT@
 
 TARGETS=libspread-util.a libspread-util.sa @LIBSPSO@
 
-LIB_OBJS=alarm.o events.o memory.o data_link.o
+LIB_OBJS=alarm.o events.o memory.o data_link.o spu_addr.o
 
 LIB_SHOBJS=$(LIB_OBJS:.o=.lo)
 
@@ -112,7 +112,7 @@ clean:
 	rm -rf ../lib/$(host)
 
 distclean: clean
-	rm -f Makefile config.status config.h ../include/spu_system.h *~
+	rm -f Makefile config.h config.status *~
 
 binrelease: $(TARGETS)
 	$(buildtoolsdir)/mkinstalldirs ../lib/$(host)

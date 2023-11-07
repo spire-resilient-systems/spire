@@ -18,12 +18,13 @@
  * The Creators of Spread are:
  *  Yair Amir, Michal Miskin-Amir, Jonathan Stanton, John Schultz.
  *
- *  Copyright (C) 1993-2009 Spread Concepts LLC <info@spreadconcepts.com>
+ *  Copyright (C) 1993-2016 Spread Concepts LLC <info@spreadconcepts.com>
  *
  *  All Rights Reserved.
  *
  * Major Contributor(s):
  * ---------------
+ *    Amy Babay            babay@cs.jhu.edu - accelerated ring protocol.
  *    Ryan Caudy           rcaudy@gmail.com - contributions to process groups.
  *    Claudiu Danilov      claudiu@acm.org - scalable wide area support.
  *    Cristina Nita-Rotaru crisn@cs.purdue.edu - group communication security.
@@ -32,23 +33,50 @@
  *
  */
 
-
 #ifndef INC_ALARM
 #define INC_ALARM
 
 #include <stdio.h>
 #include "spu_system.h"
 
+/* SPCLAMP can be useful with snprintfs:
+   {
+     char msg[10], *c = msg, *e = msg + sizeof(msg);
+
+     c += snprintf(c, SPCLAMP(c, e), "hello world!\n");
+     c += snprintf(c, SPCLAMP(c, e), "neato!\n");
+     c += snprintf(c, SPCLAMP(c, e), "how many we doing?!\n");
+     and so on ...
+
+     when done, if you care, check if you overfilled (but not
+     overran!) your nul terminated buffer (termination guaranteed so
+     long as c < e initially):
+
+     if (c > e)
+       do stuff;
+
+     (c - msg) is how many characters you tried to write
+   }
+
+   Note, this isn't 100% standards compliant bc pointer arithmetic and
+   comparison beyond the end of an array isn't guaranteed to be
+   meaningful and valid, but it will work on most sane architectures.
+ */
+#define SPCLAMP(x, y) ((x) < (y) ? (y) - (x) : 0)
+
 /* Type for Alarm realtime handler functions */
 typedef int (alarm_realtime_handler)( int16, int32, char *, size_t, char *, size_t);
 
+/* These are always defined for any project using this library */
+#define		ALL		0xffffffff
+#define 	EXIT  		0x00000001   /* Program will print then exit() or abort() */
+#define		DATA_LINK	0x00000002
+#define         MEMORY          0x00000004
+#define		EVENTS		0x00000008
+#define		NONE		0x00000000
 
 /* This includes the custom types for each project */
 #include "spu_alarm_types.h"
-
-/* These are always defined for any project using Alarm */
-#define		ALL		0xffffffff
-#define		NONE		0x00000000
 
 /* Priority levels */
 #define         SPLOG_DEBUG     0x0001       /* Program information that is only useful for debugging. 
@@ -60,9 +88,9 @@ typedef int (alarm_realtime_handler)( int16, int32, char *, size_t, char *, size
 #define         SPLOG_ERROR     0x0004       /* Program encountered an error that can be recovered from. */
 #define         SPLOG_CRITICAL  0x0005       /* Program will not exit, but has only temporarily recovered 
                                                 and without help may soon fail. */
-#define         SPLOG_FATAL     0x0006       /* Program will exit() or abort(). */
+#define         SPLOG_PRINT     0x0006       /* Program will always print, regardless of mask */
+#define         SPLOG_FATAL     0x0007       /* Program will always print, regardless of mask, then exit() or abort(). */
 
-#define         SPLOG_PRINT     0x0007       /* Program should always print this information */
 
 #define         SPLOG_PRIORITY_FIELDS 0x000f
 
@@ -72,31 +100,36 @@ typedef int (alarm_realtime_handler)( int16, int32, char *, size_t, char *, size
                                                 This is used for alerts you want sent now and not just logged (they are also logged). */
 #define         SPLOG_PRIORITY_FLAGS 0x00f0
 
-#ifdef  HAVE_GOOD_VARGS
-void Alarmp( int16 priority, int32 type, char *message, ...);
-void Alarm( int32 type, char *message, ...);
+/* Can be used to conditionally skip calls to Alarmp (e.g. - expensive parameter evaluation, repeatedly called, etc.) */
 
-#else
-void Alarm();
-#endif
+#define ALARMP_NEEDED(p, m) (                                           \
+    ( (m) & EXIT ) ||                                                   \
+    ( ( (p) & SPLOG_PRIORITY_FIELDS ) >= SPLOG_PRINT ) ||               \
+    ( ( (p) & SPLOG_PRIORITY_FIELDS ) >= Alarm_cur_priority && ( (m) & Alarm_type_mask ) ) )
 
-void Alarm_set_output(char *filename);
+extern int32u Alarm_type_mask;
+extern int16u Alarm_cur_priority;
 
-void Alarm_enable_timestamp(const char *format);
-void Alarm_enable_timestamp_high_res(const char *format);
-void Alarm_disable_timestamp(void);
+void  Alarmp(int16 priority, int32 type, char *message, ...);
+void  Alarm(int32 type, char *message, ...);
 
-void Alarm_set_types(int32 mask);
-void Alarm_clear_types(int32 mask);
+void  Alarm_set_output(char *filename);
+
+void  Alarm_enable_timestamp(const char *format);
+void  Alarm_enable_timestamp_high_res(const char *format);
+void  Alarm_disable_timestamp(void);
+
+void  Alarm_set_types(int32 mask);
+void  Alarm_clear_types(int32 mask);
 int32 Alarm_get_types(void);
 
-void Alarm_set_priority(int16 priority);
+void  Alarm_set_priority(int16 priority);
 int16 Alarm_get_priority(void);
 
-void Alarm_set_realtime_print_handler( alarm_realtime_handler *output_message_function );
+void  Alarm_set_realtime_print_handler( alarm_realtime_handler *output_message_function );
 
-void Alarm_set_interactive(void);
-int  Alarm_get_interactive(void);
+void  Alarm_set_interactive(void);
+int   Alarm_get_interactive(void);
 
 #define IPF "%d.%d.%d.%d"
 
