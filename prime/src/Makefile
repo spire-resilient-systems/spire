@@ -55,7 +55,7 @@ SPINES_LIB = ../../spines/libspines/libspines.a
 
 CC = gcc
 #CFLAGS = -g -pg -O2 -Wall $(SPINES) $(INC)  
-CFLAGS += -g -O2 -Wall $(SPINES) $(INC)  
+CFLAGS += -g -O2 -Wall -DNDEBUG $(SPINES) $(INC)  
 
 WRAPPER_OBJ = error_wrapper.o openssl_rsa.o
 
