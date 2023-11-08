@@ -26,6 +26,8 @@
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -91,7 +93,7 @@ int main(int argc, char** argv)
   Alarm( PRINT, "|    Jonathan Kirsch           jak@cs.jhu.edu                               |\n");
   Alarm( PRINT, "|    John Lane                 johnlane@cs.jhu.edu                          |\n");
   Alarm( PRINT, "|    Marco Platania            platania@cs.jhu.edu                          |\n");
-  Alarm( PRINT, "|    Amy Babay                 babay@pitt.edu                             |\n");
+  Alarm( PRINT, "|    Amy Babay                 babay@pitt.edu                               |\n");
   Alarm( PRINT, "|    Thomas Tantillo           tantillo@cs.jhu.edu                          |\n");
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| Major Contributors:                                                       |\n");
@@ -101,7 +103,7 @@ int main(int argc, char** argv)
   Alarm( PRINT, "| WWW:     www.dsn.jhu/prime   www.dsn.jhu.edu                              |\n");
   Alarm( PRINT, "| Contact: prime@dsn.jhu.edu                                                |\n");
   Alarm( PRINT, "|                                                                           |\n");
-  Alarm( PRINT, "| Version 3.3, Built December 23, 2020                                      |\n"); 
+  Alarm( PRINT, "| Version 4.0 Beta, Built November 8, 2023                                  |\n"); 
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use       |\n");
   Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                 |\n");

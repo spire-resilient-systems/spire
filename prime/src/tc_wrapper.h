@@ -27,6 +27,8 @@
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  * 
  *
  *      
@@ -53,3 +55,6 @@ void TC_Combine_Shares( byte *signature_dest, byte *digest );
 int32u TC_Verify_Signature( int32u site, byte *signature, byte *digest );
 int TC_Check_Share( byte *digest, int32u sender_id );
 void TC_Generate(int req_shares, char *directory);
+int32u TC_Verify_SM_Signature( int32u site, byte *signature, byte *digest );
+void TC_with_args_Generate(int req_shares, char *directory, int faults,int rej_servers,int num_sites);
+

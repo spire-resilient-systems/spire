@@ -961,8 +961,8 @@ int Deliver_and_Forward_Data(sys_scatter *scat, int mode, Link *src_lnk)
   Group_State    *gstate;
 
   if (hdr->ttl <= 0) {
-    printf("src_port = %u, dst_port = %u, routing = %d\n", hdr->source_port, 
-                hdr->dest_port, routing); 
+    /* printf("src_port = %u, dst_port = %u, routing = %d\n", hdr->source_port, 
+                hdr->dest_port, routing); */
     Alarm(PRINT, "Deliver_and_Forward_Data: Non-positive TTL before decrement?!\r\n");
     return ret;
   }

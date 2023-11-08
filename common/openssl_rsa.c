@@ -262,6 +262,33 @@ void OPENSSL_RSA_Generate_Keys(const char *keys_dir) {
       Write_RSA( RSA_TYPE_CONFIG_MNGR_PUBLIC,  s, rsa, keys_dir ); 
       Write_RSA( RSA_TYPE_CONFIG_MNGR_PRIVATE, s, rsa, keys_dir ); 
     }
+    RSA_free(rsa);
+    BN_free(e);
+}
+
+void OPENSSL_RSA_Generate_Keys_with_args(int count,const char *keys_dir) {
+
+    RSA *rsa;
+    int32u s;
+    BIGNUM *e;
+
+    /* Prompt user for a secret key value. */
+
+    /* Generate Keys For Servers, note KEY_SIZE is defined in def.h */
+    rsa = RSA_new();
+    e = BN_new();
+    BN_set_word(e, 3);
+    for ( s = 1; s <= count; s++ ) {
+      if (!RSA_generate_key_ex( rsa, KEY_SIZE, e, NULL)) {
+        printf("OPENSSL_RSA_Generate_Keys: RSA_generate_key failed (%s:%d)", __FILE__, __LINE__);
+        exit(1);
+      }
+      /*RSA_print_fp( stdout, rsa, 4 );*/
+      Write_RSA( RSA_TYPE_PUBLIC,  s, rsa, keys_dir ); 
+      Write_RSA( RSA_TYPE_PRIVATE, s, rsa, keys_dir ); 
+    }
+    RSA_free(rsa);
+    BN_free(e); 
 }
 
 /* Read all of the keys for servers or clients. All of the public keys
@@ -322,7 +349,6 @@ void OPENSSL_RSA_Reload_Prime_Keys(int32u my_number, int32u type, const char *ke
   if ( type == RSA_SERVER ) {
     rt = RSA_TYPE_PRIVATE;
   }   else {
-    //printf("OPENSSL_RSA_Read_Keys: Only RSA_SERVER types need pvt key reload but you are %lu\n",type);
     return;
   }
 
@@ -374,15 +400,11 @@ void OPENSSL_RSA_Make_Digest( const void *buffer, size_t buffer_size,
     //return;
 #endif
 
-    //memset(digest_value, 0, DIGEST_SIZE);
-    //return;
-    //EVP_MD_CTX *mdctx;
     if (mdctx==NULL)
     	mdctx = EVP_MD_CTX_new();
     EVP_DigestInit_ex(mdctx, message_digest, NULL);
     EVP_DigestUpdate(mdctx, buffer, buffer_size);
     EVP_DigestFinal_ex(mdctx, digest_value, &md_len);
-    //EVP_MD_CTX_free(mdctx);
     /* Check to determine if the digest length is expected for sha1. It should
      * be DIGEST_SIZE bytes, which is 20 */
    
@@ -393,9 +415,9 @@ void OPENSSL_RSA_Make_Digest( const void *buffer, size_t buffer_size,
 	exit(0);
     }
 
-#if 1 
-    //printf("Digest size %d: ",md_len);
-    //OPENSSL_RSA_Print_Digest(digest_value);
+#if 0 
+    printf("Digest size %d: ",md_len);
+    OPENSSL_RSA_Print_Digest(digest_value);
 
 #endif
     
@@ -461,8 +483,6 @@ int32u OPENSSL_RSA_Verify_Signature( const byte *digest_value,
     return 1;
 #endif
     
-    /*unsigned int32u rsa_size = RSA_size( private_rsa );*/
-    /*printf("Signature size: %d\n", rsa_size);*/
    
     if ( type == RSA_CLIENT ) {
 	if (number < 1 || number > NUMBER_OF_CLIENTS ) {
@@ -475,7 +495,6 @@ int32u OPENSSL_RSA_Verify_Signature( const byte *digest_value,
 	}
         rsa = public_rsa_by_server[number];
     }else if(type == RSA_CONFIG_MNGR){
-        //printf("**Sahiti Verifying config_mngr_msg\n");
         rsa= public_config_mngr_rsa;
     }
     
@@ -585,17 +604,12 @@ int OPENSSL_RSA_Encrypt(unsigned char *pubKeyFile,unsigned char *data, int data_
     }
    fclose(f);
    
-   //printf("Read pub key \n");
-   //printf("Read key size=%d\n",RSA_size(pubkey));
 
    ret = RSA_public_encrypt(data_len,data,encrypted_data,pubkey,RSA_NO_PADDING);
-   //ret = RSA_public_encrypt(data_len,data,encrypted_data,pubkey,RSA_PKCS1_PADDING);
    if(ret<=0){
         printf("OPENSSL_RSA: Encrypt error ret=%d\n",ret);
         exit(1);
    }
-   //printf("OPENSSL_RSA: encrypted data is %s\n",encrypted_data);
-   fflush(stdout);
    return ret;
 }
 
@@ -609,7 +623,6 @@ void OPENSSL_RSA_Decrypt(unsigned char *pvtKeyFile,unsigned char *data, int data
         exit(1);
    }
    RSA *pvtkey=RSA_new(); 
-   //pvtkey = PEM_read_RSAPrivateKey(f, NULL, NULL, NULL);
    pvtkey = PEM_read_RSAPrivateKey(f, &pvtkey, NULL, NULL);
     if(!pvtkey){
         printf("OPENSSL_RSA: Error reading pvt key\n");
@@ -619,15 +632,11 @@ void OPENSSL_RSA_Decrypt(unsigned char *pvtKeyFile,unsigned char *data, int data
    fclose(f);
    
  
-   //RSA_PKCS1_PADDING - 11B padding
-   //RSA_PKCS1_OAEP_PADDING - 42B padding
-    ret= RSA_private_decrypt(data_len,data,decrypted_data,pvtkey,RSA_NO_PADDING);
-    //ret= RSA_private_decrypt(data_len,data,decrypted_data,pvtkey,RSA_PKCS1_PADDING);
+   ret= RSA_private_decrypt(data_len,data,decrypted_data,pvtkey,RSA_NO_PADDING);
    if(ret<=0){
         printf("OPENSSL_RSA: Decrypt error ret=%d\n",ret);
         exit(1);
    }
-   //printf("OPENSSL_RSA: Decrypted text=%s\n",decrypted_data);
  
 }
 

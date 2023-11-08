@@ -50,7 +50,8 @@ void    parser_init();
 #define ext
 #endif
 
-ext     FILE		*yyin;
+/* AB: Making this real extern */
+extern     FILE		*yyin;
 
 #define MAX_CONF_STRING 20000
 ext     char            ConfStringRep[MAX_CONF_STRING];

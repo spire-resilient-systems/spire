@@ -109,8 +109,8 @@
  * assume there is one Spines daemon per site */
 #define SPINES_EXT_SITE_ADDRS {"192.168.101.101", \
                                "192.168.101.102", \
-			       "192.168.101.103", \
-			       "192.168.101.104"}
+                               "192.168.101.103", \
+                               "192.168.101.104" }
 
 /* List of IP addresses for Spines daemons on the internal Spines network
  * connecting all the control-center and data-center sites with one another. We
@@ -118,7 +118,7 @@
 #define SPINES_INT_SITE_ADDRS {"192.168.101.101", \
                                "192.168.101.102", \
                                "192.168.101.103", \
-                               "192.168.101.104"}
+                               "192.168.101.104" }
 
 /* IP address for the Spines daemon that connects with the PLC/RTU proxy or
  * proxies */

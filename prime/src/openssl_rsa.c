@@ -26,6 +26,8 @@
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -100,6 +102,49 @@ void Write_BN(FILE *f, const BIGNUM *bn)
   OPENSSL_free(bn_buf);
   /* Note: The memory for the BIGNUM should be freed if the bignum will not
    * be used again. TODO */ 
+}
+
+
+void Write_RSA_To_Dir( int32u rsa_type, int32u server_number, RSA *rsa, const char *keys_dir)
+{
+  FILE *f;
+  char fileName[100];
+  const BIGNUM *n, *e, *d;
+  const BIGNUM *p, *q;
+  const BIGNUM *dmp1, *dmq1, *iqmp;
+
+  /* Write an RSA structure to a file */
+  if(rsa_type == RSA_TYPE_PUBLIC)
+    snprintf(fileName, 100, "%s/public_%02d.key", keys_dir, server_number);
+  else if(rsa_type == RSA_TYPE_PRIVATE)
+    snprintf(fileName, 100, "%s/private_%02d.key", keys_dir, server_number);
+  else if(rsa_type == RSA_TYPE_CLIENT_PUBLIC)
+    snprintf(fileName, 100, "%s/public_client_%02d.key", keys_dir, server_number);
+  else if(rsa_type == RSA_TYPE_CLIENT_PRIVATE)
+    snprintf(fileName, 100, "%s/private_client_%02d.key", keys_dir, server_number);
+  else if(rsa_type == RSA_TYPE_NM_PUBLIC)
+    snprintf(fileName, 100, "%s/public_config_mngr.key", keys_dir);
+  else if(rsa_type == RSA_TYPE_NM_PRIVATE)
+    snprintf(fileName, 100, "%s/private_config_mngr.key", keys_dir);
+
+  f = fopen(fileName, "w");
+
+  RSA_get0_key(rsa, &n, &e, &d);
+  RSA_get0_factors(rsa, &p, &q);
+  RSA_get0_crt_params(rsa, &dmp1, &dmq1, &iqmp);
+  Write_BN(f, n);
+  Write_BN(f, e);
+
+  if(rsa_type == RSA_TYPE_PRIVATE || rsa_type == RSA_TYPE_CLIENT_PRIVATE || rsa_type ==RSA_TYPE_NM_PRIVATE) {
+    Write_BN( f, d );
+    Write_BN( f, p );
+    Write_BN( f, q );
+    Write_BN( f, dmp1 );
+    Write_BN( f, dmq1 );
+    Write_BN( f, iqmp );
+  }
+  fprintf( f, "\n" );
+  fclose(f);
 }
 
 void Write_RSA( int32u rsa_type, int32u server_number, RSA *rsa) 
@@ -256,6 +301,30 @@ void OPENSSL_RSA_Generate_Keys() {
     BN_free(e);
 }
 
+void OPENSSL_RSA_Generate_Keys_with_args(int count,const char *keys_dir) {
+
+    RSA *rsa;
+    int32u s;
+    BIGNUM *e;
+    int ret;
+    /* Prompt user for a secret key value. */
+
+    /* Generate Keys For Servers */
+    rsa = RSA_new();
+    e = BN_new();
+    BN_set_word(e, 3);
+    for ( s = 1; s <= count; s++ ) {
+      ret = RSA_generate_key_ex( rsa, 1024, e, NULL );
+      if (ret != 1)
+        Alarm(EXIT, "OPENSSL_RSA_Generate_Keys: RSA_generate_key failed\n");
+      /*RSA_print_fp( stdout, rsa, 4 );*/
+      Write_RSA_To_Dir( RSA_TYPE_PUBLIC,  s, rsa, keys_dir ); 
+      Write_RSA_To_Dir( RSA_TYPE_PRIVATE, s, rsa, keys_dir ); 
+    } 
+
+    RSA_free(rsa);
+    BN_free(e);
+}
 /* Read all of the keys for servers or clients. All of the public keys
  * should be read and the private key for this server should be read. */
  void OPENSSL_RSA_Read_Keys(int32u my_number, int32u type,char *dir)
@@ -290,6 +359,11 @@ void OPENSSL_RSA_Generate_Keys() {
     rt = RSA_TYPE_CLIENT_PRIVATE;
   } else if ( type == RSA_NM ) {
     rt = RSA_TYPE_NM_PRIVATE;
+  } else if(type== RSA_CONFIG_MNGR){
+      rt = RSA_TYPE_NM_PRIVATE;
+      printf("RSA_TYPE_CONFIG_MNGR_PRIVATE\n");
+  } else if(type== RSA_CONFIG_AGENT){
+    return;
   } else {
     printf("OPENSSL_RSA_Read_Keys: Called with invalid type.\n");
     exit(0);
@@ -524,6 +598,105 @@ int OPENSSL_RSA_Verify( const unsigned char *message, size_t message_length,
     ret =  OPENSSL_RSA_Verify_Signature( md_value, signature, number, type );
 
    
+    return ret;
+}
+
+int OPENSSL_RSA_Get_KeySize(unsigned char *pubKeyFile){
+
+   FILE *f=fopen(pubKeyFile,"r");
+   if (!f){
+        printf("Error opening file\n");
+        exit(1);
+   }
+
+   RSA *pubkey=RSA_new();
+   pubkey = PEM_read_RSA_PUBKEY(f, &pubkey, NULL, NULL);
+    if(!pubkey){
+        printf("OPENSSL_RSA: Error reading pub key\n");
+        fclose(f);
+        exit(1);
+    }
+   fclose(f);
+   return RSA_size(pubkey);
+}
+
+int OPENSSL_RSA_Encrypt(unsigned char *pubKeyFile,unsigned char *data, int data_len, unsigned char * encrypted_data){
+
+   int ret;
+
+  FILE *f=fopen(pubKeyFile,"r");
+   if (!f){
+        printf("Error opening file\n");
+        exit(1);
+   }
+
+   RSA *pubkey=RSA_new();
+   pubkey = PEM_read_RSA_PUBKEY(f, &pubkey, NULL, NULL);
+    if(!pubkey){
+        printf("OPENSSL_RSA: Error reading pub key\n");
+        fclose(f);
+        exit(1);
+    }
+   fclose(f);
+
+   /*printf("Read pub key \n");*/
+   /*printf("Read key size=%d\n",RSA_size(pubkey));*/
+
+   ret = RSA_public_encrypt(data_len,data,encrypted_data,pubkey,RSA_NO_PADDING);
+   /*ret = RSA_public_encrypt(data_len,data,encrypted_data,pubkey,RSA_PKCS1_PADDING);*/
+   if(ret<=0){
+        printf("OPENSSL_RSA: Encrypt error ret=%d\n",ret);
+        exit(1);
+   }
+   /*printf("OPENSSL_RSA: encrypted data is %s\n",encrypted_data);*/
+   fflush(stdout);
+   return ret;
+}
+
+void OPENSSL_RSA_Decrypt(unsigned char *pvtKeyFile,unsigned char *data, int data_len, unsigned char *decrypted_data){
+    int ret;
+
+   FILE *f=fopen(pvtKeyFile,"r");
+   if (!f){
+        printf("Error opening file\n");
+        exit(1);
+   }
+   RSA *pvtkey=RSA_new();
+   /*pvtkey = PEM_read_RSAPrivateKey(f, NULL, NULL, NULL);*/
+   pvtkey = PEM_read_RSAPrivateKey(f, &pvtkey, NULL, NULL);
+    if(!pvtkey){
+        printf("OPENSSL_RSA: Error reading pvt key\n");
+        fclose(f);
+        exit(1);
+    }
+   fclose(f);
+
+
+   /*RSA_PKCS1_PADDING - 11B padding */
+   /*RSA_PKCS1_OAEP_PADDING - 42B padding */
+    ret= RSA_private_decrypt(data_len,data,decrypted_data,pvtkey,RSA_NO_PADDING);
+    /*ret= RSA_private_decrypt(data_len,data,decrypted_data,pvtkey,RSA_PKCS1_PADDING);*/
+   if(ret<=0){
+        printf("OPENSSL_RSA: Decrypt error ret=%d\n",ret);
+        exit(1);
+   }
+   /*printf("OPENSSL_RSA: Decrypted text=%s\n",decrypted_data);*/
+
+}
+
+int getFileSize(unsigned char * fileName){
+    int ret=0;
+
+    FILE *fp = fopen(fileName, "r");
+    if(!fp){
+        printf("Error opening file %s\n",fileName);
+        exit(1);
+    }
+    fseek(fp, 0L, SEEK_SET);
+    fseek(fp, 0, SEEK_END);
+    ret=ftell(fp);
+    fseek(fp, 0L, SEEK_SET);
+    fclose(fp);
     return ret;
 }
 

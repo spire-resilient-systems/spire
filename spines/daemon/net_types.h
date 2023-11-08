@@ -128,7 +128,7 @@
 #define     PONG 2
 
 #define     MAX_NODES            50
-#define     MAX_PKTS_PER_MESSAGE 200
+#define     MAX_PKTS_PER_MESSAGE 45
 #define     MAX_MESSAGE_SIZE     (MAX_PACKET_SIZE * MAX_PKTS_PER_MESSAGE)
 
 typedef int32u         Spines_ID;  /* a logical Spines ID -- can be a node id, a group id or a network interface id */
@@ -167,7 +167,7 @@ typedef	struct	dummy_packet_header {
     Node_ID         sender_id;     /* Sender of this network packet, and NOT
 			              the originator of the message */
     int32u          ctrl_link_id;  /* sender's control link "session" identifier */
-    int32u          data_len;      /* Length of the data */
+    int16u          data_len;      /* Length of the data */
     int16u          ack_len;       /* Length of the acknowledgement tail */
     int16u          seq_no;        /* Sequence number of the packet for link loss_rate */
 } packet_header;
@@ -181,7 +181,7 @@ typedef	struct	dummy_udp_pkt_header {
     int32u            reserved32;
     int16u            source_port;
     int16u            dest_port;
-    int32u            len;
+    int16u            len;
     int16u            seq_no;
     int16u            sess_id;
     char              frag_num;   /* For fragmented packets: total num of fragments */

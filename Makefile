@@ -50,20 +50,20 @@ base_dir=.
 
 .PHONY: all clean plcs libs clean_libs prime clean_prime spines openplc pvb iec substation clean_substation
 
-SUBDIRS=hmis proxy modbus dnp3 benchmark  
+SUBDIRS=hmis proxy modbus dnp3 benchmark plcs 
 SS_SUBDIRS= relay_emulator proxy_iec61850 benchmarks_ss trip_master_v2 trip_master
 
-all: base_prime $(SUBDIRS)
+all:  $(SUBDIRS)
 	for dir in $(SUBDIRS); do \
     	( $(MAKE) -C $$dir); \
 	done
-	cd scada_master; make spire; cd ../configuration_module; make; cd ../plcs; make 
+	cd scada_master; make spire 
 
-conf_spire: conf_prime $(SUBDIRS)
+conf_spire: $(SUBDIRS)
 	for dir in $(SUBDIRS); do \
     	( $(MAKE) -C $$dir); \
 	done
-	cd scada_master; make conf_spire;cd ../plcs; make
+	cd scada_master; make conf_spire
 
 
 
@@ -77,10 +77,8 @@ plcs:
 
 
 base_prime:
-	make -C prime/src base_prime
+	make -C prime/src 
 
-conf_prime:
-	make -C prime/src conf_base_prime
 
 clean_prime:
 	make -C prime/src cleaner
@@ -98,7 +96,7 @@ iec:
 	cd libiec61850; make; make install
 
 # Builds libraries
-libs: openplc pvb iec spines 
+libs: openplc pvb iec spines base_prime 
 
 
 clean_libs: clean_prime
@@ -115,4 +113,4 @@ clean: clean_libs  clean_substation
 	for dir in $(SUBDIRS); do \
     	( $(MAKE) -C $$dir clean); \
 	done
-	cd scada_master; make clean; cd ../configuration_module; make clean; cd ../plcs; make clean
+	cd scada_master; make clean

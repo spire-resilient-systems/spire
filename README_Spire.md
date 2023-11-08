@@ -72,12 +72,13 @@ Network using the provided Configuration Manager (see Deployment Overview).
 
 ## Deployment Overview
 
-A Spire deployment includes: Configuration Agent, SCADA Master replicas, Prime 
+A Spire deployment includes: SCADA Master replicas, Prime 
 daemons, Spines daemons, PLC/RTU proxies, real or emulated PLCs and/or RTUs, and HMIs. 
 These components can be distributed over multiple sites connected by a wide-area
 network, over multiple logical sites within a local-area network (with or
 without emulated wide-area latency) or as a single site in a local-area
-network.
+network. To support reconfiguration, we can optionally deploy a Configuration
+Manager, Configuration Agents, and a Spines Configuration Network.
 
 We typically deploy Spire with SCADA Master replicas distributed across several
 sites. For each SCADA master replica, we also deploy a Prime daemon and 
@@ -85,14 +86,14 @@ Configuration Agent that the SCADA master connects to. Each SCADA master is
 located on the same machine as its Prime daemon and configuration agent
 and connects to them via IPC.
 
-Communication in the system occurs over three Spines overlay networks: a configuration
-network, an external network and an internal network.
-The Configuration Network is used to communicate the current valid configuration to all
-SCADA Master replicas and client. The external network is used for
-communication between the SCADA Master replicas and the PLC/RTU proxies and the
-HMIs. The internal network is used for communication among the SCADA Master
-replicas (and their Prime daemons). Configuration, external and internal Spines daemons can be
-deployed on the same machines but use different ports.
+Communication in the system occurs over three Spines overlay networks: an
+external network, an internal network, and a (optional) configuration network.
+The external network is used for communication between the SCADA Master
+replicas and the PLC/RTU proxies and the HMIs. The internal network is used for
+communication among the SCADA Master replicas (and their Prime daemons). The
+Configuration Network is used to communicate the current valid configuration to
+all SCADA Master replicas and client. The external, internal, and configuration
+Spines daemons can all be deployed on the same machines but use different ports.
 
 We distinguish between two types of sites that can contain SCADA Master
 replicas: control centers and data centers. This is because power grid control
@@ -100,7 +101,8 @@ centers with full capabilities for controlling PLCs and RTUs are generally
 expensive, and utility companies are unlikely to deploy more than two. To
 support the desired resilience with only two control centers, we allow
 additional sites to be added as data-center sites that do not control PLCs or
-RTUs. However, all sites run Configuration Spines and Configuration Agents.
+RTUs. When supporting reconfiguration, all sites run Configuration Spines
+daemons and Configuration Agents.
 
 In each site that contains SCADA Master replicas (including both control
 centers and data centers), we typically deploy one Spines daemon that
@@ -130,10 +132,10 @@ over the external Spines network to be agreed upon and sent to the HMI. The HMI
 verifies the threshold signature on the update and updates its display.
 
 
-During reconfiguration, the configuration maanger issues a configuration message
-on configuration network. The configuration agents validates it and then passes it to
-its local replica or PLC/RTU or HMI to adopt the new configuration and resume normal 
-flow of the system.
+During reconfiguration, the Configuration Manager issues a configuration
+message on configuration network. Each Configuration Agent validates it and
+then passes it to its local replica or PLC/RTU or HMI to adopt the new
+configuration and resume normal flow of the system.
 
 ---
 
@@ -280,10 +282,9 @@ generated before the system can run.
 2. Prime
     - To generate keys:
 
-            cd prime/bin; ./gen_keys
-	    cd prime/bin; ./gen_tpm_keys.sh
+            cd prime/bin; ./gen_keys; ./gen_tpm_keys.sh
 
-    - This creates the following in `prime/bin/keys`:
+    - The `gen_keys` command creates the following in `prime/bin/keys`:
        - `NUM_SERVERS` server public-private key pairs (with public keys
           `public_01.key`, `public_02.key`, ... and private keys
           `private_01.key`, `private_02.key`, ...)
@@ -303,7 +304,7 @@ generated before the system can run.
         - Note that Prime's `gen_keys` program currently generates SCADA Master
           threshold crypto shares as well (see below)
  
-    - The second command generates the following keys in `prime/bin/tpm_keys`:
+    - The `gen_tpm_keys.sh` command generates the following keys in `prime/bin/tpm_keys`:
         - `MAX_NUM_SERVERS` server public-private key pairs (with public keys
           `tpm_public1.key`, `tpm_public2.key`, ... and private keys
           `tpm_private1.key`, `tpm_private2.key`, ...)
@@ -415,10 +416,10 @@ parameters in `common/def.h`
    The `global_id` is the SCADA Master's global ID and ranges from 1 to
    `MAX_NUM_SERVERS`. Each SCADA Master communicates with Prime using IPC and
    the IPC PATH uses this global id. So, each SCADA Master and its
-   corresponding Prime deamon with the same `global_id` should be run on same
+   corresponding Prime daemon with the same `global_id` should be run on same
    machine. 
 
-   The `curent_id` should be the current local ID of this replica.
+   The `current_id` should be the current local ID of this replica.
    The `current_id` IDs range from 1 to `NUM_SM`. It changes as configurations vary.
  
    The code assumes replicas are striped across sites; for example,
@@ -435,11 +436,12 @@ parameters in `common/def.h`
 
         cd prime/bin; ./prime -i id -g global_id
 
-   The `global_id` of a Prime daemon must match the global_id of the SCADA Master that
+   The `global_id` of a Prime daemon must match the `global_id` of the SCADA Master that
    connects to it (and is running on the same machine as it).
 
-   The `id` should match `curent_id` of scada_master. This is used to represent
-   the ID of the replica in current configuration and it can vary withconfigurations.
+   The `id` should match `current_id` of the scada_master. This is used to represent
+   the ID of the replica in the current configuration and can vary with
+   configurations (e.g. it may change after reconfiguration).
  
 
 4. Run PLC/RTU proxies
@@ -474,54 +476,56 @@ parameters in `common/def.h`
    installation folder). In the browser's address bar, give the IP address of
    the HMI and the `pv_port` (e.g. 192.168.101.108:5050).
 
-6. Running Configuration Manager and Agents
-   These are optional i.e., need to be run only if reconfiguration is needed.
-   Run Configuration Agent on SCADA Master Node, HMI Node, RTU/PLC Nodes:
+6. (Optional) Run Configuration Manager and Agents (from `/prime/bin` directory)
+   These components are used to support reconfiguration.
+
+   Run a Configuration Agent on each SCADA Master Node, HMI Node, RTU/PLC Node:
 
    On SCADA Master Node:
 
-        ./config_agent id IP_of_config_spines s count sm_id_1 sm_id_2 .... sm_id_n
+        ./config_agent id IP_of_config_spines /tmp/sm_ipc_main s count sm_id_1 sm_id_2 .... sm_id_n
 
    On RTU/PLC Node:
 
    - If Benchmarks are run:
 
-        `./config_agent id IP_of_config_spines b count`
+        `./config_agent id IP_of_config_spines /tmp/bm_ipc_main p count`
 
    - If Proxies are run:
 
-        `./config_agent id IP_of_config_spines p count`
+        `./config_agent id IP_of_config_spines /tmp/rtu_ipc_main p count`
 
    On HMI Node:
 
-        ./config_agent id IP_of_config_spines h 1 hmi_id
+        ./config_agent id IP_of_config_spines /tmp/hm_ipc_main p count
 
    - `id` is the configuration agent ID. You should give each configuration
      agent a unique ID, starting from 1, up to the total number of SCADA
      Master, RTU/PLC, and HMI agents.
    - `IP_of_config_spines` is the IP address of control spines deamon to connect to.
-   - The `s`, `b`, `p`, or `h` argument indicates the node type as SCADA Master
-     (`s`) or benchmark (`b`), proxy (`p`) or HMI (`h`)
+   - The `s` or `p` argument indicates the node type as SCADA Master
+     (`s`) or benchmark, proxy or HMI (`p`)
    - `count` refers to number of processes running on the node. For example:
         - If there is one SCADA Master (say with `global_id` 5) running on a
           node we can start config agent as:
-                `./config_agent 5 s 1 5`
+                `./config_agent 5 /tmp/sm_ipc_main s 1 5`
         - However, if there are multiple SCADA Masters running on the node (say with `global_ids` 1,4,7)
           the we run config agent on that node as:
-                `./config_agent 1 s 3 1 4 7`
+                `./config_agent 1 /tmp/sm_ipc_main s 3 1 4 7`
         - Similarly, if there are 10 benchmarks or proxies on the node we run
           config agents with `count` as 10
-    - The `hmi_id` is: 1 for JHU, 2 for PNNL and 3 for EMS scenario (defined in `common/scada_packets.h`)
+    - The hmi_ids are: 1 for JHU, 2 for PNNL and 3 for EMS scenario (defined in `common/scada_packets.h`). 
+      So, count 3 can be used for all 3 scenarios.	
 
     Run Configuration Manager:
 
         ./config_manager configuration_dir_path
 
-	- We typically run the Configuration Manager on same node as HMIs.
+	- We typically run the Configuration Manager on same node as HMIs and its IP is define in `prime/src/def.h`.
         - The `configuration_dir_path` refers to a directory with two files
           (`conf_def.txt` and `new_conf.txt`) that are used to generate new configuraions.
         - Examples of these files for configs 6+6+6, 6, and 6-6 are provided in
-          the `configuration_module` directory.
+          the `prime/bin` directory.
 
 7. (Optional) Run OpenPLC PLCs
 
@@ -558,16 +562,16 @@ parameters in `common/def.h`
 
    To run:
 
-        cd benchmark; ./oob_benchmark id SPINES_RTU_ADDR:SPINES_EXT_PORT poll_frequency(usec) num_polls
+        cd benchmark; ./benchmark id SPINES_RTU_ADDR:SPINES_EXT_PORT poll_frequency(usec) num_polls
 
    The benchmark client will send an update every `poll_frequency` microseconds
    and will exit after completing `num_polls` updates. Benchmark client ids
    range from 0 to `NUM_RTU - 1`.
 
-### (Optional) Setup Intrusion Detection System
+9. (Optional) Setup Intrusion Detection System
 
-The Intrusion Detection was built as a standalone component. See inside the `ids` folder for details
-on setup and running.
+   The Intrusion Detection was built as a standalone component. See inside the
+   `ids` folder for details on setup and running.
 
 ### Example
 
@@ -608,7 +612,7 @@ To run this example, execute the following:
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd scada_master; ./scada_master 1 1 192.168.101.101:8100 192.168.101.101:8120
         cd prime/bin; ./prime -i 1 -g 1
-        cd configuration_module;./config_agent 1 192.168.101.101 s 1 1
+        cd prime/bin;./config_agent 1 192.168.101.101 /tmp/sm_ipc_main s 1 1
 
 - On control center 2 machine:
 
@@ -617,7 +621,7 @@ To run this example, execute the following:
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd scada_master; ./scada_master 2 2 192.168.101.102:8100 192.168.101.102:8120
         cd prime/bin; ./prime -i 2 -g 2
-        cd configuration_module;./config_agent 2 192.168.101.101 s 2 2
+        cd prime/bin;./config_agent 2 192.168.101.102 /tmp/sm_ipc_main s 2 2
 
 - On control center 3 machine:
 
@@ -626,7 +630,7 @@ To run this example, execute the following:
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd scada_master; ./scada_master 3 3 192.168.101.103:8100 192.168.101.103:8120
         cd prime/bin; ./prime -i 3 -g 3
-        cd configuration_module;./config_agent 3 192.168.101.101 s 3 3
+        cd prime/bin;./config_agent 3 192.168.101.103 /tmp/sm_ipc_main s 3 3
 
 - On control center 4 machine:
 
@@ -635,7 +639,7 @@ To run this example, execute the following:
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd scada_master; ./scada_master 4 4 192.168.101.104:8100 192.168.101.104:8120
         cd prime/bin; ./prime -i 4 -g 4
-        cd configuration_module;./config_agent 4 192.168.101.101 s 4 4
+        cd prime/bin;./config_agent 4 192.168.101.104 s 4 4
 
 - On control center 5 machine:
 
@@ -644,7 +648,7 @@ To run this example, execute the following:
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd scada_master; ./scada_master 5 5 192.168.101.105:8100 192.168.101.105:8120
         cd prime/bin; ./prime -i 5 -g 5
-        cd configuration_module;./config_agent 5 192.168.101.101 s 5 5
+        cd prime/bin;./config_agent 5 192.168.101.105 /tmp/sm_ipc_main s 5 5
 
 - On control center 6 machine:
 
@@ -653,7 +657,7 @@ To run this example, execute the following:
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd scada_master; ./scada_master 6 6 192.168.101.106:8100 192.168.101.106:8120
         cd prime/bin; ./prime -i 6 -g 6
-        cd configuration_module;./config_agent 6 192.168.101.101 s 6 6
+        cd prime/bin;./config_agent 6 192.168.101.106 /tmp/sm_ipc_main s 6 6
 
 - On the PLC/RTU proxy machine:
 
@@ -674,7 +678,7 @@ To run this example, execute the following:
         cd plcs/ems_hydro; sudo ./openplc -m 516 -d 20014
         cd plcs/ems_solar; sudo ./openplc -m 517 -d 20015
         cd plcs/ems_wind; sudo ./openplc -m 518 -d 20016
-        cd configuration_module;./config_agent 7 192.168.101.101 p 10
+        cd prime/bin;./config_agent 7 192.168.101.107 /tmp/rtu_ipc_main p 10
 
 - On the HMI machine:
 
@@ -683,36 +687,36 @@ To run this example, execute the following:
         cd jhu_hmi; ./jhu_hmi 192.168.101.108:8120 -port=5051
         cd pnnl_hmi; ./pnnl_hmi 192.168.101.108:8120 -port=5052
         cd ems_hmi; ./ems_hmi 192.168.101.108:8120 -port=5053
-        cd configuration_module;./config_agent 8 192.168.101.101 h 1 HMI_ID
+        cd prime/bin;./config_agent 8 192.168.101.108 /tmp/hmi_ipc_main p 3
 
     Connect GUIs by running the pvbrowser application (located in main pvb
     installation folder) three times. In one browser's address bar, type
     `192.168.101.108:5051`, in another type `192.168.101.108:5052`, and in the
     last type `192.168.101.108:5053`.
 
-	This corresponds to the `conf_6` configuration in the `example_conf` directory.
-	Two additional example configurations are provided in that directory: `conf_4`
-	(4 replicas, default configuration in Spire 1.0) and `conf_3+3+3+3` (12
-	replicas divided across 4 sites). See `example_conf/README.txt` for details.
+	This corresponds to the `conf_6` configuration (default) in the `example_conf` directory.
+	Three additional example configurations are provided in that directory: `conf_4`
+	(4 replicas), `conf_3+3+3+3` (12 replicas divided across 4 sites) and `conf_6+6+6` 
+        (18 relicas across 3 sites). See `example_conf/README.txt` for details.
 
 - To perform reconfiguration, you can use the Configuration Manager with the
-  following commands on the HMI Machine:
+  following commands on the HMI Machine (from prime/bin directory):
 
     To change to config 6+6+6:
 
-        cd configuration_module;./config_manager conf_666
+        cd prime/bin;./config_manager conf_666
 
     To change to config 6 (CC1):
 
-        cd configuration_module;./config_manager conf_6
+        cd prime/bin;./config_manager conf_6
 
     To change to config 6(CC2):
 
-        cd configuration_module;./config_manager 2cc_conf_6
+        cd prime/bin;./config_manager 2cc_conf_6
 
 
     The `conf_666`, `conf_6` and `2cc_conf_6` are directories with the relevant
     configurations. Examples of these are provided in the
-    `configuration_module` directory. Note that the IPs, Ports and ID in
+    `prime/bin` directory. Note that the IPs, Ports and ID in
     `new_conf.txt` file of these directories need to be modified to match the
     testbed.

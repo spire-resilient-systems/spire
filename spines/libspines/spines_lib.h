@@ -145,7 +145,7 @@ extern "C" {
  * safe. Today libspines doesn't have all the info needed to enforce this, so
  * it needs to be done manually. Additional size checking is done at the daemon
  * level though, so this client-level check isn't technically crucial. */
-#define     MAX_SPINES_CLIENT_MSG   200000
+#define     MAX_SPINES_CLIENT_MSG   50000
 
 /* IP Address Class Check */
 #ifndef Is_mcast_addr

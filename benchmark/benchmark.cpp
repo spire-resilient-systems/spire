@@ -52,21 +52,28 @@
 #include <unistd.h>
 #include <pthread.h>
 
+#include <sys/un.h>
+#include <arpa/inet.h>
 #include <sys/socket.h>
 #include <sys/time.h>
 #include <signal.h>
 
+
 extern "C" {
+  #include "../common/openssl_rsa.h"
   #include "../common/scada_packets.h"
   #include "../common/net_wrapper.h"
   #include "../common/def.h"
   #include "../common/itrc.h"
+#include "spu_events.h"
+#include "spines_lib.h"
 }
 
 /* Local Defines */
 #define NUM_BUCKETS 500    /* # of buckets used for latency histogram */
 #define BUCKET_SIZE 1      /* size (milliseconds latency) of each bucket */
 
+int ctrl_spines;
 int               ipc_sock;
 seq_pair          seq;
 itrc_data         itrc_main, itrc_thread;
@@ -74,11 +81,54 @@ int               Histogram[NUM_BUCKETS];
 double            Sum_Lat, Count_Lat, Min_Lat, Max_Lat;
 struct timeval    Poll_Period;
 int32u            Num_Polls;
-//FILE              *fw;
-//char              fw_buf[36000];
+struct sockaddr_in name;
+struct ip_mreq mreq;
+
+struct timeval reconf_st, reconf_end;
+int print_reconf;
+
+extern int32u My_Global_Configuration_Number;
+
 
 /* Local Functions */
 void Print_Statistics();
+void Process_Config_Msg(signed_message * conf_mess,int mess_size);
+
+void Process_Config_Msg(signed_message * conf_mess,int mess_size){
+
+    
+    config_message *c_mess;
+    int ret;
+    
+    gettimeofday(&reconf_st, NULL);
+    print_reconf=1;
+
+    if (mess_size!= sizeof(signed_message)+sizeof(config_message)){
+        printf("Config message is %d ,not expected size of %d\n",mess_size, sizeof(signed_message)+sizeof(config_message));
+        return;
+    }
+
+    if(!OPENSSL_RSA_Verify((unsigned char*)conf_mess+SIGNATURE_SIZE,
+                sizeof(signed_message)+conf_mess->len-SIGNATURE_SIZE,
+                (unsigned char*)conf_mess,conf_mess->machine_id,RSA_CONFIG_MNGR)){
+        printf("Benchmark: Config message signature verification failed\n");
+
+        return;
+    }
+    if(conf_mess->global_configuration_number<=My_Global_Configuration_Number){
+        printf("Got config=%u and I am already in %u config\n",conf_mess->global_configuration_number,My_Global_Configuration_Number);
+        return;
+    }
+    My_Global_Configuration_Number=conf_mess->global_configuration_number;
+    c_mess=(config_message *)(conf_mess+1);
+    //Reset SM
+    Reset_SM_def_vars(c_mess->N,c_mess->f,c_mess->k,c_mess->num_cc_replicas, c_mess->num_cc,c_mess->num_dc);
+    Reset_SM_Replicas(c_mess->tpm_based_id,c_mess->replica_flag,c_mess->spines_ext_addresses,c_mess->spines_int_addresses);
+        ret = IPC_Send(ipc_sock, (void *)conf_mess, mess_size, itrc_main.ipc_remote);
+    if (ret!=mess_size) printf("Conf msg to ITRC Remote: IPC_Send error!\n");
+    sleep(My_ID * 0.1);
+}
+
 
 void Gen_Msg() 
 {
@@ -86,6 +136,7 @@ void Gen_Msg()
     signed_message *mess;
 
     mess = PKT_Construct_Benchmark_Msg(seq);
+    mess->global_configuration_number = My_Global_Configuration_Number; 
     nBytes = sizeof(signed_message) + mess->len;
     seq.seq_num++;
     ret = IPC_Send(ipc_sock, (void *)mess, nBytes, itrc_main.ipc_remote);
@@ -96,7 +147,7 @@ void Gen_Msg()
 void Process_Msg()
 {
     char buf[MAX_LEN];
-    int ret, index; 
+    int ret, index,ret2; 
     double latency;
     signed_message *mess;
     benchmark_msg *ben;
@@ -105,22 +156,31 @@ void Process_Msg()
     ret = IPC_Recv(ipc_sock, buf, MAX_LEN);
     if (ret < 0) printf("Process_Msg: IPC_Recv error!\n");
     mess = (signed_message *)buf;
+    if(mess->type ==  PRIME_OOB_CONFIG_MSG){
+        //printf("*****************CONF_MSG*****************\n");
+	Process_Config_Msg((signed_message *)buf,ret);
+        return;
+    }
+    
     ben = (benchmark_msg *)(mess + 1);
 
     //printf("BENCHMARK MSG [%d,%u]:\n", ben->sender, ben->seq.seq_num);
     
     ping.tv_sec  = ben->ping_sec;
     ping.tv_usec = ben->ping_usec;
-    //pong.tv_sec  = ben->pong_sec;
-    //pong.tv_usec = ben->pong_usec;
-    //apx_oneway = diffTime(pong, ping);
-    //printf("\tapx_oneway = %lu s %lu us\n", apx_oneway.tv_sec, apx_oneway.tv_usec);
 
     gettimeofday(&now, NULL);
     rtt = diffTime(now, ping);
     //printf("\trtt = %lu s %lu us\n", rtt.tv_sec, rtt.tv_usec);
     printf("%d\t%d\t%lu\t%lu\t%lu\t%lu\n", ben->sender, ben->seq.seq_num,
             now.tv_sec, now.tv_usec, rtt.tv_sec, rtt.tv_usec);
+
+    if(print_reconf){
+        gettimeofday(&reconf_end,NULL);
+        print_reconf=0;
+        struct timeval reconf_dur=diffTime(reconf_end,reconf_st);
+        //printf("*******Reconf time=%lu \t %lu********\n",reconf_dur.tv_sec,reconf_dur.tv_usec);
+    }
 
     // Bookkeeping for Statistics
     latency = rtt.tv_sec + rtt.tv_usec / 1000000.0;
@@ -177,7 +237,9 @@ static void init(int ac, char **av)
         exit(EXIT_FAILURE);
     }
 
+    My_Global_Configuration_Number=0;
     Init_SM_Replicas();
+
 
     // Net Setup
     seq.seq_num = 1;
@@ -185,17 +247,8 @@ static void init(int ac, char **av)
     seq.incarnation = now.tv_sec;
     Type = RTU_TYPE;
     sscanf(av[1], "%d", &My_ID);
-    Prime_Client_ID = (NUM_SM + 1) + My_ID;
+    Prime_Client_ID = MAX_NUM_SERVER_SLOTS + My_ID;
     My_IP = getIP();
-
-    // Open file for recording statistics
-    /* sprintf(filename, "./benchmark%d.out", My_ID);
-    fw = fopen(filename, "w");
-    if (fw == NULL) {
-        printf("ERROR: unable to open file %s for writing\n", filename);
-        exit(EXIT_FAILURE);
-    }
-    setbuffer(fw, fw_buf, sizeof(fw_buf)); */
 
     // Setup IPC for the RTU Proxy main thread
     memset(&itrc_main, 0, sizeof(itrc_data));
@@ -204,6 +257,9 @@ static void init(int ac, char **av)
     sprintf(itrc_main.prime_keys_dir, "%s", (char *)PROXY_PRIME_KEYS);
     sprintf(itrc_main.sm_keys_dir, "%s", (char *)PROXY_SM_KEYS);
     ipc_sock = IPC_DGram_Sock(itrc_main.ipc_local);
+
+    printf("MS2022: Bm itrc main  %s(ipc_sock)\n",itrc_main.ipc_local);
+    printf("MS2022: Bm itrc main ipc_remote is %s\n",itrc_main.ipc_remote);
 
     // Setup IPC for the Worker Thread (running the ITRC Client)
     memset(&itrc_thread, 0, sizeof(itrc_data));
@@ -215,6 +271,7 @@ static void init(int ac, char **av)
     sprintf(itrc_thread.spines_ext_addr, "%s", ip_ptr);
     ip_ptr = strtok(NULL, ":");
     sscanf(ip_ptr, "%d", &itrc_thread.spines_ext_port);
+    printf("MS2022: Bm iterc thread ipc_remote is %s\n",itrc_thread.ipc_remote);
 
     // Grab the Timeout frequency 
     memset(&Poll_Period, 0, sizeof(struct timeval));
@@ -255,6 +312,8 @@ int main(int argc,char *argv[])
     setlinebuf(stdout);
 
     init(argc, argv);
+    
+        
     pthread_create(&tid, NULL, &ITRC_Client, (void *)&itrc_thread);
 
     // FIX THIS - Have the thread set some flag when it is done initializing
@@ -263,10 +322,10 @@ int main(int argc,char *argv[])
     // Setup the FD_SET for use in select
     FD_ZERO(&mask);
     FD_SET(ipc_sock, &mask);
-
     // Initial timeout setup
     gettimeofday(&topoll, NULL);
 
+    printf("All network setup done \n");
     // run the daemon forever
     while (1) {
 

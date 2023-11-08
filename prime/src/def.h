@@ -26,8 +26,8 @@
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol 
- * 
- *
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -50,7 +50,7 @@
 
 /*Reconf flag: Set to 0 to run Spire and 1 to run reconfigurable spire*/
 #define RECONF 1
-
+#define CONFIDENTIAL 0
 /* Maximum number of tolerated Byzantine faults */
 #define NUM_F 1
 
@@ -112,7 +112,7 @@
 #define PRIME_SPINES_SERVER_BASE_PORT  7350
 #define PRIME_CLIENT_BASE_PORT         7400
 #define SPINES_PORT                    8100
-
+#define SPINES_EXT_PORT                8120
 /* Set this to 1 if IP multicast is available (i.e., when running in a
  * LAN).  Note that this option is not compatible with the
  * SET_USE_SPINES flag (see Makefile) or the
@@ -126,7 +126,7 @@
 #define USE_IPC_CLIENT 1
 #define REPLICA_IPC_PATH "/tmp/prime_replica"
 #define CLIENT_IPC_PATH "/tmp/prime_client"
-
+#define CA_DRIVER_IPC_PATH "/tmp/ca_driver_ipc"
 /* Set this to 1 if Prime daemon and Spines daemon it connects to are
  * co-located on the same physical machine */
 #define USE_SPINES_IPC 1
@@ -136,6 +136,16 @@
  * of messages sent over the WAN, we can use a multicast address of the form:
  * 254.255.0.X to send to all replicas reliably */
 #define SPINES_MCAST_ADDR      "254.255.0.20"
+/*IP and Port Used for Multicast on Configuration Network*/
+#define CONF_SPINES_MCAST_ADDR "224.1.1.3"
+#define CONF_SPINES_MCAST_PORT 9900
+/*IP Address of Configuration Manager- Please edit to match testbed*/
+#define CONF_MNGR_ADDR "192.168.53.73"
+/*Ports of Spines Configuration Network used by Configuration Manager and Agents*/
+#define CONFIGUATION_SPINES_PORT       8900
+#define CTRL_BASE_PORT      9580
+
+#define SPINES_PRIORITY 1
 
 #define SPINES_CONNECT_SEC  2
 #define SPINES_CONNECT_USEC 0

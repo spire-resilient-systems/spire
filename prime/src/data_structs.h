@@ -26,6 +26,8 @@
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  * 
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -65,6 +67,7 @@ typedef struct server_variables_dummy {
   int32u F;
   int32u K;
   int32u Num_Servers;
+  int32u Confidential_Flag;
 } server_variables;
 
 /* typedef struct configuration_variables_dummy {

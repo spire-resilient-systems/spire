@@ -74,14 +74,14 @@ unsigned char processed[(RESERVED_ROUTING_BITS >> ROUTING_BITS_SHIFT)];
 /* Internal functions called from this link protocol */
 void Assign_Resources_IT(Node *next_hop);
 int Pack_Fragments_Into_Packets_IT(Link *lk);
-int Build_Message_From_Fragments_IT(sys_scatter *scat, char *buff, int32u data_len, 
+int Build_Message_From_Fragments_IT(sys_scatter *scat, char *buff, int16u data_len, 
                             unsigned char *idx, unsigned char *total, Link_Type mode);
 void Blacklist_Neighbor_IT( Link *lk );
 int Send_IT_Data_Msg(int link_id, int64u seq);
 int Send_IT_Ack(int link_id);
 int Send_IT_Ping(int link_id, char *buff);
 void Send_IT_DH(int link_id, void *dummy);
-int Process_IT_Ack(int link_id, char* buff, int32u data_len, int16u ack_len);
+int Process_IT_Ack(int link_id, char* buff, int16u data_len, int16u ack_len);
 void Incarnation_Change(int link_id, int32u new_ngbr_inc, int mode);
 
 /* Utility functions and event-based functions w/ timeouts */
@@ -489,8 +489,7 @@ void Process_intru_tol_data_packet(Link *lk, sys_scatter *scat,
     int ret;
     Int_Tol_Data *itdata;
     intru_tol_pkt_tail *itt;
-    int32u data_len;
-    int16u ack_len;
+    int16u data_len, ack_len;
     packet_header *phdr;
 
     UNUSED(mode);
@@ -527,8 +526,8 @@ void Process_intru_tol_data_packet(Link *lk, sys_scatter *scat,
     /* Check the incarnations first */
     itt = (intru_tol_pkt_tail*)(scat->elements[1].buf + data_len); 
     
-     Alarm(DEBUG,"Process_intru_tol_data_packet: DATA MSG FROM "IPF", data_len = %d, ack_len = %d, seq_num = %d\n, in_tail_seq = %d\n", 
-            IP(lk->leg->remote_interf->net_addr), data_len, ack_len, itt->link_seq, itdata->in_tail_seq); 
+    /* printf("DATA MSG FROM "IPF", data_len = %d, ack_len = %d, seq_num = %d\n, in_tail_seq = %d\n", 
+            IP(lk->leg->remote_interf->net_addr), data_len, ack_len, itt->link_seq, itdata->in_tail_seq); */
     
     if (itt->incarnation != itdata->ngbr_incarnation) {
         Alarm(DEBUG, "\tNGBR_INC DON'T MATCH - "IPF"\n", IP(lk->leg->remote_interf->net_addr));
@@ -571,8 +570,7 @@ void Process_intru_tol_ack_packet(Link *lk, sys_scatter *scat,
     int ret;
     Int_Tol_Data *itdata;
     intru_tol_pkt_tail *itt;
-    int32u data_len;
-    int16u ack_len;
+    int16u ack_len, data_len;
     packet_header *phdr;
 
     if (scat->num_elements < 2) {
@@ -646,8 +644,7 @@ void Process_intru_tol_ping(Link *lk, sys_scatter *scat,
     intru_tol_ping *ping; 
     long unsigned temp;
     sp_time diff_rtt, now, delta;
-    int32u data_len;
-    int16u ack_len;
+    int16u data_len, ack_len;
     packet_header *phdr;
 
     if (scat->num_elements != 2) {
@@ -828,7 +825,7 @@ void Process_DH_IT(Link *lk, sys_scatter *scat,
     int32u src, dst, my_inc, ngbr_inc, src_id;
     sp_time now = E_get_time();
     EVP_MD_CTX *md_ctx;
-    int32u data_len;
+    int16u data_len;
     packet_header *phdr;
 
     if (scat->num_elements != 2) {
@@ -954,7 +951,7 @@ void Process_DH_IT(Link *lk, sys_scatter *scat,
     sign_len = data_len - (unsigned int)(read_ptr - scat->elements[1].buf);
     
     if (sign_len != Signature_Len || sign_len > data_len) {
-        Alarm(PRINT, "Process_DH_IT: sign_len (%d) != Key_Len (%d), data_len = %lu\n",
+        Alarm(PRINT, "Process_DH_IT: sign_len (%d) != Key_Len (%d), data_len = %d\n",
               sign_len, Signature_Len, data_len);
         goto bn_cleanup;
     }
@@ -1602,7 +1599,7 @@ int Pack_Fragments_Into_Packets_IT ( Link *lk )
 /*  1 - message ready for delivery                         */
 /*                                                         */
 /***********************************************************/
-int Build_Message_From_Fragments_IT(sys_scatter *scat, char *buff, int32u data_len, 
+int Build_Message_From_Fragments_IT(sys_scatter *scat, char *buff, int16u data_len, 
                             unsigned char *idx, unsigned char *total, Link_Type mode)
 {
     int ret = 0;
@@ -2069,7 +2066,7 @@ void Send_IT_DH(int link_id, void *dummy)
 /* 1 - something in the ACK is invalid                     */
 /*                                                         */
 /***********************************************************/
-int Process_IT_Ack(int link_id, char* buff, int32u data_len, int16u ack_len)
+int Process_IT_Ack(int link_id, char* buff, int16u data_len, int16u ack_len)
 {
     Link *lk;
     Int_Tol_Data *itdata;

@@ -39,8 +39,8 @@
 #include "spu_system.h"
 #include "spu_scatter.h"
 
-//#define		MAX_PACKET_SIZE		1472    /*1472 = 1536-64 (of udp)*/
-#define     MAX_PACKET_SIZE 100000
+#define		MAX_PACKET_SIZE		1472    /*1472 = 1536-64 (of udp)*/
+
 #define		SEND_CHANNEL	0x00000001
 #define		RECV_CHANNEL    0x00000002
 #define         NO_LOOP         0x00000004

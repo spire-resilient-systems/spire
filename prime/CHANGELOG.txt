@@ -1,3 +1,10 @@
+Version 4.0 Beta - November 8, 2023
+    * Added reconfiguration capability to Prime
+    * Configuration Manager and Configuration Agent programs are added to support reconfiguration
+    * Driver program is added. It is representative of a simple application that can use Prime as replication engine.
+      It is also capable of running benchmarks.
+
+
 Version 3.3 - December 23, 2020
     * Update to use Spines 5.5, for details refer to CHANGELOG in spines
     * Updated prime to use OpenSSL 1.1.1 version

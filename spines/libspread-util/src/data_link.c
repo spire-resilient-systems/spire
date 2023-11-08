@@ -408,7 +408,7 @@ static	char		pseudo_scat[MAX_PACKET_SIZE];
         sa_len = sizeof(source_address);
 	ret = recvfrom( chan, pseudo_scat, total_len, 0, &source_address, &sa_len);
 	
-    for( i=0, total_len = ret, start =0; total_len > 0; i++)
+	for( i=0, total_len = ret, start =0; total_len > 0; i++)
 	{
 		bytes_to_copy = scat->elements[i].len;
 		if( bytes_to_copy > total_len ) bytes_to_copy = total_len;

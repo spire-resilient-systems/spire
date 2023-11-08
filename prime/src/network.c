@@ -26,6 +26,8 @@
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  * 
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -123,7 +125,7 @@ void Reconfig_Reset_Network(void)
   E_attach_fd(NET.from_client_sd, READ_FD, Net_Srv_Recv, IPC_SOURCE, NULL, MEDIUM_PRIORITY);
   max_rcv_buff(NET.from_client_sd);
   max_snd_buff(NET.from_client_sd);
- Alarm(PRINT,"During reconfig, READ_FD set NET.from_client\n");
+ Alarm(DEBUG,"During reconfig, READ_FD set NET.from_client\n");
   }
   if(NET.to_client_sd==0){
   if((NET.to_client_sd = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0) 
@@ -136,7 +138,7 @@ void Reconfig_Reset_Network(void)
 
   max_rcv_buff(NET.to_client_sd);
   max_snd_buff(NET.to_client_sd);
- Alarm(PRINT,"During reconf, Initialized IPC to client\n");
+ Alarm(DEBUG,"During reconf, Initialized IPC to client\n");
   }
 /* TESTING IPC BUFFER SIZE + NONBLOCK */
 /*  int on, on_len;
@@ -785,7 +787,7 @@ void Net_Srv_Recv(channel sk, int source, void *dummy_p)
       if (sk == NET.from_client_sd) {
         NET.from_client_sd = 0;
         NET.to_client_sd = 0;
-        Alarm(PRINT,"&&&&&&&MS2022: network.c 786 closing IPC with client\n");
+        Alarm(DEBUG,"&&&&&&&MS2022: network.c 786 closing IPC with client\n");
       }
       return;
     }
@@ -818,11 +820,11 @@ void Net_Srv_Recv(channel sk, int source, void *dummy_p)
     Alarm(DEBUG, "MS2022: Network: Got mess type  %s\n", UTIL_Type_To_String(mess->type));
 
   if(source == TCP_SOURCE || source == IPC_SOURCE) {
-    //MS2022: Added CLIENT_OOB_CONFIG_MSG into if
     if (mess->type != UPDATE && mess->type != CLIENT_OOB_CONFIG_MSG) {
-        Alarm(PRINT, "Network: Got invalid mess type from client: %d\n", mess->type);
+        Alarm(DEBUG, "Network: Got invalid mess type %d from client %d,size=%d\n", mess->type,mess->machine_id,received_bytes);
         return;
     }
+    Alarm(DEBUG, "MS2022: Network: Got valid mess type %d from client: %d\n", mess->type,mess->machine_id);
     Alarm(DEBUG, "MS2022: Network: Got valid mess type from client: %s\n", UTIL_Type_To_String(mess->type));
     
     /* Store the socket so we know how to send a response */

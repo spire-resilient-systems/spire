@@ -27,6 +27,8 @@
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -42,6 +44,7 @@
 #define PRIME_TCP_WRAPPER_H
 
 #include "arch.h"
+#include "def.h"
 
 int NET_Read (int sd, void *dummy_buf, int32u nBytes);
 int NET_Write(int sd, void *dummy_buf, int32u nBytes);
@@ -49,4 +52,8 @@ int NET_Write(int sd, void *dummy_buf, int32u nBytes);
 int IPC_Recv(int s, void *d_buf, int nBytes);
 int IPC_Send(int s, void *d_buf, int nBytes, char *dst);
 
+int Spines_Mcast_SendOnly_Sock(const char *sp_addr, int sp_port, int proto);
+int IPC_DGram_SendOnly_Sock();
+int Spines_Sock(const char *sp_addr, int sp_port, int proto, int my_port);
+int Spines_SendOnly_Sock(const char *sp_addr, int sp_port, int proto);
 #endif

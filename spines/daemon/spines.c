@@ -341,7 +341,7 @@ int main(int argc, char* argv[])
 
     Alarm( PRINT, "/===========================================================================\\\n");
     Alarm( PRINT, "| Spines                                                                    |\n");
-    Alarm( PRINT, "| Copyright (c) 2017-2023 Johns Hopkins University                        |\n"); 
+    Alarm( PRINT, "| Copyright (c) 2017-2023 Johns Hopkins University                          |\n"); 
     Alarm( PRINT, "| All rights reserved.                                                      |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| Spines is licensed under the Spines Open-Source License.                  |\n");
@@ -354,7 +354,7 @@ int main(int argc, char* argv[])
     Alarm( PRINT, "|    John Lane Schultz         jschultz@spreadconcepts.com                  |\n");
     Alarm( PRINT, "|    Daniel Obenshain          dano@cs.jhu.edu                              |\n");
     Alarm( PRINT, "|    Thomas Tantillo           tantillo@cs.jhu.edu                          |\n");
-    Alarm( PRINT, "|    Amy Babay                 babay@pitt.edu                             |\n");
+    Alarm( PRINT, "|    Amy Babay                 babay@pitt.edu                               |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| Major Contributors:                                                       |\n");
     Alarm( PRINT, "|    John Lane                 johnlane@cs.jhu.edu                          |\n");
@@ -368,7 +368,7 @@ int main(int argc, char* argv[])
     Alarm( PRINT, "| WWW:     www.spines.org      www.dsn.jhu.edu                              |\n");
     Alarm( PRINT, "| Contact: spines@spines.org                                                |\n");
     Alarm( PRINT, "|                                                                           |\n");
-    Alarm( PRINT, "| Version 5.5, Built December 23, 2020                                      |\n"); 
+    Alarm( PRINT, "| Version 5.6, Built November 8, 2023                                       |\n"); 
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use       |\n");
     Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                 |\n");
@@ -379,11 +379,10 @@ int main(int argc, char* argv[])
     Usage(argc, argv);
 
     Alarm_set_types(PRINT|NETWORK|STATUS);
-    //Alarm_set_types(DEBUG|DATA_LINK|SESSION);
+    /*Alarm_set_types(PRINT|DEBUG|STATUS);*/
     Alarm_set_priority(SPLOG_INFO);
     Alarm_enable_timestamp_high_res(NULL);
 
-    Alarm(PRINT,"Size of packet header is %d\n",sizeof(packet_header));
     /* add the sigPIPE handler */
 #ifndef ARCH_PC_WIN95
     signal(SIGPIPE, SIG_IGN);

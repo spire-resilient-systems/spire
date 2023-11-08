@@ -570,6 +570,7 @@ int  spines_socket(int domain, int type, int protocol,
         spines_set_errno(SP_ERROR_DAEMON_COMM_ERR);
         return(-1);
     }
+
     /* Increase buffer on the socket used for sending/receiving Spines data */
     Set_large_socket_buffers(sk);
 
@@ -766,8 +767,6 @@ int  spines_socket(int domain, int type, int protocol,
         all_clients[client].endianess_type = endianess_type;
         all_clients[client].tcp_sk = sk;
         all_clients[client].udp_sk = sk;
-
-        Alarm(PRINT,"MS2022*****create socket client=%d, udp_sk=%d\n",client,all_clients[client].udp_sk);
     } stdmutex_drop(&data_mutex);
 
     /* Get the session ID, virtual local port, and virtual addr */
@@ -852,11 +851,10 @@ int  spines_socket(int domain, int type, int protocol,
 void spines_close(int s)
 {
     int client, type, tcp_sk, connect_flag;
-    //Alarm(PRINT,"MS2022****** Called spines close on %d\n",s);
+
     stdmutex_grab(&data_mutex); {
 
         client = spines_get_client(s);
-    //Alarm(PRINT,"MS2022******Called spines close on client %d\n",client);
         if(client == -1) {
             stdmutex_drop(&data_mutex);
 	        return;
@@ -878,14 +876,12 @@ void spines_close(int s)
 #else
     shutdown(s, SHUT_RDWR);
     close(s);
-     //Alarm(PRINT,"MS2022*******spines_close: sock=%d\n",s);
     shutdown(Control_sk[s%MAX_CTRL_SOCKETS], SHUT_RDWR);
 #endif
     close(Control_sk[s%MAX_CTRL_SOCKETS]);
     Control_sk[s%MAX_CTRL_SOCKETS] = 0;
     if((type == SOCK_DGRAM)&&(connect_flag == UDP_CONNECT)) {
       close(tcp_sk);
-      //Alarm(PRINT,"MS2022*******spines_close: sock=%d\n",tcp_sk);
     }
 }
 
@@ -992,7 +988,7 @@ int spines_sendto_internal(int s, const void *msg, size_t len,
     struct sockaddr_in *inet_ptr;
 
     if (len > MAX_SPINES_CLIENT_MSG) {
-        Alarm(PRINT, "spines_sendto(): 1 msg size limit exceeded (recvd %d,"
+        Alarm(PRINT, "spines_sendto(): msg size limit exceeded (recvd %d,"
                      " max %d)...dropping\n", len, MAX_SPINES_CLIENT_MSG);
         return(-1);
     }
@@ -1034,7 +1030,7 @@ int spines_sendto_internal(int s, const void *msg, size_t len,
     }
 
     if((force_tcp == 1)||(connect_flag != UDP_CONNECT)) {
-        //printf("send_to Force TCP\n");
+
 	    /*Force TCP*/
 	    total_len = (int32*)(pkt);
 	    hdr = (udp_header*)(pkt+sizeof(int32));
@@ -1081,7 +1077,6 @@ int spines_sendto_internal(int s, const void *msg, size_t len,
 	    return(len);
     }
     else {
-        //printf("send_to UDP\n");
 	    /* Use UDP communication */
 	    u_hdr.source      = my_addr;
 	    u_hdr.source_port = my_port;    
@@ -1286,6 +1281,7 @@ int  spines_recvfrom_internal(int s, void *buf, size_t len, int flags,
 		return(-1);
 	    }
 	}
+
 	if(!Same_endian(endianess_type)) {
 	    *pkt_len = Flip_int32(*pkt_len);
 	    Flip_udp_hdr(hdr);
@@ -1868,7 +1864,7 @@ int  spines_send(int s, const void *msg, size_t len, int flags)
     unsigned char l_ip_ttl, l_mcast_ttl, routing;
 
     if (len > MAX_SPINES_CLIENT_MSG) {
-        Alarm(PRINT, "spines_send(): 2 msg size limit exceeded (recvd %d,"
+        Alarm(PRINT, "spines_send(): msg size limit exceeded (recvd %d,"
                      " max %d)...dropping\n", len, MAX_SPINES_CLIENT_MSG);
         return(-1);
     }
@@ -2366,8 +2362,7 @@ int spines_setdissemination(int sk, int paths, int overwrite_ip)
 int spines_get_client(int sk) {
   int i;
   for(i=0; i<Max_Client; i++) {
-    //Alarm(PRINT,"MS2022*********i=%d, all_client[i].udp_sk:%d,sk:%d\n",i,all_clients[i].udp_sk,sk);
-      if(all_clients[i].udp_sk == sk) {
+    if(all_clients[i].udp_sk == sk) {
       return(i);
     }
   }

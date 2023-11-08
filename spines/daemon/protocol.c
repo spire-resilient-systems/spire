@@ -293,8 +293,6 @@ void Prot_process_scat(sys_scatter *scat, int total_bytes, Interface *local_inte
 
       if (Is_intru_tol_data(pack_hdr->type)) {
 	    Alarm(DEBUG, "\n\nprocess_intru_tol_data: size: %d\n", total_bytes);    
-	    Alarm(DEBUG, "process_intru_tol_data: data_len: %lu\n", pack_hdr->data_len);    
-	    Alarm(DEBUG, "process_intru_tol_data: seq_no: %u\n", pack_hdr->seq_no);    
 
 	    total_intru_tol_pkts++;
 	    total_intru_tol_bytes += total_bytes;

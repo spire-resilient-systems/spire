@@ -58,23 +58,19 @@ devices that use the Modbus or DNP3 communication protocols over IP. We use
 a standalone Machine Learning-based Network Intrusion Detection System that is
 built to work with Spire.
 
-Additionally, Version 2.1 Alpha adds reconfiguration support to Spire.
-Reconfiguration can be used to improve the operational profile of a system. For
-example: With reconfiguration, if the current system configuration (say
-configuration '6+6+6') becomes non-operational due to loss of a control center
-and data center but at least one control center remains up, the system can be
-reconfigured to that one control center (configuration '6') and resume
-operations. It is also possible to reconfigure preemptively when needed (e.g.
-if one control center becomes non-operational, it is better to reconfigure the
-system to configuration '6' in the remaining control center). The
-reconfiguration modules include configuration network, configuration manager
-and configuration agent, found in `configuration_module`. The details of
-reconfiguration mechanism are in `README_Spire.md`.
-
-Note: Spire 2.1 Alpha does not directly use the latest releases of Spines and
-Prime, as it modifies them to work with reconfiguration. A lightly modified
-Spines 5.5 and a heavily modified Prime 3.3 are included with the Spire 2.1
-Alpha release.
+Additionally, Version 2.1 (currently in beta release) adds reconfiguration
+support to Spire. Reconfiguration can be used to improve the operational
+profile of a system. For example: With reconfiguration, if the current system
+configuration (say configuration '6+6+6') becomes non-operational due to loss
+of a control center and data center but at least one control center remains up,
+the system can be reconfigured to that one control center (configuration '6')
+and resume operations. It is also possible to reconfigure preemptively when
+needed (e.g. if one control center becomes non-operational, it is better to
+reconfigure the system to configuration '6' in the remaining control center).
+The reconfiguration modules are implemented as part of the Prime replication
+engine, and include a configuration network, configuration manager and
+configuration agent. The details of the reconfiguration mechanism are in
+`README_Spire.md` and README of Prime.
 
 ### Confidential Spire
         
@@ -155,7 +151,7 @@ Spire for the Substation: `README_Spire_Substation.md`
 
 ## 5. Version Notes
 
-Spire 2.1 Alpha adds reconfiguration support to Spire.
+Spire 2.1 Beta adds reconfiguration support to Spire.
 
 Spire 2.0 extends the Spire 1.3 to support real-time
 Byzantine resilience of power grid substations. This release includes Spire for

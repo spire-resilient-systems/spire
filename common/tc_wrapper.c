@@ -379,19 +379,15 @@ void TC_Generate(int req_shares, char *directory)
 /* The following function takes args and generate the threshold shares and store them on disk. */
 void TC_with_args_Generate(int req_shares, char *directory, int faults,int rej_servers,int num_sites)
 {
-    TC_DEALER *dealer; //[TC_NUM_SITES+1];
+    TC_DEALER *dealer; 
     int nsite;
     int n, k, keysize;
 
     keysize = 1024;
-    //rej_servers = NUM_K;
     n = 3*faults+ 2*rej_servers +1;
     k = req_shares;
-    //printf("*****TC_Gen N=%d\n",n);
     for ( nsite = 1; nsite <= num_sites; nsite++ ) {
-        //printf("Generating threshold crypto keys for site %d\n",nsite);
         dealer = NULL;
-        /* while ( dealer == NULL ) */
         dealer = TC_generate(keysize/2, n, k, 17);
 
         TC_write_shares(dealer, directory, nsite);

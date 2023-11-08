@@ -26,6 +26,8 @@
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  * 
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -67,13 +69,14 @@ enum packet_types {DUMMY,
 		   /* 46 --> */ UPDATE, CLIENT_RESPONSE, 
            OOB_CONFIG,IB_CONFIG,MAX_MESS_TYPE};
 
+enum key_types {SM_TC_PUB, SM_TC_PVT, PRIME_TC_PUB, PRIME_TC_PVT, PRIME_RSA_PUB, PRIME_RSA_PVT};
 /* Defines to help with SCADA application */
 #define CLIENT_NO_OP 101
 #define CLIENT_STATE_TRANSFER 102
 #define CLIENT_SYSTEM_RESET 103
 #define CLIENT_SYSTEM_RECONF 104
 #define CLIENT_OOB_CONFIG_MSG 48
-
+#define CONFIG_KEYS_MSG 49
 
 /* Forward declaration */
 struct dummy_ord_slot;
@@ -145,6 +148,26 @@ typedef struct dummy_nm_message {
 
 }nm_message;
 
+typedef struct dummy_key_msg_header{
+    int32u frag_idx;
+    //key-types: sm_tc_pvt, prime_tc_pvt, prime_rsa_pvt, sm_tc_pub,prime_tc_pub, prime_rsa_pub
+}key_msg_header;
+
+typedef struct dummy_pvt_key_header{
+    int32u key_type;
+    int32u id;
+    int32u unenc_size;
+    int32u pvt_key_parts;
+    int32u pvt_key_part_size;
+    /*Note key contents [pvt_key_parts][pvt_key_part_size] */
+}pvt_key_header;
+
+typedef struct dummy_pub_key_header {
+    int32u key_type;
+    int32u id;
+    int32u size;
+    /*key contents of len size*/
+} pub_key_header;
 
 typedef struct dummy_signed_update_message {
   signed_message header;

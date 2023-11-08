@@ -91,4 +91,6 @@ pnnl_simple_cb_proxy:	$(PNNL_SIMPLE_CB_OBJ)
 clean:
 	rm -f *.o
 	rm -f ../common/*.o
+	rm -f relay_proxy
+	rm -f simple_cb_proxy
 	rm -f $(TARGET)

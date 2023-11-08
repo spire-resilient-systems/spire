@@ -27,6 +27,8 @@
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  *      
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -44,6 +46,7 @@
 #include <sys/socket.h>
 #include "net_wrapper.h"
 #include "spu_alarm.h"
+#include "spines_lib.h"
 
 int NET_Read(int sd, void *dummy_buf, int32u nBytes)
 {
@@ -164,3 +167,161 @@ int IPC_Send(int s, void *d_buf, int nBytes, char *dst)
     return ret;
 }
 
+/* Connect to Spines at specified IP and port, with proto as semantics */
+int Spines_Mcast_SendOnly_Sock(const char *sp_addr, int sp_port, int proto)
+{
+    int sk, ret, protocol;
+    struct sockaddr_in spines_addr;
+    struct sockaddr_un spines_uaddr;
+    int16u prio, kpaths;
+    spines_nettime exp;
+
+    memset(&spines_addr, 0, sizeof(spines_addr));
+
+    printf("Initiating Spines connection: %s:%d\n", sp_addr, sp_port);
+    spines_addr.sin_family = AF_INET;
+    spines_addr.sin_port   = htons(sp_port);
+    spines_addr.sin_addr.s_addr = inet_addr(sp_addr);
+
+    spines_uaddr.sun_family = AF_UNIX;
+    sprintf(spines_uaddr.sun_path, "%s%d", "/tmp/spines", sp_port);
+
+    protocol = 8 | (proto << 8);
+
+     printf("Creating IPC spines_socket\n");
+     //sk = spines_socket(PF_SPINES, SOCK_DGRAM, protocol, (struct sockaddr *)&spines_uaddr); 
+     sk = spines_socket(PF_SPINES, SOCK_DGRAM, protocol, (struct sockaddr *)&spines_addr);
+  /*
+    if ((int)inet_addr(sp_addr) == My_IP) {
+        printf("Creating default spines_socket\n");
+        sk = spines_socket(PF_SPINES, SOCK_DGRAM, protocol, (struct sockaddr *)&spines_uaddr);
+    }
+    else {
+        printf("Creating inet spines_socket\n");
+        sk = spines_socket(PF_SPINES, SOCK_DGRAM, protocol,
+                (struct sockaddr *)&spines_addr);
+    }
+    */
+    if (sk < 0) {
+        perror("Spines_Sock: error creating spines socket!");
+        return sk;
+    }
+
+    /* setup kpaths = 1 */
+    kpaths = 0;
+    if ((ret = spines_setsockopt(sk, 0, SPINES_DISJOINT_PATHS, (void *)&kpaths, sizeof(int16u))) < 0) {
+        printf("Spines_Sock: spines_setsockopt failed for disjoint paths = %u\n", kpaths);
+        return ret;
+    }
+	exp.sec  = SPINES_EXP_TIME_SEC;
+        exp.usec = SPINES_EXP_TIME_USEC;
+    
+        if ((ret = spines_setsockopt(sk, 0, SPINES_SET_EXPIRATION, (void *)&exp, sizeof(spines_nettime))) < 0) {
+            printf("Spines_Sock: error setting expiration time to %u sec %u usec\n", exp.sec, exp.usec);
+            return ret;
+        }
+
+        if ((ret = spines_setsockopt(sk, 0, SPINES_SET_PRIORITY, (void *)&prio, sizeof(int16u))) < 0) {
+            printf("Spines_Sock: error setting priority to %u\n", prio);
+            return ret;
+        }
+
+    return sk;
+}
+
+/* Open an IPC Sending Only Socket (Datagram) */
+int IPC_DGram_SendOnly_Sock()
+{
+    int s;
+
+    s = socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (s < 0) {
+        perror("IPCsock: Couldn't create a socket");
+        exit(EXIT_FAILURE);
+    }
+
+    max_snd_buff(s);
+    max_rcv_buff(s);
+
+    return s;
+}
+
+/* Connect to Spines at specified IP and port, with proto as semantics */
+int Spines_Sock(const char *sp_addr, int sp_port, int proto, int my_port)
+{
+    int sk, ret;
+    struct sockaddr_in my_addr;
+
+    Alarm(DEBUG,"Initiating Spines connection: %s:%d\n", sp_addr, sp_port);
+    sk = Spines_SendOnly_Sock(sp_addr, sp_port, proto);
+    if (sk < 0) {
+        perror("Spines_Sock: failure to connect to spines");
+        return sk;
+    }
+
+    memset(&my_addr, 0, sizeof(my_addr));
+    my_addr.sin_family = AF_INET;
+    //my_addr.sin_addr.s_addr = NET.My_Address;
+    my_addr.sin_addr.s_addr = (int)inet_addr(sp_addr) ;
+    my_addr.sin_port = htons(my_port);
+
+    ret = spines_bind(sk, (struct sockaddr *)&my_addr, sizeof(struct sockaddr_in));
+    if (ret < 0) {
+        perror("Spines_Sock: bind error!");
+        return ret;
+    }
+
+    return sk;
+}
+
+/* Connect to Spines at specified IP and port, with proto as semantics */
+int Spines_SendOnly_Sock(const char *sp_addr, int sp_port, int proto)
+{
+    int sk, ret, protocol;
+    struct sockaddr_in spines_addr;
+    struct sockaddr_un spines_uaddr;
+    int16u prio, kpaths;
+    spines_nettime exp;
+
+    memset(&spines_addr, 0, sizeof(spines_addr));
+
+    Alarm(DEBUG,"Initiating Spines connection: %s:%d\n", sp_addr, sp_port);
+    fflush(stdout);
+    spines_addr.sin_family = AF_INET;
+    spines_addr.sin_port   = htons(sp_port);
+    spines_addr.sin_addr.s_addr = inet_addr(sp_addr);
+
+    spines_uaddr.sun_family = AF_UNIX;
+    sprintf(spines_uaddr.sun_path, "%s%d", "/tmp/spines", sp_port);
+
+    protocol = 8 | (proto << 8);
+
+    Alarm(DEBUG,"Creating default spines_socket\n");
+    sk = spines_socket(PF_SPINES, SOCK_DGRAM, protocol, (struct sockaddr *)&spines_uaddr);
+       if (sk < 0) {
+        perror("Spines_Sock: error creating spines socket!");
+        return sk;
+    }
+    /* setup kpaths = 1 */
+    kpaths = 1;
+    if ((ret = spines_setsockopt(sk, 0, SPINES_DISJOINT_PATHS, (void *)&kpaths, sizeof(int16u))) < 0) {
+        printf("Spines_Sock: spines_setsockopt failed for disjoint paths = %u\n", kpaths);
+        return ret;
+    }
+
+    if (proto == SPINES_PRIORITY) {
+        exp.sec  = SPINES_EXP_TIME_SEC;
+        exp.usec = SPINES_EXP_TIME_USEC;
+        if ((ret = spines_setsockopt(sk, 0, SPINES_SET_EXPIRATION, (void *)&exp, sizeof(spines_nettime))) < 0) {
+            printf("Spines_Sock: error setting expiration time to %u sec %u usec\n", exp.sec, exp.usec);
+            return ret;
+        }
+
+        if ((ret = spines_setsockopt(sk, 0, SPINES_SET_PRIORITY, (void *)&prio, sizeof(int16u))) < 0) {
+            printf("Spines_Sock: error setting priority to %u\n", prio);
+            return ret;
+        }
+    }
+
+    return sk;
+}

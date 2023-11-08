@@ -1033,7 +1033,6 @@ void *ITRC_Master(void *data)
                     scada_mess->type = SYSTEM_RESET;
                     IPC_Send(ns.ipc_s, (void *)scada_mess, sizeof(signed_message), ns.ipc_remote);
                     continue;
-                    /*TODO: Respond to Config Agent with Ack and if needed, poll for state*/
                 }
 
                 /* If this is the first ordinal you get from Prime and its further ahead than

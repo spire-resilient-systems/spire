@@ -26,6 +26,8 @@
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  * 
  * Copyright (c) 2008-2023
  * The Johns Hopkins University.
@@ -978,6 +980,7 @@ int32u VAL_Is_Valid_Signature(int32u sig_type, int32u sender_id,
 			      int32u site_id, signed_message *mess) 
 {
   int32 ret;
+  byte digest[DIGEST_SIZE];
  
   //if (sig_type == VAL_SIG_TYPE_MERKLE || (sig_type == VAL_SIG_TYPE_TPM && mess->type != UPDATE)) {
   if (sig_type == VAL_SIG_TYPE_MERKLE || sig_type == VAL_SIG_TYPE_TPM_MERKLE) {
@@ -1013,6 +1016,7 @@ int32u VAL_Is_Valid_Signature(int32u sig_type, int32u sender_id,
     }
 
     /* Check an RSA signature using openssl. A client sent the message. */
+    if(!CONFIDENTIAL){
     ret = 
       OPENSSL_RSA_Verify( 
 			 ((byte*)mess) + SIGNATURE_SIZE,
@@ -1024,6 +1028,25 @@ int32u VAL_Is_Valid_Signature(int32u sig_type, int32u sender_id,
     if (ret == 0) 
       Alarm(PRINT,"  Sig Client Failed %d\n", mess->type);
     return ret; 
+   }
+   if(CONFIDENTIAL){
+	/*
+          MK: Verify TC Signature to make sure client request is correct.
+          Hence, we do not need to check client's request with client's
+          public key.
+          Note: We do not need to know client's public key anymore.
+        */
+    	OPENSSL_RSA_Make_Digest(((byte*)mess)+SIGNATURE_SIZE,
+        sizeof(signed_update_message) - SIGNATURE_SIZE, digest);
+    	if (!TC_Verify_SM_Signature(1, mess->sig, digest)) {
+        	Alarm(PRINT,"  TC Sig Client Failed %d\n", mess->type);
+        	return 0;
+    	}
+    	else {
+      		return 1;
+    	}
+
+	}
   }
 
   if (sig_type == VAL_SIG_TYPE_NM) {

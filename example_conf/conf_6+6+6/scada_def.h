@@ -108,7 +108,7 @@
  * connecting the control center sites with the PLC/RTU proxies and HMIs. We
  * assume there is one Spines daemon per site */
 #define SPINES_EXT_SITE_ADDRS {"1.1.1.1", \
-                               "2.2.2.1"}
+                               "2.2.2.1" }
 
 /* List of IP addresses for Spines daemons on the internal Spines network
  * connecting all the control-center and data-center sites with one another. We
@@ -116,7 +116,7 @@
 #define SPINES_INT_SITE_ADDRS {"1.1.1.1", \
                                "2.2.2.1", \
                                "3.3.3.1", \
-                               "4.4.4.1"}
+                               "4.4.4.1" }
 
 /* IP address for the Spines daemon that connects with the PLC/RTU proxy or
  * proxies */
@@ -218,18 +218,18 @@
 #define SS_NUM_K 1
 
 /* IP address of machines running Spines, Subscribers, and Trip Masters */
-#define SPINES_RELAY_INT_ADDRS {"1.1.1.1", \
-                                "2.2.2.2", \
-                                "3.3.3.3", \
-                                "4.4.4.4"}
+#define SPINES_RELAY_INT_ADDRS {"192.168.101.101", \
+                                "192.168.101.102", \
+                                "192.168.101.103", \
+                                "192.168.101.104"}
 
-#define SPINES_RELAY_EXT_ADDRS {"1.1.1.1", \
-                                "2.2.2.1", \
-                                "3.3.3.1", \
-                                "4.4.4.1"}
+#define SPINES_RELAY_EXT_ADDRS {"192.168.101.101", \
+                                "192.168.101.102", \
+                                "192.168.101.103", \
+                                "192.168.101.104"}
 
 /* IP address of destination proxy machine (external spines) connected to Circuit Breaker */
-#define SPINES_PROXY_ADDR "5.5.5.1"
+#define SPINES_PROXY_ADDR "192.168.101.105"
 
 
 /* Interval that discretised timestamps are rounded too, in ms */

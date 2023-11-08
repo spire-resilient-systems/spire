@@ -86,7 +86,7 @@ void Flip_udp_hdr(udp_header *udp_hdr)
     udp_hdr->dest	  = Flip_int32( udp_hdr->dest );
     udp_hdr->source_port  = Flip_int16( udp_hdr->source_port );
     udp_hdr->dest_port	  = Flip_int16( udp_hdr->dest_port );
-    udp_hdr->len	  = Flip_int32( udp_hdr->len );
+    udp_hdr->len	  = Flip_int16( udp_hdr->len );
     udp_hdr->seq_no	  = Flip_int16( udp_hdr->seq_no );
     udp_hdr->sess_id	  = Flip_int16( udp_hdr->sess_id );
 }

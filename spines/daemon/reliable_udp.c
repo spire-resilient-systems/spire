@@ -103,8 +103,7 @@ void Process_rel_udp_data_packet(Link *lk, sys_scatter *scat,
 {
 
   packet_header  *phdr;
-  int32u          data_len;
-  int16u          ack_len;
+  int16u          data_len, ack_len;
   char           *buff;
   udp_header     *hdr;
   reliable_tail  *r_tail;

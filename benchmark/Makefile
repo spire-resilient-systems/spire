@@ -57,18 +57,8 @@ LIBS          = $(SUBLIBS) -lpthread \
 				../spines/libspines/libspines.a ../prime/stdutil/lib/libstdutil.a \
 				../spines/libspread-util/src/libspread-util.a \
 				-lrt -ldl -lm -lcrypto
-TARGET	  = benchmark oob_benchmark 
+TARGET	  = benchmark  
 OBJECTS   = benchmark.o \
-                ../common/scada_packets.o \
-                ../common/net_wrapper.o \
-                ../common/openssl_rsa.o \
-                ../common/tc_wrapper.o \
-                ../common/itrc.o \
-				../common/key_value.o \
-            	../config/cJSON.o \
-            	../config/config_helpers.o
-
-OOB_OBJECTS   = oob_benchmark.o \
                 ../common/scada_packets.o \
                 ../common/net_wrapper.o \
                 ../common/openssl_rsa.o \
@@ -87,19 +77,15 @@ OOB_OBJECTS   = oob_benchmark.o \
 .c.o:
 	$(CC) -c $(CFLAGS) $(INCPATH)  -o "$@" "$<"
 
-all: benchmark oob_benchmark 
+all: benchmark  
 
 benchmark: $(OBJECTS)  
 	$(LINK) $(LDFLAGS) $(LFLAGS) -o benchmark $(OBJECTS) $(LIBS)
 
-oob_benchmark: $(OOB_OBJECTS)  
-	$(LINK) $(LDFLAGS) $(LFLAGS) $(INCPATH) -o oob_benchmark $(OOB_OBJECTS) $(LIBS)
 
 
 clean: 
 	rm -f $(OBJECTS) 
-	rm -f $(OOB_OBJECTS) 
-	rm -f $(OOB2_OBJECTS)
 	rm -f $(TARGET)
 
 benchmark.o: benchmark.cpp  \
@@ -115,15 +101,4 @@ benchmark.o: benchmark.cpp  \
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o benchmark.o benchmark.cpp
 
 
-oob_benchmark.o: oob_benchmark.cpp  \
-		../common/scada_packets.h \
-		../common/net_wrapper.h \
-		../common/openssl_rsa.h \
-		../common/tc_wrapper.h \
-		../common/def.h \
-        ../common/itrc.h \
-		../common/key_value.h \
-		../config/cJSON.h \
-		../config/config_helpers.h
-	$(CXX) -c $(CXXFLAGS) $(INCPATH)  -o oob_benchmark.o oob_benchmark.cpp
 

@@ -71,13 +71,14 @@
 #endif
 
 /* Cryptography */
+/* AB: Making these actual extern instead of ext*/
 ext int16u Cipher_Blk_Len;
-ext int16u HMAC_Key_Len;
-ext int16u DH_Key_Len;
-ext int16u Signature_Len;
-ext int16u Signature_Len_Bits;
-ext EVP_PKEY *Pub_Keys[MAX_NODES + 1];
-ext EVP_PKEY *Priv_Key;
+extern int16u HMAC_Key_Len;
+extern int16u DH_Key_Len;
+extern int16u Signature_Len;
+extern int16u Signature_Len_Bits;
+extern EVP_PKEY *Pub_Keys[MAX_NODES + 1];
+extern EVP_PKEY *Priv_Key;
 ext unsigned char Path_Stamp_Debug;
 ext unsigned char Remote_Connections;
 
