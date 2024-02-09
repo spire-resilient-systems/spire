@@ -50,7 +50,7 @@
 include ../Makefile.general
 base_dir = ..
 
-TARGET= pnnl_relay_proxy pnnl_simple_cb_proxy counting_dst_proxy  
+TARGET= relay_proxy simple_cb_proxy counting_dst_proxy  
 INC= -I ../common $(IEC_INC) $(SPINES_INC) $(SPREADUTIL_INC) $(TC_INC) 
 
 
@@ -72,17 +72,16 @@ COUNT_BRKR_OBJ= counting_brkr_proxy.o \
         ../common/ss_openssl_rsa.o \
 		../common/packets.o
 
-all:  pnnl_relay_proxy pnnl_simple_cb_proxy counting_dst_proxy  
+all:  relay_proxy simple_cb_proxy counting_dst_proxy  
 
 
-pnnl_relay_proxy:	$(PNNL_RELAY_OBJ)
+relay_proxy:	$(PNNL_RELAY_OBJ)
 	$(CC) $(LDFLAGS) -o relay_proxy $(PNNL_RELAY_OBJ) $(IEC_LIB) $(SPINES_LIB) $(SPREADUTIL_LIB) $(TC_LIB)
 
 counting_dst_proxy:	$(COUNT_BRKR_OBJ)
 	$(CC) $(LDFLAGS) -o counting_dst_proxy $(COUNT_BRKR_OBJ) $(IEC_LIB) $(SPINES_LIB) $(SPREADUTIL_LIB) $(TC_LIB) 
 
-
-pnnl_simple_cb_proxy:	$(PNNL_SIMPLE_CB_OBJ)
+simple_cb_proxy:	$(PNNL_SIMPLE_CB_OBJ)
 	$(CC) $(LDFLAGS) -o simple_cb_proxy $(PNNL_SIMPLE_CB_OBJ) $(IEC_LIB) $(SPINES_LIB) $(SPREADUTIL_LIB)  $(TC_LIB)
 
 %.o:	%.c
@@ -91,6 +90,4 @@ pnnl_simple_cb_proxy:	$(PNNL_SIMPLE_CB_OBJ)
 clean:
 	rm -f *.o
 	rm -f ../common/*.o
-	rm -f relay_proxy
-	rm -f simple_cb_proxy
 	rm -f $(TARGET)

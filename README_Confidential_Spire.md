@@ -221,15 +221,32 @@ Spire configuration to a Confidential Spire configuration, first run `make
 clean` from the top-level Spire directory, and then follow the instructions
 below to build Confidential Spire.
 
-1. Build pvbrowser, OpenPLC, dnp3, spines, prime (from top-level Spire directory):
+1. Build pvbrowser, OpenPLC, dnp3, libiec61850, spines (from top-level Spire directory):
 
         make libs
    
    Note: Select Y to build DNP3 and select "Blank" driver (1) to build emulated
    PLCs that run on Linux
 
-2. Build Spire (from top-level Spire directory):
+2. Build Spire, including SCADA Master, HMIs, PLCs, and Prime (from top-level Spire directory):
+
         make conf_spire
+
+### Building for Performance Benchmarks
+
+If you are only conducting performance benchmarks of the core Spire system
+(i.e. measuring how long it takes clients to get responses for updates
+submitted to the SCADA Master), you can build only the Spines, Prime, SCADA
+Master, and benchmark program components.
+
+For that, you can use the command:
+
+```
+make conf_core
+```
+
+Note that if you are switching from a base Spire configuration, you
+still need to run `make clean` before running `make conf_core`.
 
 ---
 

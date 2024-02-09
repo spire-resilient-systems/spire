@@ -58,5 +58,5 @@ $(SUBDIRS):
 
 clean:
 	for dir in $(SUBDIRS); do \
-    	( rm $$dir/openplc ); \
+    	( rm -f $$dir/openplc ); \
 	done

@@ -48,40 +48,54 @@ include Makefile.general
 # Tells Makefile.general where we are
 base_dir=.
 
-.PHONY: all clean plcs libs clean_libs prime clean_prime spines openplc pvb iec substation clean_substation
+.PHONY: all conf_spire substation core spines prime scada_master benchmark conf_core conf_scada_master libs openplc pvb iec clean_prime clean_libs clean_spire clean_substation clean
 
-SUBDIRS=hmis proxy modbus dnp3 benchmark plcs 
+SUBDIRS=hmis proxy modbus dnp3 benchmark plcs
 SS_SUBDIRS= relay_emulator proxy_iec61850 benchmarks_ss trip_master_v2 trip_master
 
-all:  $(SUBDIRS)
+# Build full Spire system (note: need to build libs separately first)
+all: prime $(SUBDIRS)
 	for dir in $(SUBDIRS); do \
     	( $(MAKE) -C $$dir); \
 	done
-	cd scada_master; make spire 
+	$(MAKE) -C scada_master spire
 
-conf_spire: $(SUBDIRS)
+# Build full Confidential Spire system (note: need to build libs separately first)
+conf_spire: prime $(SUBDIRS)
 	for dir in $(SUBDIRS); do \
     	( $(MAKE) -C $$dir); \
 	done
-	cd scada_master; make conf_spire
+	$(MAKE) -C scada_master conf_spire
 
-
-
-substation: base_prime $(SS_SUBDIRS)
+# Build Spire for the Substation (note: need to build libs separately first)
+substation: prime $(SS_SUBDIRS)
 	for dir in $(SS_SUBDIRS); do \
     	( $(MAKE) -C $$dir); \
 	done
 
-plcs:
-	( $(MAKE) -C plcs )
+# Build core of Spire system for benchmarking (without PLCs and HMIs)
+core: spines prime scada_master benchmark
 
+spines:
+	cd spines; ./configure; $(MAKE) -C daemon parser; $(MAKE)
 
-base_prime:
-	make -C prime/src 
+prime:
+	$(MAKE) -C prime/src
 
+scada_master:
+	$(MAKE) -C scada_master spire
 
-clean_prime:
-	make -C prime/src cleaner
+benchmark:
+	$(MAKE) -C benchmark
+
+# Build core of Confidential Spire system for benchmarking (without PLCs and HMIs)
+conf_core: spines prime conf_scada_master benchmark
+
+conf_scada_master:
+	$(MAKE) -C scada_master conf_spire
+
+# Build libraries needed for full Spire system (including all SCADA components)
+libs: openplc pvb iec spines
 
 openplc:
 	cd OpenPLC_v2; ./build.sh
@@ -89,28 +103,26 @@ openplc:
 pvb:
 	cd pvb; ./build.sh
 
-spines:
-	cd spines; ./configure; make -C daemon parser; make
-
 iec: 
-	cd libiec61850; make; make install
+	cd libiec61850; $(MAKE); $(MAKE) install
 
-# Builds libraries
-libs: openplc pvb iec spines base_prime 
-
+# Clean
+clean_prime:
+	$(MAKE) -C prime/src cleaner
 
 clean_libs: clean_prime
-	cd spines;make distclean
-	cd libiec61850; make clean; rm -rf .install
-
+	-$(MAKE) -C spines distclean # ignore errors, since this fails if clean is run multiple times
+	cd libiec61850; $(MAKE) clean; rm -rf .install
 
 clean_substation: 
 	for dir in $(SS_SUBDIRS); do \
     	( $(MAKE) -C $$dir clean); \
 	done
 
-clean: clean_libs  clean_substation
+clean_spire:
 	for dir in $(SUBDIRS); do \
     	( $(MAKE) -C $$dir clean); \
 	done
-	cd scada_master; make clean
+	$(MAKE) -C scada_master clean
+
+clean: clean_libs clean_substation clean_spire
