@@ -228,8 +228,10 @@ pvb/rllib/rlsvg/rlsvgcat
 pvb/fake_qmake/fake_qmake
 pvb/rllib/rlfind/rlfind
 pvb/rllib/rlhtml2pdf/rlhtml2pdf
-
-
+pvb/language_bindings/lua/pvapplua/pvapplua
+pvb/language_bindings/lua/pvslua/pvslua
+pvb/rllib/rlhistory/rlhistory
+pvb/start_pvbapp/start_pvbapp
 
 # Compiled Executables
 relay_emulator/gen_event
