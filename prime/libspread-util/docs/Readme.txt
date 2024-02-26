@@ -3,7 +3,7 @@ SPREAD: A Reliable Multicast and Group Communication Toolkit
 
 /===========================================================================\
 | The Spread Group Communication Toolkit Utility Library                    |
-| Copyright (c) 1993-2016 Spread Concepts LLC                               |
+| Copyright (c) 1993-2024 Spread Concepts LLC                               |
 | All rights reserved.                                                      |
 |                                                                           |
 | The Spread package is licensed under the Spread Open-Source License.      |
@@ -48,7 +48,7 @@ SPREAD: A Reliable Multicast and Group Communication Toolkit
 | WWW    : http://www.spread.org  and  http://www.spreadconcepts.com        |
 | Contact: info@spreadconcepts.com                                          |
 |                                                                           |
-| Version 5.0.0 built 1/Feb/2017                                            |
+| Version 5.1.0 built 29/Feb/2024                                            |
 \===========================================================================/
 
 February 1, 2017 Ver 5.0.0
