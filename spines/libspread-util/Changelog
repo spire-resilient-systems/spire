@@ -1,3 +1,17 @@
+February 29, 2024 v5.1.0
+------------------------
+
+Adds two new utility functions to the API:
+  - DL_set_large_buffers in spu_data_link.h: attempts to increase the send and
+    receive buffer sizes on a given channel
+  - E_dequeue_all_time_events in spu_events.h: cancels all scheduled timed
+    events
+
+Bugfix to memory.c to correctly handle types smaller than sizeof(void*)
+
+Wrap declarations of debugging functions in memory.h with #ifndef NDEBUG to
+clean up warnings
+
 October 27, 2023 v5.0.2
 -----------------------
 
