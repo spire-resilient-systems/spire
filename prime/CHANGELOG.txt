@@ -1,4 +1,4 @@
-Version 4.0 Beta - November 8, 2023
+Version 4.0  - February 29, 2024
     * Added reconfiguration capability to Prime
     * Configuration Manager and Configuration Agent programs are added to support reconfiguration
     * Driver program is added. It is representative of a simple application that can use Prime as replication engine.
