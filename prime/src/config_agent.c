@@ -306,7 +306,8 @@ void write_to_file(int32u key_type, int32u key_id,int32u key_size,char *currkey)
 int main(int argc, char **argv)
 {
     setlinebuf(stdout);
-    Alarm_set_types(PRINT|STATUS|DEBUG);
+    Alarm_set_types(PRINT);
+    //Alarm_set_types(STATUS|DEBUG);
     Usage(argc,argv);
     OPENSSL_RSA_Init();
     OPENSSL_RSA_Read_Keys(0,RSA_CONFIG_AGENT,"./keys");
@@ -566,9 +567,9 @@ void Usage(int argc, char **argv)
     }else if(*argv[4]=='p'){
 	NON_SM_Flag =1;
     	sscanf(argv[5], "%d", &app_count);
-	Alarm(PRINT,"Applucations count=%d\n",app_count);
+	Alarm(PRINT,"Applications count=%d\n",app_count);
     }else{
-   	Alarm(EXIT,"Unknown node type %c\n",*argv[3]); 
+   	Alarm(EXIT,"Unknown node type %c\n",*argv[4]); 
 	}
 }
 

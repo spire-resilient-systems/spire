@@ -97,8 +97,10 @@ void TC_Read_Public_Key(char *dir)
     for ( nsite = 1; nsite <= NUM_SITES; nsite++ ) {
 	    sprintf(buf,"%s/pubkey_%d.pem", dir, nsite);
 	    tc_public_key[nsite] = (TC_PK *)TC_read_public_key(buf);
-	    sprintf(buff2,"%s/pubkey_%d.pem", dir2, nsite);
-	    tc_sm_public_key[nsite] = (TC_PK *)TC_read_public_key(buff2);
+            if(CONFIDENTIAL){
+	       sprintf(buff2,"%s/pubkey_%d.pem", dir2, nsite);
+	       tc_sm_public_key[nsite] = (TC_PK *)TC_read_public_key(buff2);
+	    }
     }
 }
 
