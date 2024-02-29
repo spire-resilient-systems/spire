@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2017-2024 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -93,6 +93,8 @@ int Script_Breaker_Index;
 int Script_Breaker_Val;
 sp_time Next_Button, Button_Pressed_Duration;
 
+extern int32u My_Global_Configuration_Number;
+
 extern void modelInit();
 
 void itrc_init(int ac, char **av) 
@@ -106,6 +108,7 @@ void itrc_init(int ac, char **av)
         exit(EXIT_FAILURE);
     }
 
+    My_Global_Configuration_Number = 0;
     Init_SM_Replicas();
 
     // NET Setup
@@ -115,7 +118,7 @@ void itrc_init(int ac, char **av)
     Type = HMI_TYPE;
     My_ID = PNNL;
     //Prime_Client_ID = (NUM_SM + 1) + MAX_EMU_RTU + My_ID;
-    Prime_Client_ID = NUM_SM + MAX_EMU_RTU + My_ID;
+    Prime_Client_ID = MAX_NUM_SERVER_SLOTS + MAX_EMU_RTU + My_ID;
     My_IP = getIP();
     // Setup IPC for HMI main thread
     memset(&itrc_in, 0, sizeof(itrc_data));

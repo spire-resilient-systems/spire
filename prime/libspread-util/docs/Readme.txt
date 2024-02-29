@@ -3,7 +3,7 @@ SPREAD: A Reliable Multicast and Group Communication Toolkit
 
 /===========================================================================\
 | The Spread Group Communication Toolkit Utility Library                    |
-| Copyright (c) 1993-2012 Spread Concepts LLC                               |
+| Copyright (c) 1993-2024 Spread Concepts LLC                               |
 | All rights reserved.                                                      |
 |                                                                           |
 | The Spread package is licensed under the Spread Open-Source License.      |
@@ -48,8 +48,26 @@ SPREAD: A Reliable Multicast and Group Communication Toolkit
 | WWW    : http://www.spread.org  and  http://www.spreadconcepts.com        |
 | Contact: info@spreadconcepts.com                                          |
 |                                                                           |
-| Version 4.2.0  built 05/March/2012                                        |
+| Version 5.1.0 built 29/Feb/2024                                            |
 \===========================================================================/
+
+February 1, 2017 Ver 5.0.0
+--------------------------
+
+No changes versus 5.0.0 RC2.
+
+January 23, 2017 Ver 5.0.0 RC2
+------------------------------
+
+Exported E_get_time_monotonic().
+
+November 22, 2016 Ver 5.0.0 RC1
+-------------------------------
+
+This version adds IPv6 support to the library.  The main changes are 
+data_link.c and the addition of spu_addr.[ch], which is a variadic
+structure (union) that is a wrapper around the various sockaddr types.
+Its purpose is to make handling different kinds of addresses easier.
 
 March 05, 2012 Ver 4.2.0 
 -----------------------------

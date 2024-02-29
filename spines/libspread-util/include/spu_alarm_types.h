@@ -18,25 +18,18 @@
  * The Creators of Spread are:
  *  Yair Amir, Michal Miskin-Amir, Jonathan Stanton, John Schultz.
  *
- *  Copyright (C) 1993-2006 Spread Concepts LLC <info@spreadconcepts.com>
+ *  Copyright (C) 1993-2024 Spread Concepts LLC <info@spreadconcepts.com>
  *
  *  All Rights Reserved.
  *
  * Major Contributor(s):
  * ---------------
+ *    Amy Babay            babay@pitt.edu - accelerated ring protocol.
  *    Ryan Caudy           rcaudy@gmail.com - contributions to process groups.
+ *    Claudiu Danilov      claudiu@acm.org - scalable wide area support.
  *    Cristina Nita-Rotaru crisn@cs.purdue.edu - group communication security.
  *    Theo Schlossnagle    jesus@omniti.com - Perl, autoconf, old skiplist.
  *    Dan Schoenblum       dansch@cnds.jhu.edu - Java interface.
- *
- *
- * This file is also licensed by Spread Concepts LLC under the Spines 
- * Open-Source License, version 1.0. You may obtain a  copy of the 
- * Spines Open-Source License, version 1.0  at:
- *
- * http://www.spines.org/LICENSE.txt
- *
- * or in the file ``LICENSE.txt'' found in this distribution.
  *
  */
 
@@ -49,13 +42,9 @@
  * The defines must be consistent amoung all code that will be compiled together, 
  * but can be different for different executables 
  */
-#define		DEBUG		0x00000001
-#define 	EXIT  		0x00000002
-#define		PRINT		0x00000004
-/* new type to replace general prints */
-#define     SYSTEM      0x00000004
+#define		PRINT		0x00000010
+#define         SYSTEM          0x00000010  /* NOTE: same as PRINT */
 
-#define		DATA_LINK	0x00000010
 #define		NETWORK		0x00000020
 #define		PROTOCOL	0x00000040
 #define		SESSION		0x00000080
@@ -63,12 +52,11 @@
 #define		MEMB		0x00000200
 #define		FLOW_CONTROL	0x00000400
 #define		STATUS		0x00000800
-#define		EVENTS		0x00001000
+#define		DEBUG		0x00001000
 #define		GROUPS		0x00002000
 
 #define         HOP             0x00004000
 #define         OBJ_HANDLER     0x00008000
-#define         MEMORY          0x00010000
 #define         ROUTE           0x00020000
 #define         QOS             0x00040000
 #define         RING            0x00080000

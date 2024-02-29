@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2023 Johns Hopkins University
+/* Copyright (c) 2000-2012, The Johns Hopkins University
  * All rights reserved.
  *
  * The contents of this file are subject to a license (the ``License'').

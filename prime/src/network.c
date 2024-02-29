@@ -21,14 +21,15 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
- *      
- * Copyright (c) 2008-2023
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
+ * 
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -91,7 +92,7 @@ void Initialize_UDP_Sockets(void);
 int max_rcv_buff(int sk);
 int max_snd_buff(int sk);
 
-void Init_Network(void) 
+void Reconfig_Reset_Network(void) 
 {
   int32u i;
 #if THROTTLE_OUTGOING_MESSAGES
@@ -101,17 +102,16 @@ void Init_Network(void)
   struct sockaddr_un conn;
 #endif
 
-  /* Set Application Replica socket to 0 */
-  NET.from_client_sd = 0;
-  NET.to_client_sd = 0;
 
 #if USE_IPC_CLIENT
+  if(NET.from_client_sd==0){
   if((NET.from_client_sd = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0) 
     Alarm(EXIT, "socket error.\n");
 
   memset(&conn, 0, sizeof(struct sockaddr_un));
   conn.sun_family = AF_UNIX;
-  sprintf(conn.sun_path, "%s%d", (char *)REPLICA_IPC_PATH, VAR.My_Server_ID);
+  //sprintf(conn.sun_path, "%s%d", (char *)REPLICA_IPC_PATH, VAR.My_Server_ID);
+  sprintf(conn.sun_path, "%s%d", (char *)REPLICA_IPC_PATH, VAR.My_Tpm_ID);
 
   if (remove(conn.sun_path) == -1 && errno != ENOENT) {
       perror("Initialize_IPC_Socket: error removing previous path binding");
@@ -123,19 +123,23 @@ void Init_Network(void)
   }
   chmod(conn.sun_path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
   E_attach_fd(NET.from_client_sd, READ_FD, Net_Srv_Recv, IPC_SOURCE, NULL, MEDIUM_PRIORITY);
-
+  max_rcv_buff(NET.from_client_sd);
+  max_snd_buff(NET.from_client_sd);
+ Alarm(DEBUG,"During reconfig, READ_FD set NET.from_client\n");
+  }
+  if(NET.to_client_sd==0){
   if((NET.to_client_sd = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0) 
     Alarm(EXIT, "socket error.\n");
 
   memset(&NET.client_addr, 0, sizeof(struct sockaddr_un));
   NET.client_addr.sun_family = AF_UNIX;
-  sprintf(NET.client_addr.sun_path, "%s%d", (char *)CLIENT_IPC_PATH, VAR.My_Server_ID);
+  //sprintf(NET.client_addr.sun_path, "%s%d", (char *)CLIENT_IPC_PATH, VAR.My_Server_ID);
+  sprintf(NET.client_addr.sun_path, "%s%d", (char *)CLIENT_IPC_PATH, VAR.My_Tpm_ID);
 
-  max_rcv_buff(NET.from_client_sd);
-  max_snd_buff(NET.from_client_sd);
   max_rcv_buff(NET.to_client_sd);
   max_snd_buff(NET.to_client_sd);
-
+ Alarm(DEBUG,"During reconf, Initialized IPC to client\n");
+  }
 /* TESTING IPC BUFFER SIZE + NONBLOCK */
 /*  int on, on_len;
   on_len = sizeof(on);
@@ -156,6 +160,98 @@ void Init_Network(void)
   /* Initialize the receiving scatters */
   srv_recv_scat.num_elements    = 1;
   srv_recv_scat.elements[0].len = sizeof(packet);
+  printf("MS2022:srv_recv_scat element[0] size=%d\n",sizeof(packet));
+  srv_recv_scat.elements[0].buf = (char *) new_ref_cnt(PACK_BODY_OBJ);
+  if(srv_recv_scat.elements[0].buf == NULL)
+    Alarm(EXIT, "Init_Network: Cannot allocate packet object\n");
+  
+#ifdef SET_USE_SPINES
+  Initialize_Spines(0, NULL);
+#endif
+
+  /* Initialize the rest of the data structure */
+  for(i = 0; i < 2; i++) {
+    UTIL_DLL_Initialize(&NET.pending_messages_dll[i]);
+    NET.tokens[i] = 0.0;
+    UTIL_Stopwatch_Start(&NET.sw[i]);
+  }
+
+#if THROTTLE_OUTGOING_MESSAGES
+  t.sec  = THROTTLE_SEND_SEC;
+  t.usec = THROTTLE_SEND_USEC;
+  E_queue(NET_Throttle_Send, 0, NULL, t);
+#endif
+}
+
+
+void Init_Network(void) 
+{
+  int32u i;
+#if THROTTLE_OUTGOING_MESSAGES
+  sp_time t;
+#endif
+#if USE_IPC_CLIENT
+  struct sockaddr_un conn;
+#endif
+
+  /* Set Application Replica socket to 0 */
+  NET.from_client_sd = 0;
+  NET.to_client_sd = 0;
+
+#if USE_IPC_CLIENT
+  if((NET.from_client_sd = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0) 
+    Alarm(EXIT, "socket error.\n");
+
+  memset(&conn, 0, sizeof(struct sockaddr_un));
+  conn.sun_family = AF_UNIX;
+  //sprintf(conn.sun_path, "%s%d", (char *)REPLICA_IPC_PATH, VAR.My_Server_ID);
+  sprintf(conn.sun_path, "%s%d", (char *)REPLICA_IPC_PATH, VAR.My_Tpm_ID);
+
+  if (remove(conn.sun_path) == -1 && errno != ENOENT) {
+      perror("Initialize_IPC_Socket: error removing previous path binding");
+      exit(EXIT_FAILURE);
+  }
+  if ((bind(NET.from_client_sd, (struct sockaddr *)&conn, sizeof(conn))) < 0) {
+    perror("bind");
+    exit(0);
+  }
+  chmod(conn.sun_path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+  E_attach_fd(NET.from_client_sd, READ_FD, Net_Srv_Recv, IPC_SOURCE, NULL, MEDIUM_PRIORITY);
+
+  if((NET.to_client_sd = socket(AF_UNIX, SOCK_DGRAM, 0)) < 0) 
+    Alarm(EXIT, "socket error.\n");
+
+  memset(&NET.client_addr, 0, sizeof(struct sockaddr_un));
+  NET.client_addr.sun_family = AF_UNIX;
+  //sprintf(NET.client_addr.sun_path, "%s%d", (char *)CLIENT_IPC_PATH, VAR.My_Server_ID);
+  sprintf(NET.client_addr.sun_path, "%s%d", (char *)CLIENT_IPC_PATH, VAR.My_Tpm_ID);
+
+  max_rcv_buff(NET.from_client_sd);
+  max_snd_buff(NET.from_client_sd);
+  max_rcv_buff(NET.to_client_sd);
+  max_snd_buff(NET.to_client_sd);
+ Alarm(PRINT,"Initialized IPC to and from client\n");
+/* TESTING IPC BUFFER SIZE + NONBLOCK */
+/*  int on, on_len;
+  on_len = sizeof(on);
+  getsockopt(NET.to_client_sd, SOL_SOCKET, SO_SNDBUF, (void *)&on, &on_len);
+  printf("size = %d\n", on);
+
+  on = 1;
+  ioctl(NET.to_client_sd, FIONBIO, &on); */
+
+#else
+  /* Each server listens for incoming TCP connections from clients on
+   * port PRIME_TCP_PORT */
+  Initialize_Listening_Socket();
+#endif
+
+  Initialize_UDP_Sockets();
+
+  /* Initialize the receiving scatters */
+  srv_recv_scat.num_elements    = 1;
+  srv_recv_scat.elements[0].len = sizeof(packet);
+  printf("MS2022:srv_recv_scat element[0] size=%d\n",sizeof(packet));
   srv_recv_scat.elements[0].buf = (char *) new_ref_cnt(PACK_BODY_OBJ);
   if(srv_recv_scat.elements[0].buf == NULL)
     Alarm(EXIT, "Init_Network: Cannot allocate packet object\n");
@@ -396,19 +492,19 @@ void NET_Send_Message(net_struct *n)
    * can pick one that still needs the message at random. */
   if(RANDOMIZE_SENDING) {
     while(1) {
-      i = (rand() % NUM_SERVERS) + 1;
+      i = (rand() % VAR.Num_Servers) + 1;
       if(n->destinations[i] == 1)
 	break;
     }
   }
   else {
-    for(i = 1; i <= NUM_SERVERS; i++)
+    for(i = 1; i <= VAR.Num_Servers; i++)
       if(n->destinations[i] == 1)
 	break;
   }
 
   assert(i != VAR.My_Server_ID);
-  assert(i <= NUM_SERVERS);
+  assert(i <= VAR.Num_Servers);
 
   /* We've decided to send to server i */
   UTIL_Send_To_Server(n->mess, i);
@@ -438,8 +534,8 @@ void Initialize_Spines(int dummy, void *dummy_p)
   spines_ip = htonl(UTIL_Get_Server_Spines_Address(VAR.My_Server_ID));
   NET.Spines_Channel = -1;
 
-  Alarm(DEBUG, "Spines IP: "IPF", My IP: "IPF"\n", 
-	  IP(spines_ip), IP(my_ip));
+  Alarm(PRINT, "Spines IP: "IPF", My IP: "IPF" My_Server_ID=%u\n", 
+	  IP(spines_ip), IP(my_ip),VAR.My_Server_ID);
 #if 0
   /* ========== Connect to spines for Reliable (Bounded) ========= */
   spines_recv_sk = -1;
@@ -652,10 +748,13 @@ void Net_Srv_Recv(channel sk, int source, void *dummy_p)
   sp_time t = {SPINES_CONNECT_SEC, SPINES_CONNECT_USEC};
 
   /* Read the packet from the socket */
-  if(source == UDP_SOURCE)
-    received_bytes = DL_recv(sk, &srv_recv_scat);  
+  if(source == UDP_SOURCE){
+    received_bytes = DL_recv(sk, &srv_recv_scat); 
+   Alarm(DEBUG,"MS2022: received on UDP_SOURCE\n"); 
+  }
 #ifdef SET_USE_SPINES
   else if(source == SPINES_SOURCE) {
+   Alarm(DEBUG,"MS2022: received on SPINES_SOURCE\n"); 
     received_bytes = spines_recvfrom(sk, srv_recv_scat.elements[0].buf, 
 				     PRIME_MAX_PACKET_SIZE, 0, NULL, 0);
     if(received_bytes <= 0) {
@@ -667,7 +766,6 @@ void Net_Srv_Recv(channel sk, int source, void *dummy_p)
         E_queue(Initialize_Spines, 0, NULL, t);
       return;
     }
-    
     mess = (signed_message*)srv_recv_scat.elements[0].buf;
     if (DATA.VIEW.view_change_done == 0 && 
         UTIL_Get_Server_Spines_Address(mess->machine_id) != 
@@ -679,7 +777,9 @@ void Net_Srv_Recv(channel sk, int source, void *dummy_p)
 #endif
   else if(source == TCP_SOURCE) {
     ret = NET_Read(sk, srv_recv_scat.elements[0].buf, 
-            sizeof(signed_update_message));
+            //sizeof(signed_update_message));
+            PRIME_MAX_PACKET_SIZE);
+   Alarm(DEBUG,"MS2022: received on TCP_SOURCE\n"); 
     if(ret <= 0) {
       perror("read");
       close(sk);
@@ -687,20 +787,26 @@ void Net_Srv_Recv(channel sk, int source, void *dummy_p)
       if (sk == NET.from_client_sd) {
         NET.from_client_sd = 0;
         NET.to_client_sd = 0;
+        Alarm(DEBUG,"&&&&&&&MS2022: network.c 786 closing IPC with client\n");
       }
       return;
     }
-    received_bytes = sizeof(signed_update_message);
+    // received_bytes = sizeof(signed_update_message);
+    mess = (signed_message*)srv_recv_scat.elements[0].buf;
+    received_bytes = sizeof(signed_message)+mess->len;
   }
 #if USE_IPC_CLIENT
   else if (source == IPC_SOURCE) { 
     ret = IPC_Recv(sk, srv_recv_scat.elements[0].buf,
-                sizeof(signed_update_message));
+                //sizeof(signed_update_message));
+                PRIME_MAX_PACKET_SIZE);
+    Alarm(DEBUG,"MS2022: received on IPC_SOURCE size=%d\n",ret); 
     if (ret <= 0) {
         perror("Read from IPC Source bad, dropping packet");
         return;
     }
-    received_bytes = sizeof(signed_update_message);
+    // received_bytes = sizeof(signed_update_message);
+    received_bytes=ret;
   }
 #endif
   else {
@@ -708,14 +814,18 @@ void Net_Srv_Recv(channel sk, int source, void *dummy_p)
     return;
   }
 
+   Alarm(DEBUG,"MS2022: Received bytes= %d\n",received_bytes); 
   /* Process the packet */
   mess = (signed_message*)srv_recv_scat.elements[0].buf;
+    Alarm(DEBUG, "MS2022: Network: Got mess type  %s\n", UTIL_Type_To_String(mess->type));
 
   if(source == TCP_SOURCE || source == IPC_SOURCE) {
-    if (mess->type != UPDATE) {
-        Alarm(PRINT, "Network: Got invalid mess type from client: %d\n", mess->type);
+    if (mess->type != UPDATE && mess->type != CLIENT_OOB_CONFIG_MSG) {
+        Alarm(DEBUG, "Network: Got invalid mess type %d from client %d,size=%d\n", mess->type,mess->machine_id,received_bytes);
         return;
     }
+    Alarm(DEBUG, "MS2022: Network: Got valid mess type %d from client: %d\n", mess->type,mess->machine_id);
+    Alarm(DEBUG, "MS2022: Network: Got valid mess type from client: %s\n", UTIL_Type_To_String(mess->type));
     
     /* Store the socket so we know how to send a response */
     /* if(NET.client_sd[mess->machine_id] == 0)
@@ -724,8 +834,9 @@ void Net_Srv_Recv(channel sk, int source, void *dummy_p)
 
   /* Function used to first decide whether or not we should even look at this message 
    * based on the state we are in (STARTUP, RESET, RECOVERY, NORMAL) */
+  /*MS2022: DoS / Replay attack handling */
   if (!VAL_State_Permits_Message(mess)) {
-    Alarm(PRINT, "State %u does not permit processing type %s, from %u\n",
+    Alarm(STATUS, "State %u does not permit processing type %s, from %u\n",
             DATA.PR.recovery_status[VAR.My_Server_ID], UTIL_Type_To_String(mess->type),
             mess->machine_id);
     return;

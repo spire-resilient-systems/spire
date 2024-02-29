@@ -26,9 +26,13 @@
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
+ * 
+ *
  *      
- * Copyright (c) 2008-2023
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -52,6 +56,7 @@
 
 TC_IND *tc_partial_key; /* My Partial Key */
 TC_PK *tc_public_key[NUM_SITES+1];   /* Public Key of Site */
+TC_PK *tc_sm_public_key[NUM_SITES+1];   /* MK: Public Key of SM Site */
 TC_IND_SIG **tc_partial_signatures; /* A list of Partial Signatures */
 
 void assert(int ret, int expect, char *s) {
@@ -72,25 +77,30 @@ void assert_except(int ret, int except, char *s) {
   }
 }
 
-void TC_Read_Partial_Key( int32u server_no, int32u site_id ) 
+void TC_Read_Partial_Key( int32u server_no, int32u site_id,char *dir ) 
 {
     char buf[100];
-    char dir[100] = "./keys";
+    //char dir[100] = "./keys";
  
     sprintf(buf, "%s/share%d_%d.pem", dir, server_no - 1, site_id );
     tc_partial_key = (TC_IND *)TC_read_share(buf);
 }
 
-void TC_Read_Public_Key() 
+void TC_Read_Public_Key(char *dir) 
 {
     int32u nsite;
     
-    char buf[100];
-    char dir[100] = "./keys";
+    char buf[100],buff2[100];
+    //char dir[100] = "./keys";
+    char dir2[100] = "../../scada_master/sm_keys";
 
     for ( nsite = 1; nsite <= NUM_SITES; nsite++ ) {
 	    sprintf(buf,"%s/pubkey_%d.pem", dir, nsite);
 	    tc_public_key[nsite] = (TC_PK *)TC_read_public_key(buf);
+            if(CONFIDENTIAL){
+	       sprintf(buff2,"%s/pubkey_%d.pem", dir2, nsite);
+	       tc_sm_public_key[nsite] = (TC_PK *)TC_read_public_key(buff2);
+	    }
     }
 }
 
@@ -294,8 +304,8 @@ void TC_Generate(int req_shares, char *directory)
 
 	keysize = 1024;
 	faults = NUM_F;
-    rej_servers = NUM_K;
-    n = 3*faults+ 2*rej_servers +1;
+    	rej_servers = NUM_K;
+    	n = 3*faults+ 2*rej_servers +1;
 	k = req_shares;
 	//k = 2*faults+ rej_servers +1;
 	num_sites = NUM_SITES;
@@ -309,5 +319,49 @@ void TC_Generate(int req_shares, char *directory)
 		TC_write_shares(dealer, directory, nsite);
 		TC_DEALER_free(dealer);
 	}
+
+}
+
+int32u TC_Verify_SM_Signature( int32u site, byte *signature, byte *digest )
+{
+    BIGNUM *hash_bn;
+    int32u ret;
+    BIGNUM *sig_bn;
+
+#if REMOVE_CRYPTO
+    return 1;
+#endif
+
+    hash_bn = BN_bin2bn( digest, DIGEST_SIZE, NULL );
+    sig_bn = BN_bin2bn( signature, SIGNATURE_SIZE, NULL );
+
+    if ( site == 0 || site > NUM_SITES ) {
+    ret = 0;
+    } else {
+    ret = TC_verify(hash_bn, sig_bn, tc_sm_public_key[site]);
+    }
+
+    BN_free( sig_bn );
+    BN_free( hash_bn );
+
+    return ret;
+}
+/* The following function takes args and generate the threshold shares and store them on disk. */
+void TC_with_args_Generate(int req_shares, char *directory, int faults,int rej_servers,int num_sites)
+{
+    TC_DEALER *dealer;
+    int nsite;
+    int n, k, keysize;
+
+    keysize = 1024;
+    n = 3*faults+ 2*rej_servers +1;
+    k = req_shares;
+    for ( nsite = 1; nsite <= num_sites; nsite++ ) {
+        dealer = NULL;
+        dealer = TC_generate(keysize/2, n, k, 17);
+
+        TC_write_shares(dealer, directory, nsite);
+        TC_DEALER_free(dealer);
+    }
 
 }

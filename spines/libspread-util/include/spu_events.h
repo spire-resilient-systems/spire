@@ -18,12 +18,13 @@
  * The Creators of Spread are:
  *  Yair Amir, Michal Miskin-Amir, Jonathan Stanton, John Schultz.
  *
- *  Copyright (C) 1993-2009 Spread Concepts LLC <info@spreadconcepts.com>
+ *  Copyright (C) 1993-2024 Spread Concepts LLC <info@spreadconcepts.com>
  *
  *  All Rights Reserved.
  *
  * Major Contributor(s):
  * ---------------
+ *    Amy Babay            babay@pitt.edu - accelerated ring protocol.
  *    Ryan Caudy           rcaudy@gmail.com - contributions to process groups.
  *    Claudiu Danilov      claudiu@acm.org - scalable wide area support.
  *    Cristina Nita-Rotaru crisn@cs.purdue.edu - group communication security.
@@ -32,10 +33,14 @@
  *
  */
 
-
-
 #ifndef	INC_SP_EVENTS
 #define	INC_SP_EVENTS
+
+#include <stddef.h>
+
+#ifndef NULL
+#  define NULL ((void*) 0)
+#endif
 
 /* Raise this number AND RECOMPILE events.c to handle more active FD's. 
  * This number limits the number of connections that 
@@ -61,20 +66,22 @@ typedef struct dummy_time {
 	long	usec;
 } sp_time;
 
-#ifndef NULL
-#define NULL    (void *)0
-#endif
-
 /* Event routines */
 
 int 	E_init(void);
+
 sp_time	E_get_time(void);
-sp_time	E_sub_time( sp_time t, sp_time delta_t );
+sp_time E_get_time_monotonic(void);
+
+sp_time E_neg_time( sp_time t );
 sp_time	E_add_time( sp_time t, sp_time delta_t );
+sp_time	E_sub_time( sp_time t, sp_time delta_t );
+
 /* if t1 > t2 then returns 1;
    if t1 < t2 then returns -1;
    if t1 == t2 then returns 0; */
 int	E_compare_time( sp_time t1, sp_time t2 );
+
 int 	E_queue( void (* func)( int code, void *data ), int code, void *data,
 		 sp_time delta_time );
 int     E_in_queue( void (* func)( int code, void *data ), int code,
@@ -83,12 +90,15 @@ int     E_in_queue( void (* func)( int code, void *data ), int code,
    *data pointer */
 int 	E_dequeue( void (* func)( int code, void *data ), int code,
 		   void *data );
+void    E_dequeue_all_time_events( void );
+
 void	E_delay( sp_time t );
 
 int	E_attach_fd( int fd, int fd_type,
 		     void (* func)( int fd, int code, void *data), int code,
 		     void *data, int priority );
 int 	E_detach_fd( int fd, int fd_type );
+int 	E_detach_fd_priority( int fd, int fd_type, int priority );
 int 	E_set_active_threshold( int priority );
 int     E_activate_fd( int fd, int fd_type );
 int     E_deactivate_fd( int fd, int fd_type );

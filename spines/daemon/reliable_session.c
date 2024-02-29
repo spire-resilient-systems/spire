@@ -19,7 +19,7 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2003-2024 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -1309,7 +1309,7 @@ int Net_Rel_Sess_Send(Session *ses, char *buff, int16u len)
 	}
 
 	Alarm(DEBUG, "session send: %d\n", ses->sk);
-	ret = DL_send_connected(ses->sk,  &scat );
+	ret = DL_send_gen(ses->sk,  &scat );
 
 	Alarm(DEBUG, "sent: %d -> %d\n", ses->sk, ret);
 

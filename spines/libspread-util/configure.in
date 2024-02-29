@@ -1,4 +1,4 @@
-AC_INIT(Spread_Util, 4.2.0)
+AC_INIT(Spread_Util, 5.0.0)
 
 AC_CONFIG_AUX_DIR(buildtools)
 AC_CONFIG_HEADERS(src/config.h)
@@ -101,7 +101,7 @@ AC_CHECK_LIB(m, sqrt)
 AC_FUNC_STRFTIME
 
 # Checks for header files.
-AC_CHECK_HEADERS(arpa/inet.h assert.h errno.h grp.h limits.h netdb.h netinet/in.h netinet/tcp.h process.h pthread.h pwd.h signal.h stdarg.h stdint.h stdio.h stdlib.h string.h sys/inttypes.h sys/ioctl.h sys/param.h sys/socket.h sys/stat.h sys/time.h sys/timeb.h sys/types.h sys/uio.h sys/un.h sys/filio.h time.h unistd.h windows.h winsock.h)
+AC_CHECK_HEADERS(arpa/inet.h assert.h errno.h grp.h limits.h netdb.h netinet/in.h netinet/tcp.h process.h pthread.h pwd.h signal.h stdarg.h stdint.h stdio.h stdlib.h string.h sys/inttypes.h sys/ioctl.h sys/param.h sys/socket.h sys/stat.h sys/time.h sys/timeb.h sys/types.h sys/uio.h sys/un.h sys/filio.h time.h unistd.h winsock2.h ws2tcpip.h)
 
 dnl    Checks for library functions.
 AC_CHECK_FUNCS(bcopy inet_aton inet_ntoa inet_ntop memmove setsid snprintf strerror lrand48)
@@ -110,9 +110,9 @@ AC_CHECK_FUNCS(gettimeofday time)
 
 # Check for clock_gettime(CLOCK_MONOTONIC, ...)
 AC_CACHE_CHECK([for clock_gettime(CLOCK_MONOTONIC)], ac_cv_clock_gettime_monotonic, [
-	AC_TRY_COMPILE(
-		[ #include <time.h> ],
-		[ struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t); ],
+	AC_TRY_RUN(
+		[ #include <time.h>
+		  int main() { struct timespec t; return clock_gettime(CLOCK_MONOTONIC, &t); } ],
 		[ ac_cv_clock_gettime_monotonic="yes" ],
 		[ ac_cv_clock_gettime_monotonic="no" ]
 	)
@@ -218,7 +218,7 @@ AC_CACHE_CHECK([for struct msghdr type], ac_cv_have_struct_msghdr, [
 	AC_TRY_COMPILE(
 		[ #include <sys/types.h>
 		  #include <sys/socket.h> ], 
-		[ static  struct  msghdr msg; msg.msg_namelen = 1; ], 
+		[ static  struct  msghdr msg; msg.msg_name = 0; msg.msg_namelen = 1; msg.msg_iov = 0; msg.msg_iovlen = 0; ], 
 		[ ac_cv_have_struct_msghdr="yes" ],
 		[ ac_cv_have_struct_msghdr="no" ]
 	)

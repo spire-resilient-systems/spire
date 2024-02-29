@@ -21,14 +21,15 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2023
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -170,7 +171,7 @@ void ORDER_Periodically(int dummy, void *dummyp)
 
 int32u ORDER_Send_One_Pre_Prepare(int32u caller)
 {
-  signed_message *mset[NUM_SERVERS];
+  signed_message *mset[VAR.Num_Servers];
   signed_message *pp;
   pre_prepare_message *pp_specific;
   po_aru_signed_message *cum_acks;
@@ -234,11 +235,11 @@ int32u ORDER_Send_One_Pre_Prepare(int32u caller)
     cutoff = 0;
     if (DATA.ORD.inconsistent_pp_type == 2) {
         Alarm(PRINT, "Launching Inconsistent PP Attack #2. seq = %u\n", DATA.ORD.seq - 1);
-        cutoff = NUM_SERVERS/2;
+        cutoff = VAR.Num_Servers/2;
     }
     else if (DATA.ORD.inconsistent_pp_type == 3) {
         Alarm(PRINT, "Launching Inconsistent PP Attack #3. seq = %u\n", DATA.ORD.seq - 1);
-        cutoff = NUM_SERVERS - 2;
+        cutoff = VAR.Num_Servers - 2;
     }
     else {
         Alarm(EXIT, "Invalid PP attack. Must be -a 2 or -a 3 on CMD line\n");
@@ -253,8 +254,8 @@ int32u ORDER_Send_One_Pre_Prepare(int32u caller)
     pp = (signed_message *)(attack_mess);
     pp_specific = (pre_prepare_message *)(pp + 1);
     cum_acks = (po_aru_signed_message *)(pp_specific + 1);
-    
-    memset(cum_acks[VAR.My_Server_ID - 1].cum_ack.ack_for_server, 0, sizeof(po_seq_pair) * NUM_SERVERS);
+    /*MS2022: MAX_NUM_SERVERS as this is a packet with MAX_NUM_SERVERS in defines, we need to null the whole struct*/ 
+    memset(cum_acks[VAR.My_Server_ID - 1].cum_ack.ack_for_server, 0, sizeof(po_seq_pair) * MAX_NUM_SERVERS);
     UTIL_RSA_Sign_Message(&cum_acks[VAR.My_Server_ID - 1].header);
 
     dest_bits = 0;
@@ -263,7 +264,7 @@ int32u ORDER_Send_One_Pre_Prepare(int32u caller)
     SIG_Add_To_Pending_Messages(mset[1], dest_bits, UTIL_Get_Timeliness(PRE_PREPARE));
 
     dest_bits = 0;
-    for (i = cutoff + 1; i <= NUM_SERVERS; i++) 
+    for (i = cutoff + 1; i <= VAR.Num_Servers; i++) 
         UTIL_Bitmap_Set(&dest_bits, i);
     SIG_Add_To_Pending_Messages(attack_mess, dest_bits, UTIL_Get_Timeliness(PRE_PREPARE));
 
@@ -293,7 +294,7 @@ int32u ORDER_Send_One_Pre_Prepare(int32u caller)
   if (!slot->populated_eligible) {
     slot->populated_eligible = 1; 
     slot->view = pp_specific->view;
-    for (i = 0; i < NUM_SERVERS; i++) {
+    for (i = 0; i < VAR.Num_Servers; i++) {
       ps = PRE_ORDER_Proof_ARU(i+1, cum_acks);
       if (PRE_ORDER_Seq_Compare(ps, pp_specific->last_executed[i]) > 0) 
         slot->made_eligible[i] = ps;
@@ -358,6 +359,7 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
   //util_stopwatch sw;
   //sp_time start;
 
+  Alarm(STATUS, "%d Process Pre-Prepare\n", VAR.My_Server_ID);
   Alarm(DEBUG, "%d Process Pre-Prepare\n", VAR.My_Server_ID);
 
   pp_specific = (pre_prepare_message *)(mess+1);
@@ -421,8 +423,8 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
   
   /* Print statement for debugging */
   if (pp_specific->view < DATA.View)
-    Alarm(PRINT, "Process_Pre_Prepare: Accept PP %u from view %u while installing %u\n",
-            pp_specific->seq_num, pp_specific->view, DATA.View);
+    Alarm(PRINT, "Process_Pre_Prepare: Accept PP %u from machine_id %d in view %u while installing %u\n",
+            pp_specific->seq_num, mess->machine_id,pp_specific->view, DATA.View);
 
   //slot = UTIL_Get_ORD_Slot_If_Exists(pp_specific->seq_num);
   slot = UTIL_Get_ORD_Slot(pp_specific->seq_num);
@@ -564,7 +566,7 @@ void ORDER_Process_Pre_Prepare(signed_message *mess)
 
   /* Apply the PO-ARUs contained in the proof matrix, checking for
    *      any inconsistencies. NULL vectors checked in function */
-  for(i = 0; i < NUM_SERVERS; i++) {
+  for(i = 0; i < VAR.Num_Servers; i++) {
     signed_message *m = (signed_message *)&cum_acks[i];
     PRE_ORDER_Process_PO_ARU(m); 
   }
@@ -649,7 +651,7 @@ void ORDER_Send_Prepares(void)
        * personally have installed all of the incarnations on the PO_ARUs that 
        * appear in the message. If at least one po_aru is from an incarnation that
        * I have yet to install, do not send a prepare. */
-      for (i = 1; i <= NUM_SERVERS; i++) {
+      for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.PR.installed_incarnations[i] < cum_acks[i-1].header.incarnation) {
             Alarm(PRINT, "ORDER_Send_Prepares: po_aru incarnation > my_installed for %u\n", i);
             return;
@@ -670,7 +672,7 @@ void ORDER_Send_Prepares(void)
       prev_slot = UTIL_Get_ORD_Slot_If_Exists(DATA.ORD.ppARU);
       if (prev_slot == NULL) {
         assert(DATA.ORD.ppARU == 0);
-        for (i = 0; i < NUM_SERVERS; i++)
+        for (i = 0; i < VAR.Num_Servers; i++)
             if (PRE_ORDER_Seq_Compare(complete_pp->last_executed[i], zero_ps) != 0) {
                 Alarm(PRINT, "ORDER_Send_Prepares: complete_pp->last_executed != all 0s for first ord\n");
                 return;
@@ -689,7 +691,7 @@ void ORDER_Send_Prepares(void)
        * ordinal slot */
       if (!slot->populated_eligible) {
           slot->populated_eligible = 1;
-          for (i = 0; i < NUM_SERVERS; i++) {
+          for (i = 0; i < VAR.Num_Servers; i++) {
             ps = PRE_ORDER_Proof_ARU(i+1, cum_acks);
             if (PRE_ORDER_Seq_Compare(ps, complete_pp->last_executed[i]) > 0)
                 slot->made_eligible[i] = ps;
@@ -702,7 +704,7 @@ void ORDER_Send_Prepares(void)
        * that is greater than what we've sent, update our records so that
        * we don't think we are required to send a PO ARU with it - cause
        * no progress would actually be made if we did. */
-      for(i = 1; i <= NUM_SERVERS; i++) {
+      for(i = 1; i <= VAR.Num_Servers; i++) {
         ps = slot->made_eligible[i-1];
         if (PRE_ORDER_Seq_Compare(ps, DATA.PO.max_num_sent_in_proof[i]) > 0) 
             DATA.PO.max_num_sent_in_proof[i] = ps;
@@ -756,10 +758,10 @@ void ORDER_Send_Prepares(void)
       stddll_begin(&DATA.SUSP.turnaround_times, &it);
       tatc = (tat_challenge *)stddll_it_val(&it);
 
-      for (i = 0; i < NUM_SERVERS && covered == 1; i++) {
+      for (i = 0; i < VAR.Num_Servers && covered == 1; i++) {
 
         lower = higher = 0;
-        for (j = 0; j < NUM_SERVERS; j++) {
+        for (j = 0; j < VAR.Num_Servers; j++) {
           if (PRE_ORDER_Seq_Compare(cum_acks[i].cum_ack.ack_for_server[j], 
                 tatc->proof_matrix[i+1].cum_ack.ack_for_server[j]) < 0) 
           {
@@ -855,11 +857,13 @@ int32u ORDER_Pre_Prepare_Backward_Progress(complete_pre_prepare_message *pp)
 
 void ORDER_Process_Prepare(signed_message *mess) 
 {
-  int32u *vector_ptr; //, i;
+  int32u *vector_ptr; 
+  int i;
   ord_slot *slot, *t_slot;
   prepare_message *prepare_specific;
   signed_message *commit;
 
+  Alarm(STATUS, "%d ORDER_Prepare\n",VAR.My_Server_ID);
   Alarm(DEBUG, "%d ORDER_Prepare\n",VAR.My_Server_ID);
 
   prepare_specific = (prepare_message*)(mess+1);
@@ -915,10 +919,14 @@ void ORDER_Process_Prepare(signed_message *mess)
   if(slot->prepare[mess->machine_id] != NULL)
     return;
 
-  if (slot->snapshot == 0)
+  if (slot->snapshot == 0){
     vector_ptr = DATA.PR.preinstalled_incarnations + 1;
-  else
+    Alarm(STATUS,"slot->snapshot==0\n");
+   }
+  else{
     vector_ptr = slot->preinstalled_snapshot + 1;
+    Alarm(STATUS,"slot->snapshot!=0\n");
+  }
 
   /* Check that the preinstalled vector on this prepare matches
    * my knowledge of the preinstalled incarnations of each of the replicas.
@@ -926,20 +934,21 @@ void ORDER_Process_Prepare(signed_message *mess)
   if (memcmp(prepare_specific->preinstalled_incarnations, 
               vector_ptr,
               //DATA.PR.preinstalled_incarnations+1,
-              NUM_SERVERS * sizeof(int32u)) != 0) 
+              // MAX_NUM_SERVERS * sizeof(int32u)) != 0) 
+              VAR.Num_Servers * sizeof(int32u)) != 0) 
   {
       Alarm(DEBUG, "Process_Prepare: mismatch preinstall vector from %u. snap=%u:\n", 
                 mess->machine_id, slot->snapshot);
-      /* printf("\t\tmine = [");
-      for (i = 1; i <= NUM_SERVERS; i++) {
+      printf("\t\tmine = [");
+      for (i = 1; i <= MAX_NUM_SERVERS; i++) {
           printf("%u, ", DATA.PR.preinstalled_incarnations[i]);
       }
       printf("]\n");
       printf("\t\tprep = [");
-      for (i = 0; i < NUM_SERVERS; i++) {
+      for (i = 0; i < MAX_NUM_SERVERS; i++) {
           printf("%u, ", prepare_specific->preinstalled_incarnations[i]);
       }
-      printf("]\n"); */
+      printf("]\n"); 
       return;
   }
 
@@ -947,7 +956,7 @@ void ORDER_Process_Prepare(signed_message *mess)
   slot->prepare[mess->machine_id] = mess;
 
   Alarm(DEBUG,"PREPARE %d %d \n", mess, get_ref_cnt(mess) );
-  Alarm(DEBUG,"%d slot->prepare_certificate_ready %d\n",   VAR.My_Server_ID, slot->prepare_certificate_ready);
+  Alarm(DEBUG,"%d slot->prepare_certificate_ready %d, ordered=%d\n",   VAR.My_Server_ID, slot->prepare_certificate_ready,slot->ordered);
   Alarm(DEBUG,"Received Prepare for %u from %u\n", prepare_specific->seq_num, mess->machine_id);
 
   /* If we've already created the certificate (or committed it), no need to
@@ -977,14 +986,16 @@ int32u ORDER_Prepare_Certificate_Ready(ord_slot *slot)
   int32u pcount, sn;
 
   /* Need a Pre_Prepare for a Prepare Certificate to be ready */
-  if(slot->collected_all_parts == 0)
+  if(slot->collected_all_parts == 0){
+    Alarm(DEBUG, "ORDER_Prepare_Certificate_Ready: slot->collected_all_parts == 0\n");
     return 0;
+   }
 
   pp   = (complete_pre_prepare_message *)&(slot->complete_pre_prepare);
   prepare = (signed_message **)slot->prepare;
   pcount = 0;
 
-  for(sn = 1; sn <= NUM_SERVERS; sn++) {
+  for(sn = 1; sn <= VAR.Num_Servers; sn++) {
     if(prepare[sn] != NULL) {
       if(ORDER_Prepare_Matches_Pre_Prepare(prepare[sn], pp))
         pcount++;
@@ -995,9 +1006,13 @@ int32u ORDER_Prepare_Certificate_Ready(ord_slot *slot)
   }
 
   /* If we have the Pre-Prepare and 2f + k Prepares, we're good to go */
-  if (pcount >= 2*NUM_F + NUM_K) {   /* (n+f)/2 */
+  //if (pcount >= 2*NUM_F + NUM_K) {   /* (n+f)/2 */
+  if (pcount >= 2*VAR.F + VAR.K) {   /* (n+f)/2 */
     Alarm(DEBUG,"%d pcount %d\n", VAR.My_Server_ID, pcount);
     return 1;
+  }else{
+
+    Alarm(DEBUG,"%d pcount %d needed =%d\n", VAR.My_Server_ID, pcount,2*VAR.F + VAR.K);
   }
   
   return 0;
@@ -1050,7 +1065,7 @@ void ORDER_Move_Prepare_Certificate(ord_slot *slot)
   memcpy(&slot->prepare_certificate.pre_prepare, &slot->complete_pre_prepare,
          sizeof(complete_pre_prepare_message));
 
-  for(sn = 1; sn <= NUM_SERVERS; sn++) {
+  for(sn = 1; sn <= VAR.Num_Servers; sn++) {
     if (prepare_src[sn] != NULL) {
       
       if(ORDER_Prepare_Matches_Pre_Prepare(prepare_src[sn],
@@ -1074,10 +1089,11 @@ void ORDER_Move_Prepare_Certificate(ord_slot *slot)
 
 void ORDER_Process_Commit(signed_message *mess)
 {
-  int32u *vector_ptr; //, i;
+  int32u *vector_ptr, i;
   ord_slot *slot, *t_slot;
   commit_message *commit_specific;
 
+  Alarm(STATUS, "%d ORDER_COMMIT\n",VAR.My_Server_ID);
   Alarm(DEBUG, "%d ORDER_COMMIT\n",VAR.My_Server_ID);
 
   commit_specific = (commit_message*)(mess+1);
@@ -1129,20 +1145,23 @@ void ORDER_Process_Commit(signed_message *mess)
   if (memcmp(commit_specific->preinstalled_incarnations, 
               vector_ptr,
               //DATA.PR.preinstalled_incarnations+1,
-              NUM_SERVERS * sizeof(int32u)) != 0) 
+              //MAX_NUM_SERVERS * sizeof(int32u)) != 0) 
+              VAR.Num_Servers * sizeof(int32u)) != 0) 
   {
-      Alarm(DEBUG, "Process_Commit: mismatch preinstall vector from %u. snap=%u:\n", 
+      Alarm(PRINT, "Process_Commit: mismatch preinstall vector from %u. snap=%u:\n", 
                 mess->machine_id, slot->snapshot);
-      /* printf("\t\tmine = [");
-      for (i = 1; i <= NUM_SERVERS; i++) {
-          printf("%u, ", DATA.PR.preinstalled_incarnations[i]);
+      printf("\t\tmine = [");
+      for (i = 1; i <= VAR.Num_Servers; i++) {
+          //printf("%u, ", DATA.PR.preinstalled_incarnations[i]);
+          printf("%u, ", *vector_ptr);
+	  vector_ptr+=1;
       }
       printf("]\n");
       printf("\t\tcomm = [");
-      for (i = 0; i < NUM_SERVERS; i++) {
+      for (i = 0; i < VAR.Num_Servers; i++) {
           printf("%u, ", commit_specific->preinstalled_incarnations[i]);
       }
-      printf("]\n"); */
+      printf("]\n"); 
       return;
   }
 
@@ -1159,6 +1178,7 @@ void ORDER_Process_Commit(signed_message *mess)
      
       /* Execute the commit certificate only the first time that we get it */
       if (slot->seq_num == 0) Alarm(PRINT, "Order process commit: about to execute commit with seq_num 0\n");
+      Alarm(DEBUG, "Order process commit: about to execute commit with seq_num 0\n");
       ORDER_Execute_Commit(slot);
   }
 }
@@ -1177,7 +1197,7 @@ int32u ORDER_Commit_Certificate_Ready(ord_slot *slot)
   commit = (signed_message **)slot->commit;
   pcount = 0;
 
-  for(sn = 1; sn <= NUM_SERVERS; sn++) {
+  for(sn = 1; sn <= VAR.Num_Servers; sn++) {
     if(commit[sn] != NULL) {
       if(ORDER_Commit_Matches_Pre_Prepare(commit[sn], pp))
         pcount++;
@@ -1186,7 +1206,8 @@ int32u ORDER_Commit_Certificate_Ready(ord_slot *slot)
     }
   }
 
-  if(pcount >= (2*NUM_F + NUM_K + 1)) {   /* 2f+k+1 */
+  //if(pcount >= (2*NUM_F + NUM_K + 1)) {   /* 2f+k+1 */
+  if(pcount >= (2*VAR.F + VAR.K + 1)) {   /* 2f+k+1 */
     Alarm(DEBUG,"%d pcount %d\n", VAR.My_Server_ID, pcount);
     return 1;
   }
@@ -1240,7 +1261,7 @@ void ORDER_Move_Commit_Certificate(ord_slot *slot)
   else
     pp = &slot->complete_pre_prepare;
 
-  for(sn = 1; sn <= NUM_SERVERS; sn++) {
+  for(sn = 1; sn <= VAR.Num_Servers; sn++) {
     if((commit_src)[sn] != NULL) {
       Alarm(DEBUG,"ORDER_Move_Commit_Certificate %d\n", commit_src[sn]);
 
@@ -1258,7 +1279,7 @@ void ORDER_Move_Commit_Certificate(ord_slot *slot)
 
   /* Create the preinstalled_incarnation snapshot, which should be my own knowledge */
   if (slot->snapshot == 0) {
-    for (i = 1; i <= NUM_SERVERS; i++) 
+    for (i = 1; i <= VAR.Num_Servers; i++) 
       slot->preinstalled_snapshot[i] = DATA.PR.preinstalled_incarnations[i];
     slot->snapshot = 1;
   }
@@ -1275,7 +1296,7 @@ void ORDER_Move_Commit_Certificate(ord_slot *slot)
   * so the content will not be changing. */
   if (!slot->populated_eligible) {
     slot->populated_eligible = 1;
-    for(i = 0; i < NUM_SERVERS; i++) {
+    for(i = 0; i < VAR.Num_Servers; i++) {
         ps = PRE_ORDER_Proof_ARU(i+1, pp->cum_acks);
     
         if (PRE_ORDER_Seq_Compare(ps, pp->last_executed[i]) > 0)
@@ -1294,8 +1315,8 @@ int32u ORDER_Ready_To_Execute(ord_slot *o_slot)
   ord_slot *prev_ord_slot;
   po_slot *p_slot;
   int32u gseq, i, j;
-  po_seq_pair prev_pop[NUM_SERVER_SLOTS];
-  po_seq_pair cur_pop[NUM_SERVER_SLOTS];
+  po_seq_pair prev_pop[MAX_NUM_SERVER_SLOTS];
+  po_seq_pair cur_pop[MAX_NUM_SERVER_SLOTS];
   po_seq_pair ps, zero_ps = {0, 0};
   stdit it;
 
@@ -1335,18 +1356,18 @@ int32u ORDER_Ready_To_Execute(ord_slot *o_slot)
   if(prev_ord_slot == NULL) {
     assert(gseq == 1);
 
-    for(i = 1; i <= NUM_SERVERS; i++)
+    for(i = 1; i <= VAR.Num_Servers; i++)
       prev_pop[i] = zero_ps;
   }
   else {
-    for(i = 1; i <= NUM_SERVERS; i++)
+    for(i = 1; i <=  VAR.Num_Servers; i++)
       prev_pop[i] = pp->last_executed[i-1];
   }
 
   /* Second, setup cur_pop as made_eligible, which should be setup
    * by now either when we sent our prepare or when we ordered 
    * (collected 2f+k+1 commits) */
-  for (i = 1; i <= NUM_SERVERS; i++)
+  for (i = 1; i <=  VAR.Num_Servers; i++)
     cur_pop[i] = o_slot->made_eligible[i-1];
 
 #if 0
@@ -1374,7 +1395,7 @@ int32u ORDER_Ready_To_Execute(ord_slot *o_slot)
     cur_pop[i] = PRE_ORDER_Proof_ARU(i, pp->cum_acks);
 #endif
 
-  for(i = 1; i <= NUM_SERVERS; i++) {
+  for(i = 1; i <=  VAR.Num_Servers; i++) {
 
     assert(prev_pop[i].incarnation <= cur_pop[i].incarnation);
     if (prev_pop[i].incarnation < cur_pop[i].incarnation) {
@@ -1425,8 +1446,8 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
   ord_slot *prev_ord_slot;
   po_slot *p_slot;
   po_id pid;
-  po_seq_pair prev_pop[NUM_SERVER_SLOTS];
-  po_seq_pair cur_pop[NUM_SERVER_SLOTS];
+  po_seq_pair prev_pop[MAX_NUM_SERVER_SLOTS];
+  po_seq_pair cur_pop[MAX_NUM_SERVER_SLOTS];
   po_seq_pair ps, ps_update, zero_ps = {0, 0};
   int32u gseq, i, j, k, num_events;
   signed_message *event;
@@ -1439,6 +1460,7 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
 
   assert(o_slot);
 
+  Alarm(STATUS, "Trying to execute Commit for Ord seq %d!\n", o_slot->seq_num);
   Alarm(DEBUG, "Trying to execute Commit for Ord seq %d!\n", o_slot->seq_num);
 
   if(o_slot->prepare_certificate_ready)
@@ -1469,18 +1491,18 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
   if(prev_ord_slot == NULL) {
     assert(gseq == 1);
 
-    for(i = 1; i <= NUM_SERVERS; i++)
+    for(i = 1; i <=  VAR.Num_Servers; i++)
       prev_pop[i] = zero_ps;
   }
   else {
-    for(i = 1; i <= NUM_SERVERS; i++)
+    for(i = 1; i <=  VAR.Num_Servers; i++)
       prev_pop[i] = pp->last_executed[i-1];
   }
 
   /* Second, setup cur_pop as made_eligible, which should be setup
    * by now either when we sent our prepare or when we ordered 
    * (collected 2f+k+1 commits) */
-  for (i = 1; i <= NUM_SERVERS; i++)
+  for (i = 1; i <=  VAR.Num_Servers; i++)
     cur_pop[i] = o_slot->made_eligible[i-1];
 
 #if 0
@@ -1564,7 +1586,7 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
   event_tot = 0;
   stddll_construct(&eventq, sizeof(signed_message *));
 
-  for(i = 1; i <= NUM_SERVERS; i++) {
+  for(i = 1; i <=  VAR.Num_Servers; i++) {
 
     assert(prev_pop[i].incarnation <= cur_pop[i].incarnation);
     if (prev_pop[i].incarnation < cur_pop[i].incarnation) {
@@ -1796,7 +1818,7 @@ void ORDER_Execute_Commit(ord_slot *o_slot)
   /* If we are still working on a view change, check if we now
    *    have collected complete state from any one */
   if (DATA.VIEW.view_change_done == 0) {
-    for (i = 1; i <= NUM_SERVERS; i++) 
+    for (i = 1; i <=  VAR.Num_Servers; i++) 
       VIEW_Check_Complete_State(i);
 
     /* If we missed some view change messages, but not ORD messages and 
@@ -1870,7 +1892,8 @@ void ORDER_Execute_Update(signed_message *mess, int32u ord_num, int32u event_idx
   signed_update_message *u;
 
   assert(mess->type == UPDATE);
-
+  Alarm(STATUS,"MS2022: Sending to client mess of type %d\n",mess->type);
+  Alarm(DEBUG,"MS2022: Sending to client mess of type %d\n",mess->type);
   BENCH.updates_executed++;
   if(BENCH.updates_executed == 1)
     UTIL_Stopwatch_Start(&BENCH.test_stopwatch);
@@ -1923,7 +1946,7 @@ void ORDER_Flood_Pre_Prepare(signed_message *mess)
     int32u dest_bits, i;
     /* Send it to all but the leader and myself */
     dest_bits = 0;
-    for(i = 1; i <= NUM_SERVERS; i++) {
+    for(i = 1; i <=  VAR.Num_Servers; i++) {
       if(i == UTIL_Leader() || i == VAR.My_Server_ID)
 	continue;
       UTIL_Bitmap_Set(&dest_bits, i);
@@ -2121,7 +2144,7 @@ void ORDER_Garbage_Collect_ORD_Slot(ord_slot *slot, int erase)
     dec_ref_cnt(slot->ord_certificate);
 
   /* We'll never need or allocate this slot again, so clear it out. */
-  for(i = 1; i <= NUM_SERVERS; i++) {
+  for(i = 1; i <=  VAR.Num_Servers; i++) {
     if(slot->prepare[i])
       dec_ref_cnt(slot->prepare[i]);
     
@@ -2200,6 +2223,7 @@ void ORDER_Cleanup()
   close(NET.from_client_sd);
   E_detach_fd(NET.from_client_sd, READ_FD);
   NET.from_client_sd = 0;
+  Alarm(PRINT,"&&&&&&&MS2022: order.c 2201 clsing fron_client_sd\n");
 #if USE_IPC_CLIENT
   close(NET.to_client_sd);
 #endif

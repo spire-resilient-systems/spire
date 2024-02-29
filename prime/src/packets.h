@@ -21,14 +21,15 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
- *      
- * Copyright (c) 2008-2023
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
+ * 
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -66,12 +67,16 @@ enum packet_types {DUMMY,
            RESET_NEWLEADER, RESET_NEWLEADERPROOF, 
            RESET_VIEWCHANGE, RESET_NEWVIEW, RESET_CERT,
 		   /* 46 --> */ UPDATE, CLIENT_RESPONSE, 
-           MAX_MESS_TYPE};
+           OOB_CONFIG,IB_CONFIG,MAX_MESS_TYPE};
 
+enum key_types {SM_TC_PUB, SM_TC_PVT, PRIME_TC_PUB, PRIME_TC_PVT, PRIME_RSA_PUB, PRIME_RSA_PVT};
 /* Defines to help with SCADA application */
 #define CLIENT_NO_OP 101
 #define CLIENT_STATE_TRANSFER 102
 #define CLIENT_SYSTEM_RESET 103
+#define CLIENT_SYSTEM_RECONF 104
+#define CLIENT_OOB_CONFIG_MSG 48
+#define CONFIG_KEYS_MSG 49
 
 /* Forward declaration */
 struct dummy_ord_slot;
@@ -92,7 +97,7 @@ typedef struct dummy_signed_message {
 
   int32u incarnation;          /* set for session-key-signed messages */
   int32u monotonic_counter;    /* set for TPM-signed messages */
-  
+  int32u global_configuration_number; /*MS2022:  Global incarnation number to differntiate configurations*/ 
   /* int32u seq_num; */
 
   /* Content of message follows */
@@ -111,6 +116,58 @@ typedef struct dummy_update_message {
   int32u seq_num;
   /* the update content follows */
 } update_message;
+
+typedef struct dummy_nm_message {
+     //New N
+   int32u N;
+ //f
+   int32u f;
+ //k
+   int32u k;
+ //num of sites
+   int32u num_sites;
+   int32u num_cc;
+   int32u num_dc;
+   int32u num_cc_replicas;
+   int32u num_dc_replicas;
+ //1-Max IPs - fill only needed Ips and rest NULL
+   int32u tpm_based_id[MAX_NUM_SERVER_SLOTS];
+   int replica_flag[MAX_NUM_SERVER_SLOTS];
+   char sm_addresses[MAX_NUM_SERVER_SLOTS][32];
+   char spines_ext_addresses[MAX_NUM_SERVER_SLOTS][32];
+   int32 spines_ext_port;
+   char spines_int_addresses[MAX_NUM_SERVER_SLOTS][32];
+   int32 spines_int_port;
+   char prime_addresses[MAX_NUM_SERVER_SLOTS][32];
+ //start state
+   int initial_state;
+//start state hash
+   byte initial_state_digest[DIGEST_SIZE];
+   int32u frag_num;
+ //pubkeys ???
+
+}nm_message;
+
+typedef struct dummy_key_msg_header{
+    int32u frag_idx;
+    //key-types: sm_tc_pvt, prime_tc_pvt, prime_rsa_pvt, sm_tc_pub,prime_tc_pub, prime_rsa_pub
+}key_msg_header;
+
+typedef struct dummy_pvt_key_header{
+    int32u key_type;
+    int32u id;
+    int32u unenc_size;
+    int32u pvt_key_parts;
+    int32u pvt_key_part_size;
+    /*Note key contents [pvt_key_parts][pvt_key_part_size] */
+}pvt_key_header;
+
+typedef struct dummy_pub_key_header {
+    int32u key_type;
+    int32u id;
+    int32u size;
+    /*key contents of len size*/
+} pub_key_header;
 
 typedef struct dummy_signed_update_message {
   signed_message header;
@@ -142,7 +199,7 @@ typedef struct dummy_po_ack_message {
   int32u num_ack_parts;             /* Number of Acks */
   
   /* preinstalled incarnation for each server */
-  int32u preinstalled_incarnations[NUM_SERVERS]; 
+  int32u preinstalled_incarnations[MAX_NUM_SERVERS]; 
   
   /* a list of po_ack_parts follows */
 } po_ack_message;
@@ -151,7 +208,7 @@ typedef struct dummy_po_ack_message {
 typedef struct dummy_po_aru_message {
   int32u num;
   /* Cumulative ack for each server */
-  po_seq_pair ack_for_server[NUM_SERVERS];
+  po_seq_pair ack_for_server[MAX_NUM_SERVERS];
 } po_aru_message;
 
 /* a struct containing pre-order proof messages */
@@ -186,7 +243,7 @@ typedef struct dummy_pre_prepare_message {
   byte proposal_digest[DIGEST_SIZE];
 
   /* Last Executed Vector */
-  po_seq_pair last_executed[NUM_SERVERS];
+  po_seq_pair last_executed[MAX_NUM_SERVERS];
 
   int16u part_num;
   int16u total_parts;
@@ -199,7 +256,7 @@ typedef struct dummy_prepare_message {
   int32u seq_num;              /* seq number                            */
   int32u view;                 /* the view number                       */
   byte   digest[DIGEST_SIZE];  /* a digest of whatever is being ordered */
-  int32u preinstalled_incarnations[NUM_SERVERS]; 
+  int32u preinstalled_incarnations[MAX_NUM_SERVERS]; 
 } prepare_message;
 
 /* Structure of a Commit Message */
@@ -207,7 +264,7 @@ typedef struct dummy_commit_message {
   int32u seq_num;                      /* seq number */
   int32u view;
   byte digest[DIGEST_SIZE];   /* a digest of the content */
-  int32u preinstalled_incarnations[NUM_SERVERS]; 
+  int32u preinstalled_incarnations[MAX_NUM_SERVERS]; 
 } commit_message;
 
 typedef struct dummy_complete_pre_prepare_message {
@@ -215,8 +272,8 @@ typedef struct dummy_complete_pre_prepare_message {
   int32u view;
   
   byte proposal_digest[DIGEST_SIZE];
-  po_seq_pair last_executed[NUM_SERVERS];
-  po_aru_signed_message cum_acks[NUM_SERVERS];
+  po_seq_pair last_executed[MAX_NUM_SERVERS];
+  po_aru_signed_message cum_acks[MAX_NUM_SERVERS];
 } complete_pre_prepare_message;
 
 typedef struct dummy_client_response_message {
@@ -344,7 +401,7 @@ typedef struct dummy_catchup_request {
   int32u flag;    // CATCHUP, JUMP, PERIODIC, RECOVERY
   int32u nonce;
   int32u aru;
-  po_seq_pair po_aru[NUM_SERVERS];
+  po_seq_pair po_aru[MAX_NUM_SERVERS];
   byte   proposal_digest[DIGEST_SIZE];
   /* possibly include PO.aru vector so that the
    * receiver can know if they should EXCLUDE any of the
@@ -366,7 +423,7 @@ typedef struct dummy_jump_message {
    *       FOR NOW - using installed_incarnations vector to emulate session keys
    *  (2)  ord certificate: always 1 pre-prepare, If commit_cert, also 2f+k+1 commits
    *  (3)  Reset certificate that originally bootstrapped this global system incarnation */
-  int32u installed_incarn[NUM_SERVERS];
+  int32u installed_incarn[MAX_NUM_SERVERS];
 } jump_message;
 
 typedef struct dummy_new_incarnation_message {
@@ -476,13 +533,13 @@ typedef struct dummy_recon_message {
 /* A Prepare certificate consists of 1 Pre-Prepare and 2f Prepares */
 typedef struct dummy_prepare_certificate {
   complete_pre_prepare_message pre_prepare;
-  signed_message* prepare[NUM_SERVER_SLOTS]; 
+  signed_message* prepare[MAX_NUM_SERVER_SLOTS]; 
 } prepare_certificate_struct;
 
 /* A Commit certificate consists of 2f+1 Commits */
 typedef struct dummy_commit_certificate {
     //byte update_digest[DIGEST_SIZE];    /* The update digest */
-    signed_message* commit[NUM_SERVER_SLOTS]; /* The set of prepares */
+    signed_message* commit[MAX_NUM_SERVER_SLOTS]; /* The set of prepares */
 } commit_certificate_struct;
 
 signed_message* PRE_ORDER_Construct_PO_Request  (void);
@@ -542,4 +599,8 @@ signed_message* PR_Construct_Reset_Certificate(void);
 
 signed_message *RECON_Construct_Recon_Erasure_Message(dll_struct *list,
 							int32u *more_to_encode);
+
+void print_complete_pre_prepare(complete_pre_prepare_message *complete_pp);
+void print_PC_Set(signed_message *pc);
+void print_prepare(prepare_message *pm);
 #endif

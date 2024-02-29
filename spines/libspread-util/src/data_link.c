@@ -18,12 +18,13 @@
  * The Creators of Spread are:
  *  Yair Amir, Michal Miskin-Amir, Jonathan Stanton, John Schultz.
  *
- *  Copyright (C) 1993-2009 Spread Concepts LLC <info@spreadconcepts.com>
+ *  Copyright (C) 1993-2024 Spread Concepts LLC <info@spreadconcepts.com>
  *
  *  All Rights Reserved.
  *
  * Major Contributor(s):
  * ---------------
+ *    Amy Babay            babay@pitt.edu - accelerated ring protocol.
  *    Ryan Caudy           rcaudy@gmail.com - contributions to process groups.
  *    Claudiu Danilov      claudiu@acm.org - scalable wide area support.
  *    Cristina Nita-Rotaru crisn@cs.purdue.edu - group communication security.
@@ -32,448 +33,633 @@
  *
  */
 
-
 #include <stdlib.h>
-#include "arch.h"
-
-#ifndef	ARCH_PC_WIN95
-
-#include        <sys/types.h>
-#include        <sys/socket.h>
-#include        <netinet/in.h>
-#include        <arpa/inet.h>
-#include        <sys/uio.h>
-/* for select */
-#include        <sys/time.h>
-#include        <unistd.h>
-
-#include        <errno.h>
-#else	/* ARCH_PC_WIN95 */
-
-#include	<winsock.h>
-
-#endif	/* ARCH_PC_WIN95 */
-
 #include <string.h>
 #include <assert.h>
+#include <errno.h>
+
+#include "arch.h"  /* NOTE: must come after #include <errno.h> on Windows bc we redef error defines */
+
+#ifndef ARCH_PC_WIN95
+#  include <sys/types.h>
+#  include <sys/socket.h>
+#  include <netinet/in.h>
+#  include <arpa/inet.h>
+#  include <sys/uio.h>
+#  include <sys/time.h>
+#  include <unistd.h>
+#else
+#  include <winsock2.h>
+#endif
+
 #include "spu_data_link.h"
 #include "spu_alarm.h"
-#include "spu_events.h" /* for sp_time */
+#include "spu_events.h"
 
-/* Local Functions */
-int	DL_send_internal( channel chan, int32 address, int16 port, sys_scatter *scat, int32 connected );
+/********************************************************************************
+ ********************************************************************************/
 
-static void set_large_socket_buffers(int s)
+void DL_close_channel(channel chan)
+{
+  int ret = close(chan);  /* NOTE: on windows, arch.h defines close to be closesocket (ick!) /*/
+  
+  if (ret)
+    Alarmp(SPLOG_FATAL, DATA_LINK, "DL_close_channel: error closing channel %d: %d %d %s\n", (int) chan, ret, sock_errno, sock_strerror(sock_errno));
+}
+
+/********************************************************************************
+ ********************************************************************************/
+
+channel DL_init_channel(int32 channel_type, int16 port, int32 mcast_address, int32 interface_address)
+{
+  spu_addr mcast = { 0 };
+  spu_addr inter = { 0 };
+
+  mcast.ipv4.sin_family      = AF_INET;
+  mcast.ipv4.sin_port        = htons(port);
+  mcast.ipv4.sin_addr.s_addr = htonl(mcast_address);
+  
+  inter.ipv4.sin_family      = AF_INET;
+  inter.ipv4.sin_port        = htons(port);
+  inter.ipv4.sin_addr.s_addr = htonl(interface_address);
+  
+  return DL_init_channel_gen(channel_type, &mcast, &inter);
+}
+
+/********************************************************************************
+ ********************************************************************************/
+
+int DL_send(channel chan, int32 address, int16 port, const sys_scatter *scat)
+{
+  spu_addr dst = { 0 };
+
+  dst.ipv4.sin_family      = AF_INET;
+  dst.ipv4.sin_port        = htons(port);
+  dst.ipv4.sin_addr.s_addr = htonl(address);
+
+  return DL_sendto_gen(chan, scat, &dst);
+}
+
+/********************************************************************************
+ ********************************************************************************/
+
+int DL_recv(channel chan, sys_scatter *scat)
+{
+  return DL_recvfrom_gen(chan, scat, NULL);
+}
+
+/********************************************************************************
+ ********************************************************************************/
+
+int DL_recvfrom(channel chan, sys_scatter *scat, int *src_address, unsigned short *src_port)
+{
+  spu_addr src = { 0 };
+  int      ret = DL_recvfrom_gen(chan, scat, &src);
+
+  if (ret >= 0)
+  {
+    if (src_address)
+    {
+      if (src.addr.sa_family == AF_INET)
+        *src_address = (int) ntohl(src.ipv4.sin_addr.s_addr);
+    
+      else
+        *src_address = 0;
+    }
+    
+    if (src_port)
+    {
+      if (src.addr.sa_family == AF_INET || src.addr.sa_family == AF_INET6)
+        *src_port = (unsigned short) spu_addr_ip_get_port(&src);
+      
+      else
+        *src_port = 0;
+    }    
+  }
+  
+  return ret;
+}
+
+void DL_set_large_buffers(channel chan)
 {
     int i, on, ret;
     sockopt_len_t onlen;
 
     for( i=10; i <= 2000; i+=5 )
-    {
+    {   
         on = 1024*i;
 
-        ret = setsockopt( s, SOL_SOCKET, SO_SNDBUF, (void *)&on, 4);
+        ret = setsockopt( chan, SOL_SOCKET, SO_SNDBUF, (void *)&on, 4); 
         if (ret < 0 ) break;
 
-        ret = setsockopt( s, SOL_SOCKET, SO_RCVBUF, (void *)&on, 4);
+        ret = setsockopt( chan, SOL_SOCKET, SO_RCVBUF, (void *)&on, 4); 
         if (ret < 0 ) break;
 
         onlen = sizeof(on);
-        ret= getsockopt( s, SOL_SOCKET, SO_SNDBUF, (void *)&on, &onlen );
+        ret= getsockopt( chan, SOL_SOCKET, SO_SNDBUF, (void *)&on, &onlen );
         if( on < i*1024 ) break;
-        Alarmp( SPLOG_INFO, SESSION, "set_large_socket_buffers: set sndbuf %d, ret is %d\n", on, ret );
+        Alarmp( SPLOG_INFO, DATA_LINK, "DL_set_large_buffers: set sndbuf %d, ret is %d\n", on, ret );
 
         onlen = sizeof(on);
-        ret= getsockopt( s, SOL_SOCKET, SO_RCVBUF, (void *)&on, &onlen );
+        ret= getsockopt( chan, SOL_SOCKET, SO_RCVBUF, (void *)&on, &onlen );
         if( on < i*1024 ) break;
-        Alarmp( SPLOG_INFO, SESSION, "set_large_socket_buffers: set rcvbuf %d, ret is %d\n", on, ret );
+        Alarmp( SPLOG_INFO, DATA_LINK, "DL_set_large_buffers: set rcvbuf %d, ret is %d\n", on, ret );
+    }   
+    Alarmp( SPLOG_INFO, DATA_LINK, "DL_set_large_buffers: set sndbuf/rcvbuf to %d\n", 1024*(i-5) );
+}
+
+/********************************************************************************
+ * Creates a broad/multicast IP datagram socket with options.  Exits on failures.
+ *
+ *     create a SOCK_DGRAM socket in protocol family of if_addr
+ *
+ *     if SEND_CHANNEL is set:
+ *         if if_addr is IPv4: enable SO_BROADCAST
+ *         set multicast hops = 1
+ *         if NO_LOOP is set: disable multicast loopback
+ *
+ *     if RECV_CHANNEL is set:
+ *         if if_addr is IPv4: enable SO_BROADCAST
+ *         if REUSE_ADDR is set: enable SO_REUSEADDR
+ *
+ *         if mcast_addr is a multicast address and DL_BIND_ALL not set:
+ *             bind to mcast_addr
+ *         else:
+ *             bind to if_addr
+ *
+ *         if mcast_addr is a multicast address:
+ *             call DL_join_multicast(socket, mcast_addr, if_addr)
+ *
+ *    return socket
+ *
+ * TODO: check on sizeof setsockopt types across platforms (i.e. - Sun: char vs. int)
+ ********************************************************************************/
+
+channel DL_init_channel_gen(int32 channel_type, const spu_addr *mcast_addr, const spu_addr *if_addr)
+{
+  int     family = spu_addr_family(if_addr);
+  channel chan;
+  int     tmp_int;
+  unsigned char tmp_uchar;
+
+  Alarmp(SPLOG_INFO, DATA_LINK, "DL_init_channel_gen: creating a SOCK_DGRAM socket of family %d\n", family);
+
+  if (family != AF_INET && family != AF_INET6)
+    Alarmp(SPLOG_FATAL, DATA_LINK, "DL_init_channel_gen: bad family(%d); only AF_INET (%d) and AF_INET6 (%d) are currently supported!\n", family, AF_INET, AF_INET6);
+
+  if (mcast_addr != NULL)
+  {
+    if (family != spu_addr_family(mcast_addr))
+      Alarmp(SPLOG_FATAL, DATA_LINK, "DL_init_channel_gen: mcast family (%d) didn't match interface family (%d)!\n", spu_addr_family(mcast_addr), family);
+          
+    if (spu_addr_ip_get_port(if_addr) != spu_addr_ip_get_port(mcast_addr))
+      Alarmp(SPLOG_FATAL, DATA_LINK, "DL_init_channel_gen: mcast port (%u) didn't match interface port (%u)!\n",
+             (unsigned) spu_addr_ip_get_port(mcast_addr), (unsigned) spu_addr_ip_get_port(if_addr));
+  }
+
+  if ((chan = socket((family == AF_INET ? PF_INET : PF_INET6), SOCK_DGRAM, 0)) == INVALID_SOCKET)
+    Alarmp(SPLOG_FATAL, DATA_LINK, "DL_init_channel_gen: socket error (%d: %s)!\n", sock_errno, sock_strerror(sock_errno));
+
+  if (channel_type & SEND_CHANNEL)
+  {
+    if (family == AF_INET)
+    {
+      Alarmp(SPLOG_INFO, DATA_LINK, "DL_init_channel_gen: turning SO_BROADCAST on for send IPv4 channel\n");
+      
+      if (setsockopt(chan, SOL_SOCKET, SO_BROADCAST, (tmp_int = 1, &tmp_int), sizeof(tmp_int)))
+        Alarmp(SPLOG_FATAL, DATA_LINK, "DL_init_channel_gen: setsockopt(SOL_SOCKET, SO_BROADCAST, 1) error (%d: %s)!\n", sock_errno, sock_strerror(sock_errno));
+      
+      Alarmp(SPLOG_INFO, DATA_LINK, "DL_init_channel_gen: setting IPv4 multicast TTL to 1 for send channel\n");
+                  
+      if (setsockopt(chan, IPPROTO_IP, IP_MULTICAST_TTL, (tmp_uchar = 1, &tmp_uchar), sizeof(tmp_uchar))) 
+        Alarmp(SPLOG_FATAL, DATA_LINK, "DL_init_channel_gen: problem (%d: %s) in setsockopt of multicast ttl = 1; ignore on Windows\n", 
+               sock_errno, sock_strerror(sock_errno));
+
+      if (channel_type & NO_LOOP)
+      {
+        Alarmp(SPLOG_INFO, DATA_LINK, "DL_init_channel_gen: Disabling IPv4 multicast loopback\n");
+                    
+        if (setsockopt(chan, IPPROTO_IP, IP_MULTICAST_LOOP, (tmp_uchar = 0, &tmp_uchar), sizeof(tmp_uchar)))
+          Alarmp(SPLOG_FATAL, DATA_LINK, "DL_init_channel_gen: error (%d: %s) in disabling ipv4 loopback!\n", sock_errno, sock_strerror(sock_errno));
+      }                  
     }
-    Alarmp( SPLOG_INFO, SESSION, "set_large_socket_buffers: set sndbuf/rcvbuf to %d\n", 1024*(i-5) );
-}
+    else
+    {
+      Alarmp(SPLOG_INFO, DATA_LINK, "DL_init_channel_gen: setting IPv6 mulitcast hops to 1 for send channel\n");
+                  
+      if (setsockopt(chan, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, (tmp_int = 1, &tmp_int), sizeof(tmp_int))) 
+        Alarmp(SPLOG_FATAL, DATA_LINK, "DL_init_channel_gen: problem (%d: %s) in setsockopt of multicast hops = 1; ignore on Windows\n", 
+               sock_errno, sock_strerror(sock_errno));
 
-channel	DL_init_channel( int32 channel_type, int16 port, int32 mcast_address, int32 interface_address )
-{
-	channel			chan;
-	struct  sockaddr_in	soc_addr;
-	int			on=1, off=0;
-#ifdef	IP_MULTICAST_TTL
-	unsigned char		ttl_val;
-#endif
+      if (channel_type & NO_LOOP)
+      {
+        Alarmp(SPLOG_INFO, DATA_LINK, "DL_init_channel_gen: Disabling IPv6 multicast loopback\n");
 
-	if((chan = socket(AF_INET, SOCK_DGRAM, 0)) == -1)
-		Alarm( EXIT, "DL_init_channel: socket error for port %d\n", port );
+#ifdef __sun        
+        if (setsockopt(chan, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, (tmp_uchar = 0, &tmp_uchar), sizeof(tmp_uchar)))
+#else
+        if (setsockopt(chan, IPPROTO_IPV6, IPV6_MULTICAST_LOOP, (tmp_int = 0, &tmp_int), sizeof(tmp_int)))
+#endif            
+          Alarmp(SPLOG_FATAL, DATA_LINK, "DL_init_channel_gen: error (%d: %s) in disabling ipv6 loopback!\n", sock_errno, sock_strerror(sock_errno));
+      }
+    }
+  }
 
-    set_large_socket_buffers(chan);
+  if (channel_type & RECV_CHANNEL)
+  {
+    spu_addr bind_addr = *if_addr;
 
-	if ( channel_type & SEND_CHANNEL )
-	{
-        	if (setsockopt(chan, SOL_SOCKET, SO_BROADCAST, (char *)&on, 
-			       sizeof(on)) < 0) 
-            		Alarm( EXIT, "DL_init_channel: setsockopt error for port %d\n",port);
-		Alarm( DATA_LINK, "DL_init_channel: setsockopt for send and broadcast went ok\n");
+    if (family == AF_INET)
+    {
+      Alarmp(SPLOG_INFO, DATA_LINK, "DL_init_channel_gen: turning SO_BROADCAST on for recv IPv4 channel\n");
+      
+      if (setsockopt(chan, SOL_SOCKET, SO_BROADCAST, (tmp_int = 1, &tmp_int), sizeof(tmp_int)))
+        Alarmp(SPLOG_FATAL, DATA_LINK, "DL_init_channel_gen: setsockopt(SOL_SOCKET, SO_BROADCAST, 1) error (%d: %s)!\n", sock_errno, sock_strerror(sock_errno));
+    }
+      
+    if (!(channel_type & DL_BIND_ALL) && mcast_addr != NULL && spu_addr_ip_is_multicast(mcast_addr))
+      bind_addr = *mcast_addr;
 
-#ifdef	IP_MULTICAST_TTL
-		/* ### Isn't this for sending??? */
-		ttl_val = 1;
-        	if (setsockopt(chan, IPPROTO_IP, IP_MULTICAST_TTL, (void *)&ttl_val, 
-	       		sizeof(ttl_val)) < 0) 
-		{
-			Alarm( DATA_LINK, "DL_init_channel: problem in setsockopt of multicast ttl %d - ignore in WinNT or Win95\n", ttl_val );
-		}
-		Alarm( DATA_LINK, "DL_init_channel: setting Mcast TTL to %d\n",ttl_val);
-#endif
-	}
+    if (channel_type & REUSE_ADDR)
+    {
+      Alarmp(SPLOG_INFO, DATA_LINK, "DL_init_channel_gen: turning SO_REUSEADDR on for recv channel\n");
+                
+      if (setsockopt(chan, SOL_SOCKET, SO_REUSEADDR, (tmp_int = 1, &tmp_int), sizeof(tmp_int)))
+        Alarmp(SPLOG_FATAL, DATA_LINK, "DL_init_channel_gen: Failed to set socket option REUSEADDR, errno: (%d: %s)!\n", sock_errno, sock_strerror(sock_errno));
+    }
 
-	if ( channel_type & RECV_CHANNEL )
-	{
-                memset(&soc_addr, 0, sizeof(soc_addr));
-        	soc_addr.sin_family    	= AF_INET;
-        	soc_addr.sin_port	= htons(port);
-                memset(&soc_addr.sin_zero, 0, sizeof(soc_addr.sin_zero));
-#ifdef HAVE_SIN_LEN_IN_STRUCT_SOCKADDR_IN
-                soc_addr.sin_len        = sizeof(soc_addr);
-#endif
+    Alarmp(SPLOG_INFO, DATA_LINK, "DL_init_channel_gen: binding recv channel to [%s]:%u\n", SPU_ADDR_NTOP(&bind_addr), (unsigned) spu_addr_ip_get_port(&bind_addr));
 
-                /* If mcast channel, the interface means the interface to
-                   receive mcast packets on, and not interface to bind.
-                   Must bind multicast address instead */
-                if (mcast_address != 0 && IS_MCAST_ADDR(mcast_address) && !(channel_type & DL_BIND_ALL) )
-                        soc_addr.sin_addr.s_addr= htonl(mcast_address);
-                else if (interface_address != 0)
-                        soc_addr.sin_addr.s_addr= htonl(interface_address);
-                else
-                        soc_addr.sin_addr.s_addr= INADDR_ANY;
+    if (bind(chan, (struct sockaddr *) &bind_addr, spu_addr_len(&bind_addr))) 
+      Alarmp(SPLOG_FATAL, DATA_LINK, "DL_init_channel_gen: bind error (%d: %s) for [%s]:%u; probably already running!\n",
+             sock_errno, sock_strerror(sock_errno), SPU_ADDR_NTOP(&bind_addr), (unsigned) spu_addr_ip_get_port(&bind_addr));
 
-                /* Older Version
-                 if (interface_address == 0)
-                         soc_addr.sin_addr.s_addr= INADDR_ANY;
-                 else 
-                         soc_addr.sin_addr.s_addr= htonl(interface_address);
-                 */
- 
-                if ( channel_type & REUSE_ADDR ) 
-                {
-                        if(setsockopt(chan, SOL_SOCKET, SO_REUSEADDR, (void *)&on, sizeof(on))) 
-                        {
-                            Alarm( EXIT, "DL_init_channel: Failed to set socket option REUSEADDR, errno: %d\n", errno);
-                        }
-                }
+    if (mcast_addr != NULL && spu_addr_ip_is_multicast(mcast_addr) && (tmp_int = DL_join_multicast_gen(chan, mcast_addr, if_addr)))
+      Alarmp(SPLOG_FATAL, DATA_LINK, "DL_init_channel_gen: DL_join_multicast failed! %d %d %s\n", tmp_int, sock_errno, sock_strerror(sock_errno));
+  }
 
-
-	        if(bind( chan, (struct sockaddr *) &soc_addr, 
-				sizeof(soc_addr)) == -1) 
-		{
-                	Alarm( EXIT, "DL_init_channel: bind error (%d): %s for port %d, with sockaddr (" IPF ": %d) probably already running\n", sock_errno, sock_strerror(sock_errno), port, IP_NET(soc_addr.sin_addr.s_addr), ntohs(soc_addr.sin_port));
-		}
-		Alarm( DATA_LINK, "DL_init_channel: bind for recv_channel for " IPF " port %d with chan %d ok\n",
-			IP_NET(soc_addr.sin_addr.s_addr), port, chan);
-
-		if( IS_MCAST_ADDR(mcast_address) )
-		{
-#ifdef IP_MULTICAST_TTL
-			struct ip_mreq	mreq;
-
-			mreq.imr_multiaddr.s_addr = htonl( mcast_address );
-
-			/* the interface could be changed to a specific interface if needed */
-                        /* WAS: mreq.imr_interface.s_addr = INADDR_ANY;
-                         * If specified, then want to route through it instead of
-                         * based on routing decisions at the kernel */
-			/* IP_ADD_MEMBERSHIP requires that the imr_interface be an actual physical interface
-			 * or INADDR_ANY. So if this is the special case of binding to multicast or broadcast,
-			 * switch the join to use INADDR_ANY. In the case when the passed in interface
-			 * is a regular physical interface, then join only on that one.
-			 */
-			if ( IS_MCAST_ADDR(interface_address) )
-			  mreq.imr_interface.s_addr = htonl( INADDR_ANY );
-			else
-			  mreq.imr_interface.s_addr = htonl( interface_address );
-
-
-        		if (setsockopt(chan, IPPROTO_IP, IP_ADD_MEMBERSHIP, (void *)&mreq, 
-		       		sizeof(mreq)) < 0) 
-			{
-			  Alarm( EXIT, "DL_init_channel: problem (errno %d:%s) in setsockopt to multicast address " IPF "\n", sock_errno, sock_strerror(sock_errno), IP(mcast_address) );
-			}
-
-                        if ( channel_type & NO_LOOP ) 
-                        { 
-                            if (setsockopt(chan, IPPROTO_IP, IP_MULTICAST_LOOP, 
-                                        (void *)&off, 1) < 0) 
-                            { 
-			      Alarm( EXIT, "DL_init_channel: problem (errno %d:%s) in setsockopt loop setting " IPF "\n", sock_errno, sock_strerror(sock_errno), IP(mcast_address)); 
-                            } 
-			}
-
-			Alarm( DATA_LINK, "DL_init_channel: Joining multicast address " IPF " went ok\n", IP(mcast_address) );
-#else	/* no multicast support */
-			Alarm( EXIT, "DL_init_channel: Old SunOS architecture does not support IP multicast: " IPF "\n", IP(mcast_address));
-#endif
-		} else {
-                    if (setsockopt(chan, SOL_SOCKET, SO_BROADCAST, (char *)&on, 
-                                   sizeof(on)) < 0) 
-            		Alarm( EXIT, "DL_init_channel: setsockopt SO_BROADCAST error for port %d, socket %d\n",port,chan);
-                    Alarm( DATA_LINK, "DL_init_channel: setsockopt for recv and broadcast went ok\n");
-                }
-	}
-
-	Alarm( DATA_LINK, "DL_init_channel: went ok on channel %d\n",chan);
-	return ( chan );
-}
-
-void    DL_close_channel(channel chan)
-{
-
-        if( -1 ==  close(chan))
-        {
-                Alarm(PRINT, "DL_close_channel: error closing channel %d\n", chan);
-        }
-
-}
-
-/* Used for sending DGRAM messages */
-int	DL_send( channel chan, int32 address, int16 port, sys_scatter *scat )
-{
-    return DL_send_internal(chan, address, port, scat, 0);
-}
-
-/* Used for sending STREAM messages */
-int DL_send_connected( channel chan, sys_scatter *scat ) 
-{
-    return DL_send_internal(chan, 0, 0, scat, 1);
-}
-
-/* Internal function - chooses DGRAM or STREAM based on connected flag */
-int	DL_send_internal( channel chan, int32 address, int16 port, sys_scatter *scat, int32 connected )
-{
-
-#ifndef ARCH_SCATTER_NONE
-        struct	msghdr		msg;
-#else	/* ARCH_SCATTER_NONE */
-        char	pseudo_scat[MAX_PACKET_SIZE];
-#endif	/* ARCH_SCATTER_NONE */
-	
-        struct  sockaddr_in	soc_addr;
-        int			ret;
-        int			total_len;
-        int			i;
-        int			num_try;
-        char                    *send_errormsg = NULL; /* fool compiler */
-
-        /* Check that the scatter passed is small enough to be a valid system scatter */
-        assert(scat->num_elements <= ARCH_SCATTER_SIZE);
-
-        memset(&soc_addr, 0, sizeof(soc_addr));
-        soc_addr.sin_family 	= AF_INET;
-        soc_addr.sin_addr.s_addr= htonl(address);
-        soc_addr.sin_port	= htons(port);
-
-#ifdef HAVE_SIN_LEN_IN_STRUCT_SOCKADDR_IN
-        soc_addr.sin_len       = sizeof(soc_addr);
-#endif
-
-#ifdef ARCH_PC_HOME
-        soc_addr.sin_addr.s_addr= htonl(-1073741814);
-#endif /* ARCH_PC_HOME */
-
-#ifndef ARCH_SCATTER_NONE
-        memset(&msg, 0, sizeof(msg));
-        if (!connected) {
-            msg.msg_name 	= (caddr_t) &soc_addr;
-            msg.msg_namelen = sizeof(soc_addr);
-        } else {
-            msg.msg_name = NULL;
-            msg.msg_namelen = 0;
-        }
-        msg.msg_iov	= (struct iovec *)scat->elements;
-        msg.msg_iovlen	= scat->num_elements;
-#endif /* ARCH_SCATTER_NONE */
-
-#ifdef	ARCH_SCATTER_CONTROL
-        msg.msg_controllen = 0;
-#endif	/* ARCH_SCATTER_CONTROL */
-#ifdef	ARCH_SCATTER_ACCRIGHTS
-        msg.msg_accrightslen = 0;
-#endif	/* ARCH_SCATTER_ACCRIGHTS */
-
-	for( i=0, total_len=0; i < scat->num_elements; i++)
-	{
-#ifdef	ARCH_SCATTER_NONE
-		memcpy( &pseudo_scat[total_len], scat->elements[i].buf, 
-				scat->elements[i].len );
-#endif	/* ARCH_SCATTER_NONE */
-		total_len+=scat->elements[i].len;
-	}
-#if 0
-#ifndef ARCH_SCATTER_NONE
-        if( msg.msg_iovlen > 16)
-        {
-                Alarm(EXIT, "Too Big iovec of size %d\n", msg.msg_iovlen);
-        }
-#endif
-#endif
-	for( ret=-10, num_try=0; ret < 0 && num_try < 1; num_try++ )
-	{
-#ifndef	ARCH_SCATTER_NONE
-		ret = sendmsg(chan, &msg, 0); 
-#else	/* ARCH_SCATTER_NONE */
-		ret = sendto(chan, pseudo_scat, total_len, 0,
-			     (struct sockaddr *)&soc_addr, sizeof(soc_addr) );
-#endif	/* ARCH_SCATTER_NONE */
-
-#if 0
-		if(ret < 0) {
-			/* delay for a short while */
-                        send_errormsg = sock_strerror(sock_errno);
-			Alarm( DATA_LINK, "DL_send: delaying after failure in send to " IPF ", ret is %d\n", IP(address), ret);
-			select( 0, 0, 0, 0, &select_delay );
-			select_delay.tv_sec = 0;
-			select_delay.tv_usec = 10000;
-		}
-#endif
-	}
-	if (ret < 0)
-	{		
-        	for( i=0; i < scat->num_elements; i++)
-		    Alarm( DATA_LINK, "DL_send: element[%d]: %d bytes\n",
-			    i,scat->elements[i].len);
-		Alarm( DATA_LINK, "DL_send: error: %s\n sending %d bytes on channel %d to address " IPF "\n",
-                       send_errormsg, total_len,chan,IP(address) );
-	}else if(ret < total_len){
-		Alarm( DATA_LINK, "DL_send: partial sending %d out of %d\n",
-			ret,total_len);
-	}
-	Alarm( DATA_LINK, "DL_send: sent a message of %d bytes to (" IPF ":%d) on channel %d\n",
-		ret,IP(address),port,chan);
-
-	return(ret);
-}
-
-int	DL_recv( channel chan, sys_scatter *scat )
-{
-    int ret;
-    ret = DL_recvfrom( chan, scat, NULL, NULL );
-
-    return(ret);
-}
-
-int	DL_recvfrom( channel chan, sys_scatter *scat, int *src_address, unsigned short *src_port )
-{
-#ifndef ARCH_SCATTER_NONE
-static	struct	msghdr	msg;
-#else	/* ARCH_SCATTER_NONE */
-static	char		pseudo_scat[MAX_PACKET_SIZE];
-	int		bytes_to_copy;
-	int		total_len;
-	int		start;
-	int		i;
-#endif	/* ARCH_SCATTER_NONE */
-        struct  sockaddr_in     source_address;
-        int             sip;
-        unsigned short  sport;
-        socklen_t       sa_len;
-	int		ret;
-
-        /* check the scat is small enough to be a sys_scatter */
-        assert(scat->num_elements <= ARCH_SCATTER_SIZE);
-
-#ifndef ARCH_SCATTER_NONE
-	msg.msg_name 	= (caddr_t) &source_address;
-	msg.msg_namelen = sizeof(source_address);
-	msg.msg_iov	= (struct iovec *)scat->elements;
-	msg.msg_iovlen	= scat->num_elements;
-#endif	/* ARCH_SCATTER_NONE */
-
-#ifdef ARCH_SCATTER_CONTROL
-	msg.msg_control = (caddr_t) 0;
-	msg.msg_controllen = 0;
-#endif /* ARCH_SCATTER_CONTROL */
-#ifdef ARCH_SCATTER_ACCRIGHTS
-	msg.msg_accrights = (caddr_t) 0;
-	msg.msg_accrightslen = 0;
-#endif /* ARCH_SCATTER_ACCRIGHTS */
-
-#ifndef ARCH_SCATTER_NONE
-	ret = recvmsg( chan, &msg, 0 ); 
-        sa_len = msg.msg_namelen;
-#else	/* ARCH_SCATTER_NONE */
+  Alarmp(SPLOG_INFO, DATA_LINK, "DL_init_channel_gen: success; chan = %d\n", (int) chan);
         
-	total_len = 0;                             /*This is for TCP, to not receive*/
-	for(i=0; i<scat->num_elements; i++)     /*more than one packet.          */
-	   total_len += scat->elements[i].len;
-        
-        if(total_len>MAX_PACKET_SIZE)
-           total_len = MAX_PACKET_SIZE;
-
-        sa_len = sizeof(source_address);
-	ret = recvfrom( chan, pseudo_scat, total_len, 0, &source_address, &sa_len);
-	
-	for( i=0, total_len = ret, start =0; total_len > 0; i++)
-	{
-		bytes_to_copy = scat->elements[i].len;
-		if( bytes_to_copy > total_len ) bytes_to_copy = total_len;
-		memcpy( scat->elements[i].buf, &pseudo_scat[start], 
-                        bytes_to_copy );
-		total_len-= scat->elements[i].len;
-		start    += scat->elements[i].len;
-	}
-#endif	/* ARCH_SCATTER_NONE */
-	if (ret < 0)
-	{
-		Alarm( DATA_LINK, "DL_recv: error %d receiving on channel %d\n", ret, chan );
-		return( -1 );
-	} 
-#ifdef ARCH_SCATTER_CONTROL
-        else if (ret == 0)
-        {
-                char    *sptr;
-                unsigned short port;
-                Alarm( DATA_LINK, "DL_recv: received zero length packet on channel %d flags 0x%x msg_len %d\n", chan, msg.msg_flags, msg.msg_namelen);
-                if (msg.msg_namelen >= sizeof(struct sockaddr_in) ) {
-                    sptr = (char *) inet_ntoa(source_address.sin_addr);
-                    port = Flip_int16(source_address.sin_port);
-                    Alarm( DATA_LINK, "\tfrom %s with family %d port %d\n", sptr, source_address.sin_family, port );
-                }
-#ifdef  MSG_BCAST
-                if ( msg.msg_flags & MSG_BCAST )
-                {
-                        Alarm( DATA_LINK, "\t(BROADCAST)");
-                }
-#endif
-#ifdef  MSG_MCAST
-                if ( msg.msg_flags & MSG_MCAST )
-                {
-                        Alarm( DATA_LINK, "\t(MULTICAST)");
-                }
-#endif
-#ifdef  MSG_TRUNC
-                if ( msg.msg_flags & MSG_TRUNC )
-                {
-                        Alarm( DATA_LINK, "\t(Data TRUNCATED)");
-                }
-#endif
-#ifdef  MSG_CTRUNC
-                if ( msg.msg_flags & MSG_CTRUNC )
-                {
-                        Alarm( DATA_LINK, "\t(Control TRUNCATED)");
-                }
-#endif
-                Alarm( DATA_LINK, "\n");
-        }
-#endif
-        /* Report the source address and port if requested by caller */
-        if (sa_len >= sizeof(struct sockaddr_in) ) {
-            memcpy(&sip, &source_address.sin_addr, sizeof(int32) );
-            sip =  Flip_int32(sip);
-            if (src_address != NULL)
-                *src_address = sip;
-            sport = Flip_int16(source_address.sin_port);
-            if (src_port != NULL)
-                *src_port = sport;
-            Alarm( DATA_LINK, "\tfrom (" IPF ") with family %d port %d\n", IP(sip), source_address.sin_family, sport );
-        }
-	Alarm( DATA_LINK, "DL_recv: received %d bytes on channel %d\n",
-			ret, chan );
-
-	return(ret);
+  return chan;
 }
+
+/********************************************************************************
+ * Joins the group mcast_addr on a socket.  Returns zero on success, non-zero on failure.
+ *
+ *     if mcast_addr is IPv4:
+ *         if if_addr != NULL: join mcast_addr on interface if_addr 
+ *         else: join mcast_addr on interface INADDR_ANY
+ *
+ *     else:
+ *         if mcast_addr's scope_id is non-zero: join mcast_addr on mcast_addr's scope_id
+ *         elif if_addr != NULL: join mcast_addr on if_addr's scope_id
+ *         else: join mcast_addr on scope_id 0 (most likely fails)
+ *   
+ ********************************************************************************/
+
+int DL_join_multicast_gen(channel chan, const spu_addr *mcast_addr, const spu_addr *if_addr)
+{
+  int ret = -1;
+  int family;
+
+  if (mcast_addr == NULL)
+  {
+    Alarmp(SPLOG_ERROR, DATA_LINK, "DL_join_multicast_gen: called with NULL mcast_addr?!\n");
+    sock_set_errno(EINVAL);
+    goto END;
+  }
+  
+  family = spu_addr_family(mcast_addr);
+
+  if (family != AF_INET && family != AF_INET6)
+  {
+    Alarmp(SPLOG_ERROR, DATA_LINK, "DL_join_multicast_gen: called with non-IP mcast_addr?!\n");
+    sock_set_errno(EINVAL);
+    goto END;
+  }
+  
+  if (family == AF_INET)
+  {
+    struct ip_mreq mreq;
+
+    memset(&mreq, 0, sizeof(mreq));                        
+    mreq.imr_multiaddr = mcast_addr->ipv4.sin_addr;
+
+    if (if_addr != NULL && !spu_addr_ip_is_multicast(if_addr))
+      mreq.imr_interface = if_addr->ipv4.sin_addr;
+                        
+    Alarmp(SPLOG_INFO, DATA_LINK, "DL_join_multicast_gen: Joining ipv4 multicast address " IPF " on interface " IPF "\n",
+           IP_NET(mreq.imr_multiaddr.s_addr), IP_NET(mreq.imr_interface.s_addr));
+                        
+    if (setsockopt(chan, IPPROTO_IP, IP_ADD_MEMBERSHIP, &mreq, sizeof(mreq)))
+    {
+      Alarmp(SPLOG_ERROR, DATA_LINK, "DL_join_multicast_gen: error (%d: %s) on ipv4 join!\n", sock_errno, sock_strerror(sock_errno));
+      goto END;
+    }
+  }
+  else
+  {
+    struct ipv6_mreq mreq;
+
+    memset(&mreq, 0, sizeof(mreq));
+    mreq.ipv6mr_multiaddr = mcast_addr->ipv6.sin6_addr;
+    mreq.ipv6mr_interface = mcast_addr->ipv6.sin6_scope_id;
+
+    if (mreq.ipv6mr_interface == 0 && if_addr != NULL)
+      mreq.ipv6mr_interface = if_addr->ipv6.sin6_scope_id;
+                        
+    Alarmp(SPLOG_INFO, DATA_LINK, "DL_join_multicast_gen: Joining ipv6 multicast address %s on interface %u\n", SPU_ADDR_NTOP(mcast_addr), (unsigned) mreq.ipv6mr_interface);
+                  
+    if (setsockopt(chan, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq, sizeof(mreq)))
+    {
+      Alarmp(SPLOG_ERROR, DATA_LINK, "DL_join_multicast_gen: error (%d: %s) on ipv6 join!\n", sock_errno, sock_strerror(sock_errno));
+      goto END;
+    }
+  }
+
+  ret = 0;
+
+END:
+  Alarmp(SPLOG_INFO, DATA_LINK, "DL_join_multicast_gen: ret = %d\n", ret);
+  
+  return ret;
+}
+
+/********************************************************************************
+ ********************************************************************************/
+
+int DL_send_gen(channel chan, const sys_scatter *scat)
+{
+  return DL_sendto_gen(chan, scat, NULL);
+}
+
+/********************************************************************************
+ ********************************************************************************/
+
+int DL_recv_gen(channel chan, sys_scatter *scat)
+{
+  return DL_recvfrom_gen(chan, scat, NULL);
+}
+
+/********************************************************************************
+ ********************************************************************************/
+
+int DL_sendto_gen(channel chan, const sys_scatter *scat, const spu_addr *dst)
+{
+        int                 ret     = -1;
+        socklen_t           dst_len = (dst != NULL ? spu_addr_len(dst) : 0);
+        size_t              tot_len = 0;
+        size_t              new_len;
+        size_t              i;
+#ifdef ARCH_SCATTER_NONE
+        char                sendto_buf[1500];         /* big enough for any fast ethernet packet */
+        char               *sendto_ptr = sendto_buf;
+#else
+        struct  msghdr      msg = { 0 };
+
+        msg.msg_name    = (caddr_t) dst;
+        msg.msg_namelen = dst_len;
+        msg.msg_iov     = (struct iovec*) scat->elements;
+        msg.msg_iovlen  = (int) scat->num_elements;
+#endif
+        if (scat->num_elements > ARCH_SCATTER_SIZE)
+        {          
+          Alarmp(SPLOG_ERROR, DATA_LINK, "DL_sendto_gen: illegal scat->num_elements (%lu) > ARCH_SCATTER_SIZE (%lu)\n", 
+                 (unsigned long) scat->num_elements, (unsigned long) ARCH_SCATTER_SIZE);
+          sock_set_errno(EINVAL);
+          goto END;
+        }
+#ifdef ARCH_SCATTER_NONE        
+        else if (scat->num_elements == 1)
+        {
+          sendto_ptr = scat->elements[0].buf;    /* NOTE: avoid unnecessary memcpy */
+          tot_len    = scat->elements[0].len;
+        }
+#endif
+        else
+        {
+          for (i = 0, tot_len = 0; i < scat->num_elements; ++i, tot_len = new_len)
+          {
+            new_len = tot_len + scat->elements[i].len;
+
+            if (new_len < tot_len)  /* rollover */
+            {
+              Alarmp(SPLOG_ERROR, DATA_LINK, "DL_sendto_gen: scat so big it caused rollover (%lu + %lu -> %lu) > max allowed (%lu)\n", 
+                     (unsigned long) tot_len, (unsigned long) scat->elements[i].len, (unsigned long) new_len, (unsigned long) (size_t) -1);
+              sock_set_errno(EINVAL);
+              goto END;
+            }
+          }
+          
+#ifdef ARCH_SCATTER_NONE
+            
+          if (tot_len > sizeof(sendto_buf) && NULL == (sendto_ptr = (char*) malloc(tot_len)))
+          {
+            Alarmp(SPLOG_ERROR, DATA_LINK, "DL_sendto_gen: malloc(%lu) failed\n", (unsigned long) tot_len);
+            sock_set_errno(ENOMEM);
+            goto END;
+          }
+
+          for (i = 0, new_len = 0; i < scat->num_elements && new_len < tot_len; new_len += scat->elements[i++].len)
+            memcpy(&sendto_ptr[new_len], scat->elements[i].buf, scat->elements[i].len);
+#endif
+        }
+
+#ifdef ARCH_SCATTER_NONE
+        ret = sendto(chan, sendto_ptr, tot_len, 0, (struct sockaddr *) dst, dst_len);
+#else
+        ret = sendmsg(chan, &msg, 0); 
+#endif
+
+        if (ret < 0)                       /* rare */
+        {
+          Alarmp(SPLOG_ERROR, DATA_LINK, "DL_sendto_gen: error: %d %d '%s' sending on channel %d\n", ret, sock_errno, sock_strerror(sock_errno), (int) chan);
+          goto END;
+        }
+        else if ((size_t) ret < tot_len)   /* can commonly occur on TCP channels; shouldn't happen on UDP */
+        {
+          if (ALARMP_NEEDED(SPLOG_INFO, DATA_LINK))
+            Alarmp(SPLOG_INFO, DATA_LINK, "DL_sendto_gen: partial send: %d out of %lu bytes sent on channel %d\n", ret, (unsigned long) tot_len, (int) chan);  
+        }
+        else if ((size_t) ret != tot_len)  /* shouldn't happen */
+        {
+          Alarmp(SPLOG_ERROR, DATA_LINK, "DL_sendto_gen: sent more bytes (%d) than requested (%lu) on channel %d?!\n", ret, (unsigned long) tot_len, (int) chan);  
+          sock_set_errno(EIO);
+          ret = -1;
+          goto END;
+        }
+        /* else: ret == tot_len: success! */
+
+END:
+        
+#ifdef ARCH_SCATTER_NONE
+        if (sendto_ptr != sendto_buf && sendto_ptr != NULL && scat->num_elements != 1)
+          free(sendto_ptr);
+#endif
+
+        /* NOTE: it is uncommon for (SPLOG_DEBUG, DATA_LINK) to be active; so conditionally skip needless calls to Alarmp */
+        
+        if (ALARMP_NEEDED(SPLOG_DEBUG, DATA_LINK))
+        {
+          char alarm_msg[256], *c = alarm_msg, *e = alarm_msg + sizeof(alarm_msg);
+
+          c += snprintf(c, SPCLAMP(c, e), "DL_sendto_gen: ret = %d, tried to send a message of %lu bytes on channel %d", ret, (unsigned long) tot_len, (int) chan);
+
+          if (dst != NULL)
+          {
+            c += snprintf(c, SPCLAMP(c, e), "; dst family: %d; dst addr: '%s'", dst->addr.sa_family, SPU_ADDR_NTOP(dst));
+
+            if (dst->addr.sa_family == AF_INET || dst->addr.sa_family == AF_INET6)
+              c += snprintf(c, SPCLAMP(c, e), "; dst port: %u", (unsigned) spu_addr_ip_get_port(dst));
+          }
+
+          if (c < e)
+            *(c++) = '\n';
+
+          if (c < e)
+            *(c++) = '\0';
+
+          alarm_msg[sizeof(alarm_msg) - 1] = '\0';
+          
+          Alarmp(SPLOG_DEBUG, DATA_LINK, "%s", alarm_msg);
+        }
+                 
+        return ret;
+}
+
+/********************************************************************************
+ ********************************************************************************/
+
+int DL_recvfrom_gen(channel chan, sys_scatter *scat, spu_addr *src)
+{
+        int             ret     = -1;
+        socklen_t       src_len = (src != NULL ? sizeof(*src) : 0);
+        size_t          tot_len = 0;
+        size_t          new_len;
+        size_t          i;
+#ifdef ARCH_SCATTER_NONE
+        char            recvfrom_buf[1500];           /* big enough for any fast ethernet packet */
+        char           *recvfrom_ptr = recvfrom_buf;
+        size_t          start;
+#else
+        struct  msghdr  msg = { 0 };
+
+        msg.msg_name    = (caddr_t) src;
+        msg.msg_namelen = src_len;
+        msg.msg_iov     = (struct iovec *) scat->elements;
+        msg.msg_iovlen  = (int) scat->num_elements;
+#endif
+        if (scat->num_elements > ARCH_SCATTER_SIZE)
+        {
+          Alarmp(SPLOG_ERROR, DATA_LINK, "DL_recvfrom_gen: illegal scat->num_elements (%lu) > ARCH_SCATTER_SIZE (%lu)\n", 
+                 (unsigned long) scat->num_elements, (unsigned long) ARCH_SCATTER_SIZE);
+          
+          sock_set_errno(EINVAL);
+          goto END;
+        }
+#ifdef ARCH_SCATTER_NONE
+        else if (scat->num_elements == 1)
+        {
+          recvfrom_ptr = scat->elements[0].buf;   /* NOTE: avoid unnecessary memcpy */
+          tot_len      = scat->elements[0].len;
+        }
+#endif        
+        else
+        {
+          for (i = 0, tot_len = 0; i < scat->num_elements; ++i, tot_len = new_len)
+          {
+            new_len = tot_len + scat->elements[i].len;
+
+            if (new_len < tot_len)  /* rollover */
+            {
+              Alarmp(SPLOG_ERROR, DATA_LINK, "DL_recvfrom_gen: scat so big it caused rollover (%lu + %lu -> %lu) > max allowed (%lu)\n", 
+                     (unsigned long) tot_len, (unsigned long) scat->elements[i].len, (unsigned long) new_len, (unsigned long) -1);
+              sock_set_errno(EINVAL);
+              goto END;
+            }
+          }
+          
+#ifdef ARCH_SCATTER_NONE
+            
+          if (tot_len > sizeof(recvfrom_buf) && NULL == (recvfrom_ptr = (char*) malloc(tot_len)))
+          {
+            Alarmp(SPLOG_ERROR, DATA_LINK, "DL_recvfrom_gen: malloc(%lu) failed\n", (unsigned long) tot_len);
+            sock_set_errno(ENOMEM);
+            goto END;
+          }          
+#endif            
+        }
+
+#ifdef ARCH_SCATTER_NONE        
+        ret     = recvfrom(chan, recvfrom_ptr, tot_len, 0, (struct sockaddr *) src, &src_len);
+#else
+        ret     = recvmsg(chan, &msg, 0); 
+        src_len = msg.msg_namelen;
+#endif
+
+        if (ret < 0)                      /* rare */
+        {
+          Alarmp(SPLOG_ERROR, DATA_LINK, "DL_recvfrom_gen: error: %d %d '%s' receiving on channel %d\n", ret, sock_errno, sock_strerror(sock_errno), (int) chan);
+          goto END;
+        } 
+        else if ((size_t) ret > tot_len)  /* shouldn't happen */
+        {
+          Alarmp(SPLOG_ERROR, DATA_LINK, "DL_recvfrom_gen: received more bytes (%d) than requested (%lu) on channel %d?!\n", ret, (unsigned long) tot_len, (int) chan);
+          sock_set_errno(EIO);
+          ret = -1;
+          goto END;
+        }
+
+#ifdef ARCH_SCATTER_NONE
+
+        if (scat->num_elements != 1)
+        {
+          size_t next_start;
+
+          for (i = 0, start = 0, new_len = (size_t) ret; i < scat->num_elements && (next_start = start + scat->elements[i].len) < new_len; ++i, start = next_start)
+            memcpy(scat->elements[i].buf, &recvfrom_ptr[start], scat->elements[i].len);
+
+          if (i < scat->num_elements)
+            memcpy(scat->elements[i].buf, &recvfrom_ptr[start], new_len - start);
+        }
+#endif
+
+END:
+        
+#ifdef ARCH_SCATTER_NONE
+        if (recvfrom_ptr != recvfrom_buf && recvfrom_ptr != NULL && scat->num_elements != 1)
+          free(recvfrom_ptr);
+#endif
+        
+        /* NOTE: it is uncommon for (SPLOG_DEBUG, DATA_LINK) to be active; conditionally skip needless calls to Alarmp */
+        
+        if (ALARMP_NEEDED(SPLOG_DEBUG, DATA_LINK))
+        {
+          char alarm_msg[256], *c = alarm_msg, *e = alarm_msg + sizeof(alarm_msg);
+
+          c += snprintf(c, SPCLAMP(c, e), "DL_recvfrom_gen: ret = %d; tried to recv up to %lu bytes on channel %d", ret, (unsigned long) tot_len, (int) chan);
+          
+          if (ret >= 0 && src != NULL && src_len > 0)
+          {
+            c += snprintf(c, SPCLAMP(c, e), "; src family: %d; src addr: '%s'", src->addr.sa_family, SPU_ADDR_NTOP(src));
+
+            if (src->addr.sa_family == AF_INET || src->addr.sa_family == AF_INET6)
+              c += snprintf(c, SPCLAMP(c, e), "; src port: %u", (unsigned) spu_addr_ip_get_port(src));
+          }
+
+          if (c < e)
+            *(c++) = '\n';
+
+          if (c < e)
+            *(c++) = '\0';
+
+          alarm_msg[sizeof(alarm_msg) - 1] = '\0';
+          
+          Alarmp(SPLOG_DEBUG, DATA_LINK, "%s", alarm_msg);
+        }
+
+        return ret;
+}
+
+/********************************************************************************
+ ********************************************************************************/

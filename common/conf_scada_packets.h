@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2017-2024 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -178,6 +178,7 @@ typedef struct dummy_signed_message {
 
     int32u incarnation;
     int32u monotonic_counter;
+    int32u global_configuration_number; /*MS2022:  Global configuration number to differntiate configurations*/
 
     /* Content of message follows */
 } signed_message;

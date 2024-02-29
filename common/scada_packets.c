@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2017-2024 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -212,11 +212,11 @@ signed_message *PKT_Construct_TC_Final_Msg(ordinal o, tc_node *tcn)
     tcf->ord = o;
     memset(tcf->thresh_sig, 0, SIGNATURE_SIZE);
 
-    TC_Initialize_Combine_Phase(NUM_SM + 1);
+    TC_Initialize_Combine_Phase(Curr_num_SM + 1);
 
     copied_payload = 0;
     count = 0;
-    for (i = 1; i <= NUM_SM; i++) {
+    for (i = 1; i <= Curr_num_SM; i++) {
         if (tcn->recvd[i] == 0)
             continue;
 
@@ -251,7 +251,7 @@ signed_message *PKT_Construct_TC_Final_Msg(ordinal o, tc_node *tcn)
 
     OPENSSL_RSA_Make_Digest(tcf, sizeof(tcf->ord) + sizeof(tcf->payload), digest);
     TC_Combine_Shares(tcf->thresh_sig, digest);
-    TC_Destruct_Combine_Phase(NUM_SM + 1);
+    TC_Destruct_Combine_Phase(Curr_num_SM + 1);
 
     if (!TC_Verify_Signature(1, tcf->thresh_sig, digest)) {
         printf("Construct_TC_Final: combined TC signature failed to verify on [%u, %u of %u]!\n",
@@ -325,6 +325,18 @@ signed_message *PKT_Construct_Benchmark_Msg(seq_pair seq)
 
     return mess;
 }
+
+signed_message *PKT_Construct_OOB_Config_Msg()
+{
+    signed_message *mess;
+    printf("Constructing config mesage of size %d \n",sizeof(config_message));
+    mess = PKT_Construct_Signed_Message(sizeof(config_message));
+    mess->machine_id = 0;
+    mess->len = sizeof(config_message);
+    mess->type = PRIME_OOB_CONFIG_MSG;
+    return mess;
+}
+
 
 /* 
 signed_message *PKT_Construct_Modbus_Msg(int32u seq_num, int32_t sub, 

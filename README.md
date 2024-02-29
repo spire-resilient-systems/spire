@@ -23,9 +23,10 @@ Power grid SCADA consists of two levels: a control center level and a
 substation level. 
 
 The control-center SCADA monitors and controls many substations and Remote
-Terminal Units (RTUs) and/or Programmable Logic Controllers (PLCs). The control-center-level operations typically have a latency requirement of 100ms-200ms. The
-substation-level critical protection operations have latency requirements as
-low as a quarter-power cycle (For 60Hz, this is 4.167ms). 
+Terminal Units (RTUs) and/or Programmable Logic Controllers (PLCs). The
+control-center-level operations typically have a latency requirement of
+100ms-200ms. The substation-level critical protection operations have latency
+requirements as low as a quarter-power cycle (For 60Hz, this is 4.167ms). 
 
 We have developed Spire as a toolkit that contains modules to support
 intrusion-tolerance for power grid control systems at both the control-center
@@ -58,6 +59,19 @@ devices that use the Modbus or DNP3 communication protocols over IP. We use
 a standalone Machine Learning-based Network Intrusion Detection System that is
 built to work with Spire.
 
+Additionally, Version 2.1 adds reconfiguration support to Spire.
+Reconfiguration can be used to improve the operational profile of a system. For
+example: With reconfiguration, if the current system configuration (say
+configuration '6+6+6') becomes non-operational due to loss of a control center
+and data center but at least one control center remains up, the system can be
+reconfigured to that one control center (configuration '6') and resume
+operations. It is also possible to reconfigure preemptively when needed (e.g.
+if one control center becomes non-operational, it is better to reconfigure the
+system to configuration '6' in the remaining control center).  The
+reconfiguration modules are implemented as part of the Prime replication
+engine, and include a configuration network, configuration manager and
+configuration agent. The details of the reconfiguration mechanism are in
+`README_Spire.md` and README of Prime.
 
 ### Confidential Spire
         
@@ -138,7 +152,9 @@ Spire for the Substation: `README_Spire_Substation.md`
 
 ## 5. Version Notes
 
-Spire 2.0 is the latest release. It extends the Spire 1.3 to support real-time
+Spire 2.1 adds reconfiguration support to Spire.
+
+Spire 2.0 extends the Spire 1.3 to support real-time
 Byzantine resilience of power grid substations. This release includes Spire for
 the Substation code that successfully withstood a red-team attack conducted by
 Sandia National Laboratories in an exercise at Pacific Northwest National
@@ -171,10 +187,10 @@ Prime 3.0 and Spines 5.2.
 
 ## 6. Publications
 
-Babay, Amy, Thomas Tantillo, Trevor Aron, Marco Platania, and Yair Amir. "Network-attack-resilient intrusion-tolerant SCADA for the power grid." In 2018 48th Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN), pp. 255-266. IEEE, 2018.
+Babay, Amy, Thomas Tantillo, Trevor Aron, Marco Platania, and Yair Amir. ["Network-attack-resilient intrusion-tolerant SCADA for the power grid."](https://sites.pitt.edu/~babay/pubs/scada_DSN_2018.pdf) In [2018 48th Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN)](https://ieeexplore.ieee.org/document/8416488), pp. 255-266. IEEE, 2018.
 
-Babay, Amy, John Schultz, Thomas Tantillo, Samuel Beckley, Eamon Jordan, Kevin Ruddell, Kevin Jordan, and Yair Amir. "Deploying intrusion-tolerant SCADA for the power grid." In 2019 49th Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN), pp. 328-335. IEEE, 2019.
+Babay, Amy, John Schultz, Thomas Tantillo, Samuel Beckley, Eamon Jordan, Kevin Ruddell, Kevin Jordan, and Yair Amir. ["Deploying intrusion-tolerant SCADA for the power grid."](https://sites.pitt.edu/~babay/pubs/DSN_2019_SCADA_Experience.pdf) In [2019 49th Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN)](https://ieeexplore.ieee.org/document/8809554), pp. 328-335. IEEE, 2019.
 
-Khan, Maher, and Amy Babay. "Toward intrusion tolerance as a service: Confidentiality in partially cloud-based BFT systems." In 2021 51st Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN), pp. 14-25. IEEE, 2021.
+Khan, Maher, and Amy Babay. ["Toward intrusion tolerance as a service: Confidentiality in partially cloud-based BFT systems."](https://sites.pitt.edu/~babay/pubs/dsn21_confidentialBFT.pdf) In [2021 51st Annual IEEE/IFIP International Conference on Dependable Systems and Networks (DSN)](https://ieeexplore.ieee.org/document/9505127), pp. 14-25. IEEE, 2021.
 
-Bommareddy, Sahiti, Daniel Qian, Christopher Bonebrake, Paul Skare, and Yair Amir. "Real-time Byzantine resilience for power grid substations." In 2022 41st International Symposium on Reliable Distributed Systems (SRDS), pp. 213-224. IEEE, 2022.
+Bommareddy, Sahiti, Daniel Qian, Christopher Bonebrake, Paul Skare, and Yair Amir. ["Real-time Byzantine resilience for power grid substations."](https://ieeexplore.ieee.org/document/9996955) In [2022 41st International Symposium on Reliable Distributed Systems (SRDS)](https://ieeexplore.ieee.org/document/9996955), pp. 213-224. IEEE, 2022.

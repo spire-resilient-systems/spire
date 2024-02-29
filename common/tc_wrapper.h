@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2017-2024 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -45,7 +45,9 @@
  */
 
 #include "net_wrapper.h"
-
+void TC_cleanup();
+void TC_Reload_Partial_Key( int32u server_no, int32u site_id, const char *keys_dir );
+void TC_Reload_Public_Key( const char *keys_dir );
 void TC_Read_Partial_Key( int32u server_no, int32u site_id, const char *keys_dir );
 void TC_Read_Public_Key( const char *keys_dir );
 

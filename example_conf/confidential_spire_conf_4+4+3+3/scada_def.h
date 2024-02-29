@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2017-2024 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -59,6 +59,8 @@
 /***********************
  * System-Wide defines *
  ***********************/
+/*Note: For Confidential Spire MAX_NUM_SERVER_SLOTS should be same as NUM_SM*/
+#define MAX_NUM_SERVER_SLOTS 14
 
 /* Total number of SCADA Master replicas. Note that NUM_SM must be equal to
  * 3*NUM_F + 2*NUM_K + 1 */
@@ -96,11 +98,18 @@
 /* Number of HMIs in the system */
 #define NUM_HMI          3
 
+
+/* Reconfiguration enabling flag */
+#define Reconfiguration_Enable 1
+/*Mcast IP and port for control spines*/
+#define CTRL_SPINES_MCAST_IP "224.1.1.3" /* (224.1.1.3) */ 
+#define CTRL_SPINES_MCAST_PORT 9900
+
 /* List of IP addresses for Spines daemons on the external Spines network
  * connecting the control center sites with the PLC/RTU proxies and HMIs. We
  * assume there is one Spines daemon per site */
 #define SPINES_EXT_SITE_ADDRS {"192.168.101.101", \
-                               "192.168.101.102"}
+                               "192.168.101.102" }
 
 /* List of IP addresses for Spines daemons on the internal Spines network
  * connecting all the control-center and data-center sites with one another. We
@@ -108,7 +117,7 @@
 #define SPINES_INT_SITE_ADDRS {"192.168.101.101", \
                                "192.168.101.102", \
                                "192.168.101.103", \
-                               "192.168.101.104"}
+                               "192.168.101.104" }
 
 /* IP address for the Spines daemon that connects with the PLC/RTU proxy or
  * proxies */
@@ -128,6 +137,9 @@
 /* Port on which the internal Spines network is deployed (includes control
  * center and data center sites */
 #define SPINES_INT_PORT     8100
+/* Port on which the configuration Spines network is deployed (includes control
+ * center and data center sites */
+#define SPINES_CTRL_PORT     8900
 
 /* Base ports for Spines connections. Each Spire component connects to Spines
  * on the base port for its connection type + its ID. Note that control-center
@@ -138,6 +150,7 @@
 #define RTU_BASE_PORT       8520
 #define HMI_BASE_PORT       8540
 #define SM_INT_BASE_PORT    8560
+#define CTRL_BASE_PORT      9580
 
 #define SPINES_PRIORITY     1
 #define SPINES_RELIABLE     2
@@ -160,7 +173,7 @@
 
 /* MK: Checkpoint */
 #define CHECKPOINT_PERIOD 100
-                               
+
 /* Replica Type defines */
 #define CC_TYPE  1
 #define DC_TYPE  2
@@ -177,6 +190,7 @@
 #define RTU_IPC_ITRC "/tmp/rtu_ipc_itrc"
 #define BM_IPC_MAIN  "/tmp/bm_ipc_main"
 #define BM_IPC_ITRC  "/tmp/bm_ipc_itrc"
+#define CONFIG_AGENT "/tmp/config_agent_to_sm"
 
 /* Key directories */
 #define SM_PRIME_KEYS "../prime/bin/keys"

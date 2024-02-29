@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2017-2024 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -91,6 +91,11 @@
 //itrc_queue msgq;
 //int32u applied_seq;
 
+extern int Curr_num_f;
+extern int Curr_num_k;
+
+
+
 update_history up_hist[MAX_EMU_RTU + NUM_HMI + 1];
 tc_queue tcq_pending;
 st_queue stq_pending;
@@ -118,6 +123,7 @@ void ITRC_Process_Prime_Ordinal(ordinal o, signed_message *m, net_sock *ns);
 //void ITRC_Handle_Prime_State_Transfer(ordinal o, signed_message *m, net_sock ns);
 int ITRC_Insert_ST_ID(state_xfer_msg *st, int32u sender);
 void ITRC_Apply_State_Transfer(ordinal o, net_sock ns);
+void oob_reconfigure(signed_message *mess,void * data);
 
 int ITRC_Ord_Compare(ordinal o1, ordinal o2);
 int ITRC_Ord_Consec(ordinal o1, ordinal o2);
@@ -238,6 +244,7 @@ void *ITRC_Client(void *data)
         t = &spines_timeout; 
     }
     else {
+        printf("ITRC_Client: Connected to Spines\n");
         FD_SET(ns.sp_ext_s, &mask);
         t = NULL;
     }
@@ -253,13 +260,14 @@ void *ITRC_Client(void *data)
             if (ns.sp_ext_s >= 0 && FD_ISSET(ns.sp_ext_s, &tmask)) {
                 ret = spines_recvfrom(ns.sp_ext_s, buff, MAX_LEN, 0, NULL, 0);
                 if (ret <= 0) {
-                    printf("Error in spines_recvfrom: ret = %d, dropping!\n", ret);
+                    printf("MS2022 Error in spines_recvfrom with ns.sp_ext_s>0 and : ret = %d, dropping!\n", ret);
                     spines_close(ns.sp_ext_s);
                     FD_CLR(ns.sp_ext_s, &mask);
                     ns.sp_ext_s = -1;
                     t = &spines_timeout; 
                     continue;
                 }
+		//printf("Received %d on ext_spines\n",ret);
                
                 tcf          = (signed_message *)buff;
                 tcf_specific = (tc_final_msg *)(tcf + 1);
@@ -287,8 +295,8 @@ void *ITRC_Client(void *data)
                     printf("ITRC_Client: Invalid message type received from CCs, type = %d\n", mess->type);
                     continue;
                 }
-
                 ps = (seq_pair *)(mess + 1);
+		//printf("verified scada mess seq=%lu\n",ps->seq_num);
                 nBytes = sizeof(signed_message) + (int)mess->len;
                 //ITRC_Enqueue(*seq_no, (char *)mess, nBytes, ns.ipc_s, itrcd->ipc_remote);
                 /* if (*seq_no <= applied[*idx])
@@ -299,8 +307,10 @@ void *ITRC_Client(void *data)
                  *  appropriate for the type of client I am */
                
                 ord = (ordinal *)&tcf_specific->ord;
-                if (ITRC_Ord_Compare(*ord, applied) <= 0)
-                    continue;
+                if (ITRC_Ord_Compare(*ord, applied) <= 0){
+                        //printf("Continue called\n");
+			continue;
+		}
                 applied = *ord;
                 //printf("Applying [%u, %u of %u]\n", ord->ord_num, ord->event_idx, ord->event_tot);
                 IPC_Send(ns.ipc_s, (char *)mess, nBytes, ns.ipc_remote);
@@ -309,13 +319,49 @@ void *ITRC_Client(void *data)
             /* Message from IPC Client */
             if (FD_ISSET(ns.ipc_s, &tmask)) {
                 nBytes = IPC_Recv(ns.ipc_s, buff, MAX_LEN);
+                signed_message *test_config=(signed_message*)buff;
+                if(test_config->type == PRIME_OOB_CONFIG_MSG){
+			//printf("ITRC_Client: Received PRIME_OOB_CONFIG_MSG\n");
+			config_message *c_mess=(config_message *)(test_config+1);
+			//Reload RSA and TC Pub Keys
+                        OPENSSL_RSA_Reload_Prime_Keys(Prime_Client_ID, RSA_CLIENT, "/tmp/test_keys/prime",c_mess->N);
+			//TC_cleanup();
+			TC_Read_Public_Key("/tmp/test_keys/sm");			
+			//TC_Reload_Public_Key("/tmp/test_keys/sm");			
+    			memset(&applied, 0, sizeof(ordinal));
+			/*
+			spines_close(ns.sp_ext_s);
+                        FD_CLR(ns.sp_ext_s, &mask);
+                        ns.sp_ext_s = -1;
+                        //t = &spines_timeout; 
+                        //printf("Closing spines due to reconf\n");
+                        ns.sp_ext_s = Spines_Sock(itrcd->spines_ext_addr, itrcd->spines_ext_port, proto, my_port);
+            if (ns.sp_ext_s < 0) {
+                //printf("MS2022 ITRC_Client: Unable to connect to Spines, trying again soon\n");
+                spines_timeout.tv_sec  = SPINES_CONNECT_SEC;
+                spines_timeout.tv_usec = SPINES_CONNECT_USEC;
+                t = &spines_timeout; 
+            }
+            else {
+                //printf("$$$$$$$$$MS2022 ITRC_Client: Reconnected to ext spines\n");
+                FD_SET(ns.sp_ext_s, &mask);
+                t = NULL;
+            }
+*/
+		continue;
+                     
+                }
+                 
                 if (nBytes > UPDATE_SIZE) {
                     printf("ITRC_Client: error! client message too large %d\n", nBytes);
                     continue;
                 }
 
-                if (ns.sp_ext_s == -1)
-                    continue;
+                //printf("ITRC_Client: client message of size %d\n", nBytes);
+                if (ns.sp_ext_s == -1){
+                        printf("Spines not connected , so not sending benchmark\n");
+                        continue;
+                }
 
                 ps = (seq_pair *)&buff[sizeof(signed_message)];
                 mess = PKT_Construct_Signed_Message(sizeof(signed_update_message) 
@@ -324,48 +370,54 @@ void *ITRC_Client(void *data)
                 mess->len = sizeof(signed_update_message) - sizeof(signed_message);
                 mess->type = UPDATE;
                 mess->incarnation = ps->incarnation;
+                mess->global_configuration_number=My_Global_Configuration_Number;
                 up = (update_message *)(mess + 1);
                 up->server_id = Prime_Client_ID;
                 up->seq_num = ps->seq_num;
                 //up->seq = *ps;
                 memcpy((unsigned char*)(up + 1), buff, nBytes);
-                /* printf("Sending Update: [%u, %u]\n", up->seq.incarnation, 
-                            up->seq.seq_num); */
+                //printf("Sending Update[%u]: [%u, %u]\n", mess->global_configuration_number,mess->incarnation, up->seq_num); 
 
                 /* SIGN Message */
                 OPENSSL_RSA_Sign( ((byte*)mess) + SIGNATURE_SIZE,
                         sizeof(signed_message) + mess->len - SIGNATURE_SIZE,
                         (byte*)mess );
 
-                rep = MIN(NUM_F + NUM_K + 1, 2 * (NUM_F + 2)); 
+                rep = MIN(Curr_num_f + Curr_num_k + 1, 2 * (Curr_num_f + 2)); 
                 for (i = 1; i <= rep; i++) {
                     dest.sin_family = AF_INET;
-                    dest.sin_port = htons(SM_EXT_BASE_PORT + CC_Replicas[i-1]);
-                    dest.sin_addr.s_addr = inet_addr(Ext_Site_Addrs[CC_Sites[i-1]]);
+                    dest.sin_port = htons(SM_EXT_BASE_PORT + Curr_CC_Replicas[i-1]);
+                    dest.sin_addr.s_addr = inet_addr(Curr_Ext_Site_Addrs[Curr_CC_Sites[i-1]]);
+                    //printf("dest port=%d, dest addr=%s\n",SM_EXT_BASE_PORT + Curr_CC_Replicas[i-1],Curr_Ext_Site_Addrs[Curr_CC_Sites[i-1]]);
+                    //dest.sin_port = htons(SM_EXT_BASE_PORT + CC_Replicas[i-1]);
+                    //dest.sin_addr.s_addr = inet_addr(Ext_Site_Addrs[CC_Sites[i-1]]);
                     ret = spines_sendto(ns.sp_ext_s, mess, sizeof(signed_update_message),
                             0, (struct sockaddr *)&dest, sizeof(struct sockaddr));
-                    if (ret != sizeof(signed_update_message)) {
-                        printf("ITRC_Client: spines_sendto error!\n");
+                    if(ret != sizeof(signed_update_message)) {
+                        printf("*******ITRC_Client: spines_sendto error!\n");
                         spines_close(ns.sp_ext_s);
                         FD_CLR(ns.sp_ext_s, &mask);
                         ns.sp_ext_s = -1;
                         t = &spines_timeout; 
                         break;
+                        
+
+                    //printf("dest port=%d, dest addr=%s\n",SM_EXT_BASE_PORT + Curr_CC_Replicas[i-1],Curr_Ext_Site_Addrs[Curr_CC_Sites[i-1]]);
                     }
                 }
                 free(mess);
             }
         }
         else {
-            ns.sp_ext_s = Spines_Sock(itrcd->spines_ext_addr, itrcd->spines_ext_port, 
-                            proto, my_port);
+                        ns.sp_ext_s = Spines_Sock(itrcd->spines_ext_addr, itrcd->spines_ext_port, proto, my_port);
             if (ns.sp_ext_s < 0) {
-                printf("ITRC_Client: Unable to connect to Spines, trying again soon\n");
+                //printf("MS2022 ITRC_Client: Unable to connect to Spines, trying again soon\n");
                 spines_timeout.tv_sec  = SPINES_CONNECT_SEC;
                 spines_timeout.tv_usec = SPINES_CONNECT_USEC;
                 t = &spines_timeout; 
             }
             else {
+                //printf("$$$$$$$$$MS2022 ITRC_Client: Reconnected to ext spines\n");
                 FD_SET(ns.sp_ext_s, &mask);
                 t = NULL;
             }
@@ -444,10 +496,20 @@ void *ITRC_Prime_Inject(void *data)
         }
         FD_SET(ns.sp_ext_s, &mask);
     }
-
+    /*MS2022: Create ipc to receive Config Agent messages*/
+    /*
+    printf("receiving from config agent on %s \n",itrcd->ipc_config);
+    ns.ipc_config_s = IPC_DGram_Sock(itrcd->ipc_config);
+    ret = fcntl(ns.ipc_config_s, F_SETFL, fcntl(ns.ipc_config_s, F_GETFL, 0) | O_NONBLOCK); 
+    if (ret == -1) {
+        printf("Failure setting config agent ipc socket to non-blocking\n");
+        exit(EXIT_FAILURE);
+    }
+    FD_SET(ns.ipc_config_s, &mask);
+    */
     /* Create a socket to receive state transfer requests from the ITRC_Master
      *  thread */
-    sprintf(ns.inject_path, "%s%d", (char *)SM_IPC_INJECT, My_ID);
+    sprintf(ns.inject_path, "%s%d", (char *)SM_IPC_INJECT, My_Global_ID);
     ns.inject_s = IPC_DGram_Sock(ns.inject_path);
     ret = fcntl(ns.inject_s, F_SETFL, fcntl(ns.inject_s, F_GETFL, 0) | O_NONBLOCK); 
     if (ret == -1) {
@@ -459,8 +521,8 @@ void *ITRC_Prime_Inject(void *data)
     /* Connect to Prime */
     if (USE_IPC_CLIENT) {
         prime_sock = IPC_DGram_SendOnly_Sock();
-        sprintf(prime_path, "%s%d", (char *)PRIME_REPLICA_IPC_PATH, My_ID);
-        printf("Connecting to %s\n", prime_path);
+        sprintf(prime_path, "%s%d", (char *)PRIME_REPLICA_IPC_PATH, My_Global_ID);
+        printf("MS2022:Connecting to %s\n", prime_path);
     }
     else {
         // TODO - resolve TCP connection across 2 threads now. Perhaps create 2 TCP
@@ -491,7 +553,6 @@ void *ITRC_Prime_Inject(void *data)
                     printf("Disconnected from Spines?\n");
                     FD_CLR(ns.sp_ext_s, &mask);
                     spines_close(ns.sp_ext_s);
-
                     /* Reconnect to spines external network if CC */
                     ns.sp_ext_s = ret = -1;
                     while (ns.sp_ext_s < 0 || ret < 0) {
@@ -513,6 +574,7 @@ void *ITRC_Prime_Inject(void *data)
                         }
                     }
                     FD_SET(ns.sp_ext_s, &mask);
+                    printf("Prime Inject: Connected to ext spines\n");
                     continue;
                 }
 
@@ -525,6 +587,7 @@ void *ITRC_Prime_Inject(void *data)
                     continue;
                 }
 
+                    //printf("Prime_Inject: valid message type (%d) from client\n", mess->type);
                 ret = OPENSSL_RSA_Verify((unsigned char*)mess + SIGNATURE_SIZE,
                             sizeof(signed_message) + mess->len - SIGNATURE_SIZE,
                             (unsigned char *)mess, mess->machine_id, RSA_CLIENT);
@@ -551,7 +614,20 @@ void *ITRC_Prime_Inject(void *data)
                     /* close(prime_sock);
                     FD_CLR(prime_sock, &mask); */
                 }
+                //printf("Sent to prime mess type %d from %d\n",mess->type, mess->machine_id);
             }
+            /*MS2022: Message from Config Agent*/
+            /*
+            if (ns.ipc_config_s>=0 && FD_ISSET(ns.ipc_config_s,&tmask)){
+                nBytes = IPC_Recv(ns.ipc_config_s, buff, sizeof(buff));
+                mess=(signed_message *)buff;
+                ret = IPC_Send(prime_sock, mess, sizeof(signed_message) + mess->len, prime_path);
+                if(ret <= 0) {
+                    perror("ITRC_Prime_Inject: Prime Writing error");
+                    continue;
+                }
+            }
+            */
 
             /* Message from the ITRC_Master - request for state transfer */
             if (ns.inject_s >= 0 && FD_ISSET(ns.inject_s, &tmask)) {
@@ -571,7 +647,47 @@ void *ITRC_Prime_Inject(void *data)
                  * as a indicator to wake up this thread and construct a state
                  * transfer request to give to Prime */
                 nBytes = IPC_Recv(ns.inject_s, buff, sizeof(buff));
+                signed_message * test_config=(signed_message *)buff;
+                if (test_config->type == PRIME_OOB_CONFIG_MSG){
+                    printf("Prime Inject, during reconf disconnecting from Spines\n");
+                    spines_close(ns.sp_ext_s);
+                    FD_CLR(ns.sp_ext_s, &mask);
+                    /* Reconnect to spines external network if CC */
+                    ns.sp_ext_s = ret = -1;
+		    //TODO: If not part of config do not connect
+		    config_message *c_mess;
+		    c_mess=(config_message *)test_config;
+                    if(c_mess->tpm_based_id[My_Global_ID-1]==0){
+			//printf("As not part of conf, not connecting to ext spines\n");
+			continue;
+			}
+                    while (ns.sp_ext_s < 0 || ret < 0) {
+			if(Type==DC_TYPE){
+				break;
+				}
+                        printf("Prime_Inject: Trying to reconnect to external spines during reconf\n");
+                        ns.sp_ext_s = Spines_Sock(itrcd->spines_ext_addr, itrcd->spines_ext_port,
+                                    SPINES_PRIORITY, SM_EXT_BASE_PORT + My_ID);
+                        while (ns.sp_ext_s < 0) {
+                            sleep(SPINES_CONNECT_SEC);
+                            ns.sp_ext_s = Spines_Sock(itrcd->spines_ext_addr, itrcd->spines_ext_port,
+                                    SPINES_PRIORITY, SM_EXT_BASE_PORT + My_ID);
+                            //continue;
+                        }
 
+                        val = 2;
+                        ret = spines_setsockopt(ns.sp_ext_s, 0, SPINES_SET_DELIVERY, (void *)&val, sizeof(val));
+                        if (ret < 0) {
+                            spines_close(ns.sp_ext_s);
+                            ns.sp_ext_s = -1;
+                            sleep(SPINES_CONNECT_SEC);
+                            continue;
+                        }
+                    	FD_SET(ns.sp_ext_s, &mask);
+                    	printf("Prime Inject reconnected to ext spines\n");
+                    	continue;
+                    	}
+                    }
                 /* Construct the state transfer update. Note: details get filled
                  * in later by my Prime replica */
                 mess = PKT_Construct_Signed_Message(sizeof(signed_update_message) 
@@ -598,13 +714,13 @@ void *ITRC_Prime_Inject(void *data)
                     continue;
                 }
                 free(mess);
-                FD_CLR(ns.inject_s, &mask);
-                close(ns.inject_s);
-                ns.inject_s = -1;
-                memset(ns.inject_path, 0, sizeof(ns.inject_path));
-            }
-        }
-    }
+                //FD_CLR(ns.inject_s, &mask);
+                //close(ns.inject_s);
+                //ns.inject_s = -1;
+                //memset(ns.inject_path, 0, sizeof(ns.inject_path));
+            }//ns_inject_s
+        }//if num >0
+    }//while
 
     return NULL;
 }
@@ -679,7 +795,7 @@ void ITRC_Reset_Master_Data_Structures(int startup)
 void *ITRC_Master(void *data) 
 {
     int i, j, num, ret, nBytes;
-    int prime_sock;
+    int prime_sock,prime_send_sock;
     seq_pair zero_ps = {0, 0};
     //int32u *seq_no;
     //unsigned int rtu_seq[MAX_EMU_RTU], hmi_seq;            /* highest seq sent to each rtu/hmi */
@@ -688,7 +804,7 @@ void *ITRC_Master(void *data)
     //unsigned int dup_bench[MAX_EMU_RTU];
     net_sock ns;
     fd_set mask, tmask;
-    char buff[MAX_LEN], prime_client_path[128];
+    char buff[MAX_LEN], prime_client_path[128],prime_path[128];
     struct sockaddr_in dest;
     signed_message *mess, *scada_mess, *tc_final;
     client_response_message *res;
@@ -734,7 +850,19 @@ void *ITRC_Master(void *data)
     ns.ipc_s = IPC_DGram_Sock(itrcd->ipc_local);
     memcpy(ns.ipc_remote, itrcd->ipc_remote, sizeof(ns.ipc_remote));
     FD_SET(ns.ipc_s, &mask);
-
+    
+    //MS2022: Config agent to sm ipc set up 
+    printf("receiving from itrc main on %s \n",itrcd->ipc_config);
+    ns.ipc_config_s = IPC_DGram_Sock(itrcd->ipc_config);
+    /*
+    ret = fcntl(ns.ipc_config_s, F_SETFL, fcntl(ns.ipc_config_s, F_GETFL, 0) | O_NONBLOCK);
+    if (ret == -1) {
+        printf("Failure setting config agent ipc socket to non-blocking\n");
+        exit(EXIT_FAILURE);
+    }
+    */
+    FD_SET(ns.ipc_config_s, &mask);
+    
     /* Read Keys */
     OPENSSL_RSA_Init();
     OPENSSL_RSA_Read_Keys(My_ID, RSA_SERVER, itrcd->prime_keys_dir);
@@ -776,7 +904,7 @@ void *ITRC_Master(void *data)
 
     /* Create a socket to send state transfer requests to the inject thread */
     ns.inject_s = IPC_DGram_SendOnly_Sock();
-    sprintf(ns.inject_path, "%s%d", (char *)SM_IPC_INJECT, My_ID);
+    sprintf(ns.inject_path, "%s%d", (char *)SM_IPC_INJECT, My_Global_ID);
     ret = fcntl(ns.inject_s, F_SETFL, fcntl(ns.inject_s, F_GETFL, 0) | O_NONBLOCK); 
     if (ret == -1) {
         printf("Failure setting inject socket to non-blocking\n");
@@ -785,8 +913,10 @@ void *ITRC_Master(void *data)
 
     /* Connect to Prime */
     if (USE_IPC_CLIENT) {
-        sprintf(prime_client_path, "%s%d", (char *)PRIME_CLIENT_IPC_PATH, My_ID);
+        sprintf(prime_client_path, "%s%d", (char *)PRIME_CLIENT_IPC_PATH, My_Global_ID);
         prime_sock = IPC_DGram_Sock(prime_client_path);
+        prime_send_sock = IPC_DGram_SendOnly_Sock();
+        sprintf(prime_path, "%s%d", (char *)PRIME_REPLICA_IPC_PATH, My_Global_ID);
     }
     else {
         // TODO - resolve TCP connection across 2 threads now. Perhaps create 2 TCP
@@ -839,7 +969,10 @@ void *ITRC_Master(void *data)
 
                 // REMOVE THIS - just for checking
                 //continue;
-
+                //MS2022 - Comment this print in actual runs
+                struct timeval prime_t;
+                gettimeofday(&prime_t,NULL);
+                //printf("Received message of type %d from prime_sock at %lu, %lu\n",mess->type,prime_t.tv_sec,prime_t.tv_usec);
                 //printf("Prime [%d]: %d of %d\n", res->ord_num, res->event_idx, res->event_tot);
 
                 /* Check for valid message type */
@@ -867,7 +1000,29 @@ void *ITRC_Master(void *data)
                     assert(ord_save.ord_num == 0);
 
                     printf("Processed PRIME_SYSTEM_RESET @ ITRC\n");
-                    
+                    struct timeval reset_t;
+                    gettimeofday(&reset_t,NULL);
+                    //printf("MS2022:*****Processing prime system reset received at %lu   %lu \n",reset_t.tv_sec,reset_t.tv_usec);
+                    /* Reset data structures */
+                    ITRC_Reset_Master_Data_Structures(0);
+
+                    /* Send the SYSTEM RESET message to the Scada Master */
+                    scada_mess = PKT_Construct_Signed_Message(0);
+                    scada_mess->machine_id = My_ID;
+                    scada_mess->len = 0;
+                    scada_mess->type = SYSTEM_RESET;
+                    IPC_Send(ns.ipc_s, (void *)scada_mess, sizeof(signed_message), ns.ipc_remote);
+                    continue;
+                }
+                /* Check if we received a SYSTEM RECONF message from Prime, which occurs on
+                 * the initial startup or when system is reconfigured */
+                if (scada_mess->type == PRIME_SYSTEM_RECONF) {
+                    assert(ord_save.ord_num == 0);
+
+                    printf("Processed PRIME_SYSTEM_RECONF @ ITRC\n");
+                    struct timeval reset_t;
+                    gettimeofday(&reset_t,NULL);
+                    //printf("MS2022:*****Processing prime system reconf received at %lu   %lu \n",reset_t.tv_sec,reset_t.tv_usec);
                     /* Reset data structures */
                     ITRC_Reset_Master_Data_Structures(0);
 
@@ -897,7 +1052,8 @@ void *ITRC_Master(void *data)
                 
                 ITRC_Process_Prime_Ordinal(ord_save, mess, &ns);
                 if (ns.sp_ext_s == -1) {
-                    t = &spines_timeout;
+                       //printf("Sahiti*****: t set to spines timeout\n");
+			t = &spines_timeout;
                 }
 
                 /* If we completed a state transfer from this ordinal, see if there are any
@@ -928,6 +1084,81 @@ void *ITRC_Master(void *data)
                 }
             }
 
+            if (FD_ISSET(ns.ipc_config_s,&tmask)){
+                    printf("Received on ipc_config_s\n");
+                    nBytes = IPC_Recv(ns.ipc_config_s, buff, MAX_LEN);
+                    printf("Received message of size=%d\n",nBytes);
+                    scada_mess = (signed_message *)buff;
+		    if(scada_mess->global_configuration_number<=My_Global_Configuration_Number){
+			printf("Ignoring config message %lu, as my My_Global_Configuration_Number is %lu\n",scada_mess->global_configuration_number,My_Global_Configuration_Number);
+			continue;
+		    }
+                    printf("Received OOB config message of size=%d, new conf=%lu\n",scada_mess->len,scada_mess->global_configuration_number);
+                    ret = IPC_Send(prime_send_sock, scada_mess, sizeof(signed_message) + scada_mess->len, prime_path);
+                    if(ret <= 0) {
+                        perror("ITRC_Main: Config Message Prime Writing error");
+                        continue;
+                    }
+                    printf("Sent OOB Config Msg to prime; total size=%d, mess->len=%d and sizeof signed message=%d\n",ret,scada_mess->len,sizeof(signed_message));
+                    
+                    //Reset?
+                    if(scada_mess->type==PRIME_OOB_CONFIG_MSG)
+                        oob_reconfigure(scada_mess,data);
+                    FD_CLR(ns.sp_int_s, &mask);
+                    spines_close(ns.sp_int_s);
+                    ns.sp_int_s = -1;
+                    spines_close(ns.sp_ext_s);
+                    FD_CLR(ns.sp_ext_s, &mask);
+                    ns.sp_ext_s = -1;
+                    //spines_timeout.tv_sec  = SPINES_CONNECT_SEC;
+                    //spines_timeout.tv_usec = SPINES_CONNECT_USEC;
+                    //t = &spines_timeout;
+                    t=NULL;
+                    int inject_ret=IPC_Send(ns.inject_s, (void *)mess, nBytes, ns.inject_path);
+                    if(inject_ret!=nBytes){
+                        printf("Error sending to prime inject ns.inject_s=%d\n",ns.inject_s);
+                    }
+                    else{
+                        printf("Sent to prime inject to reconnect to spines ext\n");
+                    }
+
+                   if (ns.sp_int_s == -1 && PartOfConfig==1) {
+                            // All replicas connect to internal network as send/recv
+                            ns.sp_int_s = Spines_Sock(itrcd->spines_int_addr, itrcd->spines_int_port,
+                                SPINES_PRIORITY, SM_INT_BASE_PORT + My_ID);
+                    	if (ns.sp_int_s < 0) {
+                            printf("ITRC_Master: Unable to connect to internal Spines during reconf, trying again soon\n");
+                            spines_timeout.tv_sec  = SPINES_CONNECT_SEC;
+                            spines_timeout.tv_usec = SPINES_CONNECT_USEC;
+                            t = &spines_timeout;
+                    	}
+                	else {
+                    		FD_SET(ns.sp_int_s, &mask);
+                    		printf("ITRC_Master: set mask on spines int\n");
+                	}
+            	}
+
+                if (ns.sp_ext_s == -1 && PartOfConfig==1) {
+                /* Connect to spines external network if CC */
+                	if (Type == CC_TYPE) {
+                    		ns.sp_ext_s = Spines_SendOnly_Sock(itrcd->spines_ext_addr, itrcd->spines_ext_port,
+                                SPINES_PRIORITY);
+                    		if (ns.sp_ext_s < 0) {
+                        		printf("ITRC_Master: Unable to connect to external Spines during reconf, trying soon\n");
+                        		spines_timeout.tv_sec  = SPINES_CONNECT_SEC;
+                        		spines_timeout.tv_usec = SPINES_CONNECT_USEC;
+                        		t = &spines_timeout;
+                    		}
+                    		else{
+                        		printf("ITRC_Master: Reconnected to spines ext during reconf\n");
+                    		}
+                	}
+            	}
+
+
+                    //continue;
+            }//ipc_config_s
+
             /* Incoming IPC message */
             if (FD_ISSET(ns.ipc_s, &tmask)) {
                 nBytes = IPC_Recv(ns.ipc_s, buff, MAX_LEN);
@@ -939,6 +1170,7 @@ void *ITRC_Master(void *data)
                     continue;
                 }
 
+                
                 /* Could check that we haven't already sent a share for this message ID, but
                  * this is coming from ourselves, ok for now */
 
@@ -977,7 +1209,8 @@ void *ITRC_Master(void *data)
                     /* Send the state transfer message to the target replica that needs it */
                     dest.sin_family = AF_INET;
                     dest.sin_port = htons(SM_INT_BASE_PORT + st_mess->target);
-                    dest.sin_addr.s_addr = inet_addr(Int_Site_Addrs[All_Sites[st_mess->target-1]]);
+                    dest.sin_addr.s_addr = inet_addr(Curr_Int_Site_Addrs[All_Sites[st_mess->target-1]]);
+                    //dest.sin_addr.s_addr = inet_addr(Int_Site_Addrs[All_Sites[st_mess->target-1]]);
                     ret = spines_sendto(ns.sp_int_s, scada_mess, sizeof(signed_message) + scada_mess->len,
                                 0, (struct sockaddr *)&dest, sizeof(struct sockaddr));
                     if (ret != (int)(sizeof(signed_message) + scada_mess->len)) {
@@ -993,7 +1226,7 @@ void *ITRC_Master(void *data)
                 /* Otherwise, this is a normal SCADA message for a client */
                 mess = PKT_Construct_TC_Share_Msg(ord_save, (char *)scada_mess, nBytes);
                 tc_mess = (tc_share_msg *)(mess + 1);
-
+                //printf("Construct TC share message My_ID=%u \n",My_ID);
                 /* SIGN TC Share Message */
                 OPENSSL_RSA_Sign( ((byte*)mess) + SIGNATURE_SIZE,
                         sizeof(signed_message) + mess->len - SIGNATURE_SIZE,
@@ -1012,6 +1245,7 @@ void *ITRC_Master(void *data)
                             t = &spines_timeout;
                             break;
                         }
+                        //printf("1. ITRC Master: ITRC_Send_TC_Final sent\n");
                         free(tc_final);
                     }
                 }
@@ -1024,8 +1258,10 @@ void *ITRC_Master(void *data)
                     if (CC_Replicas[i-1] == My_ID)
                         continue;
                     dest.sin_family = AF_INET;
-                    dest.sin_port = htons(SM_INT_BASE_PORT + CC_Replicas[i-1]);
-                    dest.sin_addr.s_addr = inet_addr(Int_Site_Addrs[CC_Sites[i-1]]);
+                    dest.sin_port = htons(SM_INT_BASE_PORT + Curr_CC_Replicas[i-1]);
+                    dest.sin_addr.s_addr = inet_addr(Curr_Int_Site_Addrs[CC_Sites[i-1]]);
+                    //dest.sin_port = htons(SM_INT_BASE_PORT + CC_Replicas[i-1]);
+                    //dest.sin_addr.s_addr = inet_addr(Int_Site_Addrs[CC_Sites[i-1]]);
                     ret = spines_sendto(ns.sp_int_s, mess, sizeof(signed_message) + sizeof(tc_share_msg),
                                 0, (struct sockaddr *)&dest, sizeof(struct sockaddr));
                     if (ret != sizeof(signed_message) + sizeof(tc_share_msg)) {
@@ -1036,6 +1272,8 @@ void *ITRC_Master(void *data)
                         t = &spines_timeout;
                         break;
                     }
+                    //printf("Sent my TC share my id=%u on %d\n",My_ID,SM_INT_BASE_PORT + Curr_CC_Replicas[i-1]);
+
                 }
                 free(mess);
             }
@@ -1084,6 +1322,7 @@ void *ITRC_Master(void *data)
                             break;
                         }
                         free(tc_final);
+                        //printf("2. ITRC_Send_TC_Final  sent\n");
                     }
                 }
                 else if (mess->type == STATE_XFER) {
@@ -1131,10 +1370,27 @@ void *ITRC_Master(void *data)
                             "mess_type = %d\n", Type, mess->type);
                 }
             }
-        }
+
+            
+        }// if num >0
         else {
+
+	   //printf("ITRC num=%d\n",num);
+            if (FD_ISSET(prime_sock, &tmask)) {
+		printf("num=%d and prime_sock is set\n",num);
+		}
+            if (FD_ISSET(ns.ipc_config_s, &tmask)) {
+		printf("num=%d and ipc_config_s is set\n",num);
+		}
+            if (FD_ISSET(ns.ipc_s, &tmask)) {
+		printf("num=%d and ipc_s is set\n",num);
+		}
+            if (ns.sp_int_s>0 && FD_ISSET(ns.sp_int_s, &tmask)) {
+		printf("num=%d and ipc_s is set\n",num);
+		}
+
             t = NULL;
-            if (ns.sp_int_s == -1) {
+            if (ns.sp_int_s == -1 && PartOfConfig==1) {
                 // All replicas connect to internal network as send/recv
                 ns.sp_int_s = Spines_Sock(itrcd->spines_int_addr, itrcd->spines_int_port,
                                 SPINES_PRIORITY, SM_INT_BASE_PORT + My_ID);
@@ -1145,11 +1401,13 @@ void *ITRC_Master(void *data)
                     t = &spines_timeout;
                 }
                 else {
+                    printf("&&&&&&&&MS2022: Reconnected to spines int\n");
                     FD_SET(ns.sp_int_s, &mask);
+                    //printf("&&&&&&&&MS2022: set mask on spines int\n");
                 }
             }
-            
-            if (ns.sp_ext_s == -1) {
+		
+            if (ns.sp_ext_s == -1 && PartOfConfig==1) {
                 /* Connect to spines external network if CC */
                 if (Type == CC_TYPE) {
                     ns.sp_ext_s = Spines_SendOnly_Sock(itrcd->spines_ext_addr, itrcd->spines_ext_port,
@@ -1160,15 +1418,65 @@ void *ITRC_Master(void *data)
                         spines_timeout.tv_usec = SPINES_CONNECT_USEC;
                         t = &spines_timeout;
                     }
+                    else{
+                        printf("&&&&&&&&MS2022: Reconnected to spines ext\n");
+                    }
                 }
             }
-        }
-    }
+		
+        }//while else i.e., num<=0
+    }//while
   
     /* Should do some cleanup if we ever close gracefully, even if from
      * catching interrupt signal */
     stddll_destruct(&ord_queue);
     return NULL;
+}
+
+
+void oob_reconfigure(signed_message *mess,void *data)
+{
+    config_message * c_mess;
+    itrc_data *itrcd;
+    
+    c_mess=(config_message *)(mess+1);
+    itrcd=(itrc_data *)data;
+    My_Global_Configuration_Number=mess->global_configuration_number;
+    //Close Network
+    int new_id= c_mess->tpm_based_id[My_Global_ID-1];
+    if (new_id==0){
+	printf("Not part of new configuration %lu \n",mess->global_configuration_number);
+        PartOfConfig=0;
+        //TC_cleanup();
+        return;
+	//perror("Not part of new configuration\n");
+        //exit(0);
+    }
+    PartOfConfig=1;
+    //Update defs
+    Reset_SM_def_vars(c_mess->N,c_mess->f,c_mess->k,c_mess->num_cc_replicas,c_mess->num_cc,c_mess->num_dc);
+
+    //Update My_ID
+    My_ID=new_id;
+    Prime_Client_ID = My_ID;
+    printf("Part of new configuration %lu my ID=%d\n",mess->global_configuration_number,My_ID);
+    if (c_mess->replica_flag[My_Global_ID-1]==1)
+        Type = CC_TYPE;
+    else
+        Type = DC_TYPE;
+
+    //Update keys dir
+    
+    //Reload Keys
+    OPENSSL_RSA_Reload_Prime_Keys(My_ID, RSA_SERVER, "/tmp/test_keys/prime",c_mess->N);
+    //TC_cleanup();
+    sprintf(itrcd->sm_keys_dir,"%s","/tmp/test_keys/sm");
+    TC_Read_Public_Key(itrcd->sm_keys_dir);
+    TC_Read_Partial_Key(My_ID, 1, itrcd->sm_keys_dir); /* only "1" site */
+    //Update Server addresses
+    Reset_SM_Replicas(c_mess->tpm_based_id,c_mess->replica_flag,c_mess->spines_ext_addresses,c_mess->spines_int_addresses);
+    printf("Reset SM Replica Addresses\n");
+    //Reply to config agent
 }
 
 void ITRC_Process_Prime_Ordinal(ordinal o, signed_message *mess, net_sock *ns)
@@ -1224,10 +1532,11 @@ void ITRC_Process_Prime_Ordinal(ordinal o, signed_message *mess, net_sock *ns)
     {
         ps = (seq_pair *)(scada_mess + 1);
         idx = (int32u *)(ps + 1);
+        //printf("received=%u\n",ps->seq_num);
         if (Seq_Pair_Compare(*ps, progress[*idx]) <= 0) {
-            /* printf("Duplicate!! [%u,%u] from %d, and I have [%u,%u]\n", 
+            /*printf("Duplicate!! [%u,%u] from %d, and I have [%u,%u]\n", 
                     ps->incarnation, ps->seq_num, *idx, 
-                    progress[*idx].incarnation, progress[*idx].seq_num); */
+                    progress[*idx].incarnation, progress[*idx].seq_num);*/ 
             duplicate = 1;
         }
         // SAM EMS
@@ -1342,6 +1651,8 @@ void ITRC_Process_Prime_Ordinal(ordinal o, signed_message *mess, net_sock *ns)
         IPC_Send(ns->ipc_s, (void *)state_req, nBytes, ns->ipc_remote);
         free(state_req);
     }
+//printf("Returning from ITRC_Process_Prime_Ordinal\n");
+
 }
 
 #if 0
@@ -1434,25 +1745,29 @@ void ITRC_Insert_TC_ID(tc_share_msg *tcm, int32u sender, int32u flag)
 
     /* Check if we've already finished this tc_node instance, and are just waiting to deliver it */
     if (ptr->done == 1) {
-        /* printf("\tinstance [%u,%u/%u] is already done!\n", ptr->ord.ord_num, 
-                    ptr->ord.event_idx, ptr->ord.event_tot); */
+        //printf("\tinstance [%u,%u/%u] is already done!\n", ptr->ord.ord_num, 
+        //            ptr->ord.event_idx, ptr->ord.event_tot); 
         return;
     }
 
-    if (ptr->recvd[sender] == 1)
+    if (ptr->recvd[sender] == 1){
+        //printf("Return as ptr->recvd[%d]==1\n",sender);
         return;
+    }
 
     ptr->recvd[sender] = 1;
     ptr->count++;
 
     /* Special case for NO_OPs and STATE_TRANSFER, which don't do TC */
     if (flag == SKIP_ORD) {
+        //printf("SKIP_ORD set\n");
         ptr->done = 1;
         ptr->skip = 1;
         return;
     }
 
     memcpy(&ptr->shares[sender], tcm, sizeof(tc_share_msg));
+    //printf("sender=%d, count=%d, req shares=%d received_own=%d\n",sender,ptr->count,REQ_SHARES,ptr->recvd[My_ID]);
     if (ptr->count >= REQ_SHARES && ptr->recvd[My_ID] == 1) {
         /* TODO: actually compare and check digests, find culprit if the TC
          *      shares don't work out, report them, clear their share, wait
@@ -1463,6 +1778,7 @@ void ITRC_Insert_TC_ID(tc_share_msg *tcm, int32u sender, int32u flag)
              OPENSSL_RSA_Sign( ((byte*)ptr->tcf) + SIGNATURE_SIZE,
                     sizeof(signed_message) + ptr->tcf->len - SIGNATURE_SIZE,
                     (byte*)ptr->tcf);
+            //printf("Signing TC Final\n");
         }
         else {
             ptr->skip = 1;
@@ -1518,7 +1834,7 @@ int ITRC_TC_Ready_Deliver(signed_message **to_deliver)
         printf("Executed Through Ordinal %u\n", applied_ord.ord_num);
         print_target = (((applied_ord.ord_num - 1) / PRINT_PROGRESS) + 1) * PRINT_PROGRESS;
     }
-    
+    //printf("ITRC_TC_Ready_Deliver ready flag = %d\n",ready); 
     return ready;
 }
 
@@ -1560,6 +1876,7 @@ int ITRC_Send_TC_Final(int sp_ext_sk, signed_message *mess)
         dest.sin_family = AF_INET;
         dest.sin_port = htons(RTU_BASE_PORT + ben->sender);
         dest.sin_addr.s_addr = inet_addr(SPINES_RTU_ADDR);
+        //printf("\nSENT benchmark response on %s \n",SPINES_RTU_ADDR);
     }
     else {
         printf("Invalid mess type = %d\n", mess->type);
@@ -1571,6 +1888,7 @@ int ITRC_Send_TC_Final(int sp_ext_sk, signed_message *mess)
         printf("ITRC_Send_TC_Final: spines_sendto error!\n");
         return -1;
     }
+     //printf("\nSENT response of %d on ext spines \n",ret);
 
     return 1;
 }
@@ -1659,7 +1977,7 @@ int ITRC_Insert_ST_ID(state_xfer_msg *st, int32u sender)
              *  state xfer messages in order to finish this off */
             OPENSSL_RSA_Make_Digest(st, sizeof(state_xfer_msg) + st->state_size, digest);
             match_count = 0;
-            for (i = 1; i <= NUM_SM; i++) {
+            for (i = 1; i <= Curr_num_SM; i++) {
                 if (ptr->recvd[i] == 0)
                     continue;
                        
@@ -1888,6 +2206,7 @@ int ITRC_Validate_Message(signed_message *mess)
         case TC_FINAL:
         case STATE_XFER:
         case BENCHMARK:
+        case PRIME_OOB_CONFIG_MSG:
             break;
 
         case PRIME_NO_OP:
@@ -1901,7 +2220,7 @@ int ITRC_Validate_Message(signed_message *mess)
 
         case PRIME_STATE_TRANSFER:
             printf("  PRIME_STATE_TRANSFER for %d\n", mess->machine_id);
-            if (mess->machine_id > NUM_SM) {
+            if (mess->machine_id > Curr_num_SM) {
                 printf("Prime State Xfer from non-Prime replica (instead from %u)\n",
                             mess->machine_id);
                 return 0;

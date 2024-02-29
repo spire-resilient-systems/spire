@@ -50,9 +50,11 @@ hmis/pnnl_hmi/pnnl_hmi
 scada_master/gen_keys
 scada_master/scada_master
 
-prime/bin/client
+prime/bin/driver
 prime/bin/gen_keys
 prime/bin/prime
+prime/bin/config_manager
+prime/bin/config_agent
 
 spines/daemon/spines
 spines/testprogs/g_flooder
@@ -151,6 +153,14 @@ prime/libspread-util/docs/libspread-util.3.out
 prime/libspread-util/include/spu_system.h
 prime/libspread-util/src/config.h
 prime/stdutil/include/stdutil/private/stdarch_autoconf.h
+prime/bin/conf_6/keys/*
+prime/bin/conf_6/prime_keys/*
+prime/bin/conf_666/keys/*
+prime/bin/conf_666/prime_keys/*
+prime/bin/2cc_conf_6/keys/*
+prime/bin/2cc_conf_6/prime_keys/*
+
+
 
 # OpenPLC misc
 OpenPLC_v2/**/.deps
@@ -218,8 +228,10 @@ pvb/rllib/rlsvg/rlsvgcat
 pvb/fake_qmake/fake_qmake
 pvb/rllib/rlfind/rlfind
 pvb/rllib/rlhtml2pdf/rlhtml2pdf
-
-
+pvb/language_bindings/lua/pvapplua/pvapplua
+pvb/language_bindings/lua/pvslua/pvslua
+pvb/rllib/rlhistory/rlhistory
+pvb/start_pvbapp/start_pvbapp
 
 # Compiled Executables
 relay_emulator/gen_event

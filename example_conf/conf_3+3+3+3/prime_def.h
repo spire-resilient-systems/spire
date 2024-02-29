@@ -21,13 +21,13 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
  *      
- * Copyright (c) 2008 - 2020
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -41,7 +41,14 @@
 #define PRIME_DEF_H
 
 /*---------------------System-wide Configuration Settings-------------------*/
+/*MS2022: Max Server Variable , used to create structs*/
+/*f=2 3 site number from 2018 paper*/
+#define MAX_NUM_SERVERS 30
+#define MAX_NUM_SERVER_SLOTS           (MAX_NUM_SERVERS+1)
 
+/*Reconf flag: Set to 0 to run Spire and 1 to run reconfigurable spire*/
+#define RECONF 1
+#define CONFIDENTIAL 0
 /* Maximum number of tolerated Byzantine faults */
 #define NUM_F 1
 
@@ -49,6 +56,8 @@
  * disconnections (network partition/attack), and crashes */
 #define NUM_K 4
 
+/*This parameter is used only in confidential spire. Will be replaced bu VAR.Num_Servers
+ * in future version*/
 /* Total number of replicas in the system. NUM_SERVERS must be equal to 
  * (3*NUM_F + 2*NUM_K + 1) */
 #define NUM_SERVERS (3*NUM_F + 2*NUM_K + 1)
@@ -101,7 +110,7 @@
 #define PRIME_SPINES_SERVER_BASE_PORT  7350
 #define PRIME_CLIENT_BASE_PORT         7400
 #define SPINES_PORT                    8100
-
+#define SPINES_EXT_PORT                8120
 /* Set this to 1 if IP multicast is available (i.e., when running in a
  * LAN).  Note that this option is not compatible with the
  * SET_USE_SPINES flag (see Makefile) or the
@@ -115,7 +124,7 @@
 #define USE_IPC_CLIENT 1
 #define REPLICA_IPC_PATH "/tmp/prime_replica"
 #define CLIENT_IPC_PATH "/tmp/prime_client"
-
+#define CA_DRIVER_IPC_PATH "/tmp/ca_driver_ipc"
 /* Set this to 1 if Prime daemon and Spines daemon it connects to are
  * co-located on the same physical machine */
 #define USE_SPINES_IPC 1
@@ -125,6 +134,12 @@
  * of messages sent over the WAN, we can use a multicast address of the form:
  * 254.255.0.X to send to all replicas reliably */
 #define SPINES_MCAST_ADDR      "254.255.0.20"
+#define CONF_SPINES_MCAST_ADDR "224.1.1.3"
+#define CONF_MNGR_ADDR "192.168.53.73"
+#define CONFIGUATION_SPINES_PORT       8900
+#define CONF_SPINES_MCAST_PORT 9900
+#define CTRL_BASE_PORT      9580
+#define SPINES_PRIORITY 1
 
 #define SPINES_CONNECT_SEC  2
 #define SPINES_CONNECT_USEC 0
@@ -176,7 +191,7 @@
 #define THROTTLE_OUTGOING_MESSAGES 0
 
 /* These values define the maximum outgoing bandwidth of each traffic
- * class when throttling is used.  The number are in bits per second
+ //* class when throttling is used.  The number are in bits per second
  * (e.g., 10000000 means the outgoing bandwidth is not to exceed
  * 10Mbps). Note that in the current release, RECON messages are
  * always throttled, regardless of whether the
@@ -205,10 +220,10 @@
  * right away.*/
 
 /* How often do we send a Pre-Prepare? */
-//#define PRE_PREPARE_SEC  2
-//#define PRE_PREPARE_USEC 0
 #define PRE_PREPARE_SEC  0
 #define PRE_PREPARE_USEC 20000
+//#define PRE_PREPARE_SEC  2
+//#define PRE_PREPARE_USEC 0
 
 /* When sending PreOrder messages periodically, how often the timeout
  * fires (i.e, how often we check to see if we can send new
@@ -350,6 +365,8 @@
 
 #define NET_CLIENT_PROGRAM_TYPE    1
 #define NET_SERVER_PROGRAM_TYPE    2
+//MS2022
+#define NM_PROGRAM_TYPE    	   3
 
 #define BROADCAST                  0
 
@@ -359,7 +376,7 @@
  * packets for any protocol message */
 #define PRIME_MAX_PACKET_SIZE      32000
 //#define PRIME_MAX_PACKET_SIZE      1472
-#define NUM_SERVER_SLOTS           (NUM_SERVERS+1)
+//#define NUM_SERVER_SLOTS           (NUM_SERVERS+1)
 #define NUM_CLIENT_SLOTS           (NUM_CLIENTS+1)
 
 /* We store two additional pieces of information, each an integer, in

@@ -1,3 +1,6 @@
+Version 5.6 - February 29, 2024
+    * Changes to be compatible with latest versions of GCC
+
 Version 5.5 - December 23, 2020
     * The main change is this version is to use OpenSSL version 1.1.1.
     * Allows use of key size 512 bits in addition to previous version's 1024 bits and 2048 bits

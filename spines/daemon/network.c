@@ -19,7 +19,7 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2003-2024 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -325,6 +325,7 @@ Interface *Create_Interface(Node_ID         nid,
 	if ((interf->channels[link_type] = DL_init_channel(RECV_CHANNEL, (int16) (Port + link_type), 0, interf_addr)) < 0) {
 	  Alarm(EXIT, "Init_Recv_Channel: DL_init_channel failed with %d; errno %d says %s\r\n", interf->channels[link_type], errno, strerror(errno));
 	}
+        DL_set_large_buffers(interf->channels[link_type]);
 	
 	if (E_attach_fd(interf->channels[link_type], READ_FD, Net_Recv, link_type, interf, priority) != 0) {
 	  Alarm(EXIT, "Init_Recv_Channel: E_attach_fd failed!\r\n");
@@ -355,6 +356,7 @@ Interface *Create_Interface(Node_ID         nid,
 	if ((interf->discovery[j] = DL_init_channel(RECV_CHANNEL, (int16) (Port + CONTROL_LINK), Discovery_Address[j], interf_addr)) < 0) {
 	  Alarm(EXIT, "Init_Recv_Channel: discovery - DL_init_channel failed with %d; errno %d says %s\r\n", interf->discovery[j], errno, strerror(errno));
 	}
+        DL_set_large_buffers(interf->discovery[j]);
 	
 	if (E_attach_fd(interf->discovery[j], READ_FD, Net_Recv, CONTROL_LINK, interf, HIGH_PRIORITY) != 0) {
 	  Alarm(EXIT, "Init_Recv_Channel: discovery - E_attach_fd failed!\r\n");

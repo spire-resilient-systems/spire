@@ -21,14 +21,15 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2023
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -130,7 +131,8 @@ void RECON_Process_Recon (signed_message *recon)
     Alarm(DEBUG, "Part had index %d\n", index);
 
     /* If we have enough parts, we should decode */
-    if(slot->num_parts_collected < (NUM_F + 1))
+    //if(slot->num_parts_collected < (NUM_F + 1))
+    if(slot->num_parts_collected < (VAR.F + 1))
         continue;
         
     /* Make sure we need this one */
@@ -155,12 +157,12 @@ void RECON_Do_Recon (ord_slot *o_slot)
   signed_message *req;
   po_request_message *rs;
   int32u gseq, i, j, k, should_send;
-  po_seq_pair prev_pop[NUM_SERVER_SLOTS];
-  po_seq_pair cur_pop[NUM_SERVER_SLOTS];
+  po_seq_pair prev_pop[MAX_NUM_SERVER_SLOTS];
+  po_seq_pair cur_pop[MAX_NUM_SERVER_SLOTS];
   po_seq_pair ps, zero_ps = {0, 0};
   int32u dest_bits, added_to_queue;
   dll_struct message_list, node_list;
-  dll_struct erasure_server_dll[NUM_SERVER_SLOTS];
+  dll_struct erasure_server_dll[MAX_NUM_SERVER_SLOTS];
 
   /* If we've already reconciled this slot, don't do it again */
   if(o_slot->reconciled)
@@ -195,22 +197,22 @@ void RECON_Do_Recon (ord_slot *o_slot)
   if(prev_ord_slot == NULL) {
     assert(gseq == 1);
 
-    for(i = 1; i <= NUM_SERVERS; i++) 
+    for(i = 1; i <= VAR.Num_Servers; i++) 
       prev_pop[i] = zero_ps;
   }
   else {
-    for(i = 1; i <= NUM_SERVERS; i++) 
+    for(i = 1; i <= VAR.Num_Servers; i++) 
       prev_pop[i] = pp->last_executed[i-1];
   }
 
   /* Second, setup cur_pop as made_eligible, which should be setup
    * by now either when we sent our prepare or when we ordered 
    * (collected 2f+k+1 commits) */
-  for (i = 1; i <= NUM_SERVERS; i++) 
+  for (i = 1; i <= VAR.Num_Servers; i++) 
     cur_pop[i] = o_slot->made_eligible[i-1];
 
   UTIL_DLL_Initialize(&message_list);
-  for(i = 1; i <= NUM_SERVERS; i++) {
+  for(i = 1; i <= VAR.Num_Servers; i++) {
 
     assert(prev_pop[i].incarnation <= cur_pop[i].incarnation);
     if (prev_pop[i].incarnation < cur_pop[i].incarnation) {
@@ -238,7 +240,7 @@ void RECON_Do_Recon (ord_slot *o_slot)
 
         if(should_send) {
 
-          for(k = 1; k <= NUM_SERVERS; k++) {
+          for(k = 1; k <= VAR.Num_Servers; k++) {
             
             if(PRE_ORDER_Seq_Compare(DATA.PO.cum_max_acked[k][req->machine_id], 
                                         rs->seq) < 0 && k != req->machine_id)
@@ -313,7 +315,7 @@ void RECON_Do_Recon (ord_slot *o_slot)
   RECON_Create_Nodes_From_Messages(&message_list, &node_list);
 
   /* Now allocate the parts to each server that it needs */
-  for(i = 1; i <= NUM_SERVERS; i++)
+  for(i = 1; i <= VAR.Num_Servers; i++)
     UTIL_DLL_Initialize(&erasure_server_dll[i]);
 
   RECON_Allocate_Recon_Parts_From_Nodes(&node_list, erasure_server_dll);
@@ -327,30 +329,30 @@ int32u RECON_Do_I_Send_Erasure(int32u machine_id,
 			       po_aru_signed_message *cum_acks)
 {
   int32u s;
-  po_seq_pair cack[ NUM_SERVER_SLOTS ];
-  po_seq_pair scack[ NUM_SERVER_SLOTS ];
-  bool could_send[ NUM_SERVER_SLOTS ];
+  po_seq_pair cack[ MAX_NUM_SERVER_SLOTS ];
+  po_seq_pair scack[ MAX_NUM_SERVER_SLOTS ];
+  bool could_send[ MAX_NUM_SERVER_SLOTS ];
   int32u sender_count;
   
-  for(s = 1; s <= NUM_SERVERS; s++) {
+  for(s = 1; s <= VAR.Num_Servers; s++) {
     cack[s]  = cum_acks[s-1].cum_ack.ack_for_server[machine_id-1];
     scack[s] = cum_acks[s-1].cum_ack.ack_for_server[machine_id-1];
   }
   
   /* sort the values */
-  qsort((void*)(scack+1), NUM_SERVERS, sizeof(po_seq_pair), poseqcmp);
+  qsort((void*)(scack+1), VAR.Num_Servers, sizeof(po_seq_pair), poseqcmp);
   
-  for(s = 1; s <= NUM_SERVERS; s++)
+  for(s = 1; s <= VAR.Num_Servers; s++)
     Alarm(DEBUG," (%d,%d,%d) ", s, cack[s].incarnation, cack[s].seq_num);  
   Alarm(DEBUG,"\n");
   
-  for(s = 1; s <= NUM_SERVERS; s++) 
-    could_send[s] = (PRE_ORDER_Seq_Compare(cack[s], 
-                        scack[NUM_F + NUM_K + 1]) >= 0) ? TRUE : FALSE;
+  for(s = 1; s <= VAR.Num_Servers; s++) 
+    could_send[s] = (PRE_ORDER_Seq_Compare(cack[s],scack[VAR.F + VAR.K + 1]) >= 0) ? TRUE : FALSE;
+    //could_send[s] = (PRE_ORDER_Seq_Compare(cack[s],scack[NUM_F + NUM_K + 1]) >= 0) ? TRUE : FALSE;
   sender_count = 0;
 
   if(could_send[VAR.My_Server_ID] == TRUE) {
-    for(s = 1; s <= NUM_SERVERS; s++) {
+    for(s = 1; s <= VAR.Num_Servers; s++) {
       if(could_send[s] == TRUE) 
 	    sender_count++;
       if(s == VAR.My_Server_ID) {
@@ -360,12 +362,12 @@ int32u RECON_Do_I_Send_Erasure(int32u machine_id,
 	  int i;
 
 	  Alarm(PRINT, "Cack: [ ");
-	  for(i = 1; i <= NUM_SERVERS_IN_SITE; i++)
+	  for(i = 1; i <= VAR.Num_Servers_IN_SITE; i++)
 	    Alarm(PRINT, "%d ", cack[i]);
 	  Alarm(PRINT, "]\n");
 
 	  Alarm(PRINT, "Scack: [ ");
-	  for(i = 1; i <= NUM_SERVERS_IN_SITE; i++)
+	  for(i = 1; i <= VAR.Num_Servers_IN_SITE; i++)
 	    Alarm(PRINT, "%d ", scack[i]);
 	  Alarm(PRINT, "]\n");
 	  
@@ -376,7 +378,7 @@ int32u RECON_Do_I_Send_Erasure(int32u machine_id,
 	    return TRUE;
       }
 
-      if(sender_count == (2*NUM_F + NUM_K + 1))   /* 2f+k+1 */
+      if(sender_count == (2*VAR.F + VAR.K + 1))   /* 2f+k+1 */
 	    return FALSE;
     }
   }
@@ -423,7 +425,7 @@ void RECON_Decode_Recon(recon_slot *slot)
   message_len = 0;
   ERASURE_Clear();
   
-  for(i = 1; i <= NUM_SERVERS; i++) {
+  for(i = 1; i <= VAR.Num_Servers; i++) {
     /* We have a part from this server.  */
     if(slot->part_collected[i]) {
       
@@ -439,8 +441,8 @@ void RECON_Decode_Recon(recon_slot *slot)
         
         /* Message was encoded into 3f+1 parts, f+1 of which are
            needed to decode. */
-        mpackets = (NUM_F + 1);
-        rpackets = (2*NUM_F + 2*NUM_K);
+        mpackets = (VAR.F + 1);
+        rpackets = (2*VAR.F + 2*VAR.K);
         
         ERASURE_Initialize_Decoding(message_len, mpackets, rpackets);
       }
@@ -507,8 +509,8 @@ void RECON_Create_Nodes_From_Messages(dll_struct *source_list,
 
     /* We encode the message into 3f+1 parts, f+1 of which will be 
      * needed to decode. */
-    mpackets = (NUM_F + 1);
-    rpackets = (2*NUM_F + 2*NUM_K);
+    mpackets = (VAR.F + 1);
+    rpackets = (2*VAR.F + 2*VAR.K);
     
     ERASURE_Clear();
 
@@ -562,7 +564,7 @@ void RECON_Allocate_Recon_Parts_From_Nodes(dll_struct *node_list,
     /* Sanity check: this should have some destination */
     assert(n->dest_bits != 0);
 
-    target = NUM_SERVERS;
+    target = VAR.Num_Servers;
     
     for(i = 1; i <= target; i++) {
 
@@ -599,7 +601,7 @@ void RECON_Build_Recon_Packets(dll_struct *dest_lists)
   int32u i, target, more_to_encode, bits;
   signed_message *m;
 
-  target = NUM_SERVERS;
+  target = VAR.Num_Servers;
 
   for(i = 1; i <= target; i++) {
   

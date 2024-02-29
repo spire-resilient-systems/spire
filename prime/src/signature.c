@@ -21,14 +21,15 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2023
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -109,7 +110,7 @@ void SIG_Add_To_Pending_Messages(signed_message *m, int32u dest_bits,
   UTIL_DLL_Set_Last_Extra(&DATA.SIG.pending_messages_dll, DEST, dest_bits);
   UTIL_DLL_Set_Last_Extra(&DATA.SIG.pending_messages_dll, TIMELINESS,
 			  timeliness);
-
+  
   if(DATA.SIG.pending_messages_dll.length == SIG_THRESHOLD)
     SIG_Make_Batch(0, NULL);
   else {
@@ -307,7 +308,7 @@ void SIG_Finish_Pending_Messages(byte *signature)
           /* Send the proof matrix to the leader, send recon messages to only
            * those that need it.  Everything else broadcast. */
           if(mess->type == PROOF_MATRIX || mess->type == RECON) {
-        for(i = 1; i <= NUM_SERVERS; i++) {
+        for(i = 1; i <= VAR.Num_Servers; i++) {
           if(UTIL_Bitmap_Is_Set(&dest_bits, i))
             UTIL_Send_To_Server(mess, i);
         }
@@ -318,7 +319,7 @@ void SIG_Finish_Pending_Messages(byte *signature)
           
           /* Recon attack: Faulty servers don't send to top f correct servers */
           else if (UTIL_I_Am_Faulty() && mess->type == PO_REQUEST) {
-        for(i = 1; i <= NUM_SERVERS; i++) {
+        for(i = 1; i <= VAR.Num_Servers; i++) {
           if( (i <= (2*NUM_F + NUM_K + 1)) && (i != VAR.My_Server_ID) )
             UTIL_Send_To_Server(mess, i);
         }
@@ -332,22 +333,24 @@ void SIG_Finish_Pending_Messages(byte *signature)
           
           /* Recon attack: Faulty servers don't send to top f correct servers */
           else if (UTIL_I_Am_Faulty() && mess->type == PO_REQUEST) {
-            for(i = 1; i <= NUM_SERVERS; i++) {
-              if( (i <= (2*NUM_F + NUM_K + 1)) && (i != VAR.My_Server_ID) )
+            for(i = 1; i <= VAR.Num_Servers; i++) {
+              if( (i <= (2*VAR.F + VAR.K + 1)) && (i != VAR.My_Server_ID) )
                 UTIL_Send_To_Server(mess, i);
             }
           }
           /* Send non-broadcast messages to specific server that needs it,
            * e.g., proof matrix and recon messages. */
           else if (dest_bits != BROADCAST) {
-            for(i = 1; i <= NUM_SERVERS; i++) {
+            for(i = 1; i <= VAR.Num_Servers; i++) {
               if(UTIL_Bitmap_Is_Set(&dest_bits, i) && i != VAR.My_Server_ID)
                 UTIL_Send_To_Server(mess, i);
+		Alarm(DEBUG,"UTIL_Send_To_Server non-Broadcast mess type=%s\n", UTIL_Type_To_String(mess->type));
             }
           }
           /* Otherwise, its a broadcast message */
           else {
             //if (mess->type != REPLAY_COMMIT)
+	      Alarm(DEBUG,"UTIL_Send_To_Server Broadcast mess type=%s\n", UTIL_Type_To_String(mess->type));
               UTIL_Broadcast(mess);
           }
 #endif

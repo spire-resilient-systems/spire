@@ -25,9 +25,11 @@
 # 
 #  Major Contributors:
 #    Brian Coan           Design of the Prime algorithm
-#    Jeff Seibert         View Change protocol
-#       
-#  Copyright (c) 2008-2023
+#    Jeff Seibert         View Change protocol 
+#    Sahiti Bommareddy    Reconfiguration 
+#    Maher Khan           Reconfiguration 
+#  
+#  Copyright (c) 2008-2024
 #  The Johns Hopkins University.
 #  All rights reserved.
 #  
@@ -53,36 +55,45 @@ SPINES_LIB = ../../spines/libspines/libspines.a
 
 CC = gcc
 #CFLAGS = -g -pg -O2 -Wall $(SPINES) $(INC)  
-CFLAGS += -g -O2 -Wall $(SPINES) $(INC)  
+CFLAGS += -g -O2 -Wall -DNDEBUG $(SPINES) $(INC)  
 
 WRAPPER_OBJ = error_wrapper.o openssl_rsa.o
 
 PRIME_OBJ = prime.o data_structs.o utility.o network.o pre_order.o \
-	util_dll.o validate.o process.o packets.o order.o \
+	util_dll.o validate.o nm_process.o process.o packets.o order.o  \
 	signature.o net_wrapper.o merkle.o suspect_leader.o \
 	reliable_broadcast.o view_change.o erasure.o recon.o \
 	tc_wrapper.o catchup.o proactive_recovery.o $(WRAPPER_OBJ)
 
-CONF_PRIME_OBJ = prime.o data_structs.o utility.o network.o pre_order.o \
-	util_dll.o conf_validate.o process.o packets.o order.o \
-	signature.o net_wrapper.o merkle.o suspect_leader.o \
-	reliable_broadcast.o view_change.o erasure.o recon.o \
-	conf_tc_wrapper.o catchup.o proactive_recovery.o $(WRAPPER_OBJ)
 
-CLIENT_OBJ = client.o data_structs.o utility.o network.o pre_order.o \
-	util_dll.o packets.o process.o order.o \
+DRIVER_OBJ = driver.o data_structs.o utility.o network.o pre_order.o \
+	util_dll.o packets.o nm_process.o process.o order.o \
 	signature.o net_wrapper.o erasure.o validate.o suspect_leader.o \
 	reliable_broadcast.o view_change.o catchup.o proactive_recovery.o \
 	merkle.o recon.o tc_wrapper.o $(WRAPPER_OBJ)
 
-GEN_KEYS_OBJ = openssl_rsa.o generate_keys.o tc_wrapper.o
+CM_OBJ=config_manager.o data_structs.o utility.o network.o pre_order.o \
+        util_dll.o packets.o nm_process.o process.o order.o \
+        signature.o net_wrapper.o erasure.o validate.o suspect_leader.o \
+        reliable_broadcast.o view_change.o catchup.o proactive_recovery.o \
+        merkle.o recon.o tc_wrapper.o $(WRAPPER_OBJ)
 
-all: $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) prime client gen_keys conf_prime
+CA_OBJ=config_agent.o data_structs.o utility.o network.o pre_order.o \
+        util_dll.o packets.o nm_process.o process.o order.o \
+        signature.o net_wrapper.o erasure.o validate.o suspect_leader.o \
+        reliable_broadcast.o view_change.o catchup.o proactive_recovery.o \
+        merkle.o recon.o tc_wrapper.o $(WRAPPER_OBJ)
 
 
-base_prime: $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) prime client gen_keys
+GEN_KEYS_OBJ =  generate_keys.o tc_wrapper.o data_structs.o utility.o network.o pre_order.o \
+        util_dll.o validate.o nm_process.o process.o packets.o order.o  \
+        signature.o net_wrapper.o merkle.o suspect_leader.o proactive_recovery.o\
+        reliable_broadcast.o view_change.o erasure.o recon.o  catchup.o $(WRAPPER_OBJ)
 
-conf_base_prime: $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) conf_prime gen_keys
+all: $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) prime driver gen_keys config_manager config_agent
+
+
+
 
 
 $(STDUTIL_LIB):
@@ -95,16 +106,20 @@ $(TC_LIB):
 	cd ../OpenTC-1.1/TC-lib-1.0/; ./configure; make
 
 gen_keys: $(GEN_KEYS_OBJ)
-	$(CC) $(LDFLAGS) -o ../bin/gen_keys $(GEN_KEYS_OBJ) $(LIBSPREAD_UTIL) $(TC_LIB) -lcrypto -ldl -lpthread -lrt
+	$(CC) $(LDFLAGS) -o ../bin/gen_keys $(GEN_KEYS_OBJ) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) $(STDUTIL_LIB) -lcrypto -ldl -lpthread -lrt
 
 prime: $(PRIME_OBJ)
 	$(CC) $(LDFLAGS) $(CPPFLAGS) -o ../bin/prime $(PRIME_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
 
-conf_prime: $(CONF_PRIME_OBJ)
-	$(CC) $(LDFLAGS) $(CPPFLAGS) -o ../bin/conf_prime $(CONF_PRIME_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
 
-client: $(CLIENT_OBJ)
-	$(CC) $(LDFLAGS) -o ../bin/client $(CLIENT_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
+driver: $(DRIVER_OBJ)
+	$(CC) $(LDFLAGS) -o ../bin/driver $(DRIVER_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
+
+config_manager:  $(CM_OBJ)
+	 $(CC) $(LDFLAGS) -o ../bin/config_manager $(CM_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
+
+config_agent:  $(CA_OBJ)
+	 $(CC) $(LDFLAGS) -o ../bin/config_agent $(CA_OBJ) $(STDUTIL_LIB) $(LIBSPREAD_UTIL) $(TC_LIB) $(SPINES_LIB) -lm -lcrypto -ldl -lpthread -lrt
 
 %.o:	%.c
 	$(CC) $(CFLAGS) $(CPPFLAGS) -c -o $*.o $*.c
@@ -114,16 +129,19 @@ clean:
 	rm -f *.o
 	rm -f core*
 	rm -f ../bin/prime
-	rm -f ../bin/conf_prime
-	rm -f ../bin/client
+	rm -f ../bin/driver
 	rm -f ../bin/gen_keys
+	rm -f ../bin/config_manager
+	rm -f ../bin/config_agent
 
 # Also cleans up the stdutil, libspread-util, and OpenTC libraries
+# Uses - to ignore errors, since these fail if clean is run multiple times
 cleaner: clean
-	cd ../stdutil; make distclean
-	cd ../libspread-util; make distclean
-	cd ../OpenTC-1.1/TC-lib-1.0/; make distclean
+	-$(MAKE) -C ../stdutil distclean
+	-$(MAKE) -C ../libspread-util distclean
+	-$(MAKE) -C ../OpenTC-1.1/TC-lib-1.0/ distclean
 
 # Also removes all key files
 distclean: cleaner
 	cd ../bin/keys; rm -f *.pem; rm -f *.key
+	cd ../bin/tpm_keys; rm -f *.pem; rm -f *.key

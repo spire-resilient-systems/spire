@@ -35,7 +35,7 @@
  # Contributors:
  #   Samuel Beckley       Contributions to HMIs 
  #
- # Copyright (c) 2017-2023 Johns Hopkins University.
+ # Copyright (c) 2017-2024 Johns Hopkins University.
  # All rights reserved.
  #
  # Partial funding for Spire research was provided by the Defense Advanced 
@@ -58,5 +58,5 @@ $(SUBDIRS):
 
 clean:
 	for dir in $(SUBDIRS); do \
-    	( rm $$dir/openplc ); \
+    	( rm -f $$dir/openplc ); \
 	done

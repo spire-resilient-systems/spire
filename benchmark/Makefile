@@ -35,7 +35,7 @@
  # Contributors:
  #   Samuel Beckley       Contributions to HMIs 
  #
- # Copyright (c) 2017-2023 Johns Hopkins University.
+ # Copyright (c) 2017-2024 Johns Hopkins University.
  # All rights reserved.
  #
  # Partial funding for Spire research was provided by the Defense Advanced 
@@ -49,14 +49,15 @@ CC            = gcc
 CXX           = g++
 CFLAGS       += -m64 -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
 CXXFLAGS     += -m64 -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
-INCPATH       = -I. -I../prime/stdutil/include -I../spines/libspines/
+INCPATH       = -I. -I ../prime/stdutil/include -I ../spines/libspines/ -I ../spines/libspread-util/include -I ../common
 LINK          = g++
 LFLAGS        = -m64 -Wl,-O1
 LIBS          = $(SUBLIBS) -lpthread \
 				../prime/OpenTC-1.1/TC-lib-1.0/.libs/libTC.a \
 				../spines/libspines/libspines.a ../prime/stdutil/lib/libstdutil.a \
+				../spines/libspread-util/src/libspread-util.a \
 				-lrt -ldl -lm -lcrypto
-TARGET	  = benchmark
+TARGET	  = benchmark  
 OBJECTS   = benchmark.o \
                 ../common/scada_packets.o \
                 ../common/net_wrapper.o \
@@ -67,18 +68,21 @@ OBJECTS   = benchmark.o \
             	../config/cJSON.o \
             	../config/config_helpers.o
 
+
 .SUFFIXES: .o .c .cpp
 
 .cpp.o:
-	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o "$@" "$<"
+	$(CXX) -c $(CXXFLAGS) $(INCPATH)  -o "$@" "$<"
 
 .c.o:
-	$(CC) -c $(CFLAGS) $(INCPATH) -o "$@" "$<"
+	$(CC) -c $(CFLAGS) $(INCPATH)  -o "$@" "$<"
 
-all: $(TARGET)
+all: benchmark  
 
-$(TARGET): $(OBJECTS)  
-	$(LINK) $(LDFLAGS) $(LFLAGS) -o $(TARGET) $(OBJECTS) $(LIBS)
+benchmark: $(OBJECTS)  
+	$(LINK) $(LDFLAGS) $(LFLAGS) -o benchmark $(OBJECTS) $(LIBS)
+
+
 
 clean: 
 	rm -f $(OBJECTS) 
@@ -95,3 +99,6 @@ benchmark.o: benchmark.cpp  \
 		../config/cJSON.h \
 		../config/config_helpers.h
 	$(CXX) -c $(CXXFLAGS) $(INCPATH) -o benchmark.o benchmark.cpp
+
+
+

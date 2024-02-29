@@ -26,9 +26,11 @@
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2023
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -69,8 +71,51 @@ server_variables    VAR;
 network_variables   NET;
 server_data_struct  DATA;
 benchmark_struct    BENCH;
+int Curr_N, Curr_K,Curr_f;
+
 
 /* Data structure initialization funtions */
+
+void DAT_Reinitialize() 
+{
+  int32u i;
+  
+  /* Initialize data structures */
+  PR_Initialize_Data_Structure();
+  PRE_ORDER_Initialize_Data_Structure();
+  ORDER_Initialize_Data_Structure();
+  SIG_Initialize_Data_Structure();
+  SUSPECT_Initialize_Data_Structure();
+  RB_Initialize_Data_Structure();
+  VIEW_Initialize_Data_Structure();
+  CATCH_Initialize_Data_Structure();
+  Alarm(DEBUG, "During reconf reinitialized PO, ORDER, SIG, SUSP, RB, VIEW, CATCH, and PR data structures.\n");
+
+  /* We need to initialize the erasure codes no matter what because
+   * we use erasure-encoded reconciliation in Prime. */
+  ERASURE_Initialize();
+
+  /*
+  BENCH.updates_executed         = 0;
+  BENCH.num_po_requests_sent     = 0;
+  BENCH.total_updates_requested  = 0;
+  BENCH.num_po_acks_sent         = 0;
+  BENCH.num_acks                 = 0;
+  BENCH.num_flooded_pre_prepares = 0;
+  BENCH.clock_started            = 0;
+
+  BENCH.num_signatures = 0;
+  BENCH.total_signed_messages = 0;
+  BENCH.max_signature_batch_size = 0;
+  for(i = 0; i < MAX_MESS_TYPE; i++) {
+    BENCH.signature_types[i] = 0;
+    BENCH.profile_count[i] = 0;
+  }
+
+
+  */
+}
+
 
 void DAT_Initialize() 
 {

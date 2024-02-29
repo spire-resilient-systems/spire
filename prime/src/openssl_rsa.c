@@ -21,14 +21,15 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2023
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -62,20 +63,25 @@
 #define RSA_TYPE_PUBLIC          1
 #define RSA_TYPE_PRIVATE         2
 #define RSA_TYPE_CLIENT_PUBLIC   3 
-#define RSA_TYPE_CLIENT_PRIVATE  4 
+#define RSA_TYPE_CLIENT_PRIVATE  4
+#define RSA_TYPE_NM_PUBLIC       5 
+#define RSA_TYPE_NM_PRIVATE      6  
 #define DIGEST_ALGORITHM         "sha1" 
-#define NUMBER_OF_SERVERS        NUM_SERVERS
 #define NUMBER_OF_CLIENTS        NUM_CLIENTS
 
 /* This flag is used to remove crypto for testing -- this feature eliminates
  * security and Byzantine fault tolerance. */
 #define REMOVE_CRYPTO 0 
 
+/*SM2022:  VAR.Num_Servers*/
+extern server_variables VAR;
+
 /* Global variables */
 RSA *private_rsa; /* My Private Key */
 RSA *private_client_rsa; /* My Private Client Key (If im also a server) */
-RSA *public_rsa_by_server[NUMBER_OF_SERVERS + 1];
+RSA *public_rsa_by_server[MAX_NUM_SERVERS + 1];
 RSA *public_rsa_by_client[NUMBER_OF_CLIENTS + 1];
+RSA *public_rsa_by_nm;
 const EVP_MD *message_digest;
 EVP_MD_CTX *mdctx;
 void *pt;
@@ -98,6 +104,49 @@ void Write_BN(FILE *f, const BIGNUM *bn)
    * be used again. TODO */ 
 }
 
+
+void Write_RSA_To_Dir( int32u rsa_type, int32u server_number, RSA *rsa, const char *keys_dir)
+{
+  FILE *f;
+  char fileName[100];
+  const BIGNUM *n, *e, *d;
+  const BIGNUM *p, *q;
+  const BIGNUM *dmp1, *dmq1, *iqmp;
+
+  /* Write an RSA structure to a file */
+  if(rsa_type == RSA_TYPE_PUBLIC)
+    snprintf(fileName, 100, "%s/public_%02d.key", keys_dir, server_number);
+  else if(rsa_type == RSA_TYPE_PRIVATE)
+    snprintf(fileName, 100, "%s/private_%02d.key", keys_dir, server_number);
+  else if(rsa_type == RSA_TYPE_CLIENT_PUBLIC)
+    snprintf(fileName, 100, "%s/public_client_%02d.key", keys_dir, server_number);
+  else if(rsa_type == RSA_TYPE_CLIENT_PRIVATE)
+    snprintf(fileName, 100, "%s/private_client_%02d.key", keys_dir, server_number);
+  else if(rsa_type == RSA_TYPE_NM_PUBLIC)
+    snprintf(fileName, 100, "%s/public_config_mngr.key", keys_dir);
+  else if(rsa_type == RSA_TYPE_NM_PRIVATE)
+    snprintf(fileName, 100, "%s/private_config_mngr.key", keys_dir);
+
+  f = fopen(fileName, "w");
+
+  RSA_get0_key(rsa, &n, &e, &d);
+  RSA_get0_factors(rsa, &p, &q);
+  RSA_get0_crt_params(rsa, &dmp1, &dmq1, &iqmp);
+  Write_BN(f, n);
+  Write_BN(f, e);
+
+  if(rsa_type == RSA_TYPE_PRIVATE || rsa_type == RSA_TYPE_CLIENT_PRIVATE || rsa_type ==RSA_TYPE_NM_PRIVATE) {
+    Write_BN( f, d );
+    Write_BN( f, p );
+    Write_BN( f, q );
+    Write_BN( f, dmp1 );
+    Write_BN( f, dmq1 );
+    Write_BN( f, iqmp );
+  }
+  fprintf( f, "\n" );
+  fclose(f);
+}
+
 void Write_RSA( int32u rsa_type, int32u server_number, RSA *rsa) 
 {
   FILE *f;
@@ -116,6 +165,10 @@ void Write_RSA( int32u rsa_type, int32u server_number, RSA *rsa)
     sprintf(fileName,"%s/public_client_%02d.key", dir, server_number);
   else if(rsa_type == RSA_TYPE_CLIENT_PRIVATE)
     sprintf(fileName,"%s/private_client_%02d.key", dir, server_number);
+  else if(rsa_type == RSA_TYPE_NM_PUBLIC)
+    sprintf(fileName,"%s/public_config_mngr.key", dir);
+  else if(rsa_type == RSA_TYPE_NM_PRIVATE)
+    sprintf(fileName,"%s/private_config_mngr.key", dir);
      
   f = fopen(fileName, "w");
 
@@ -125,7 +178,8 @@ void Write_RSA( int32u rsa_type, int32u server_number, RSA *rsa)
   Write_BN(f, n);
   Write_BN(f, e);
 
-  if(rsa_type == RSA_TYPE_PRIVATE || rsa_type == RSA_TYPE_CLIENT_PRIVATE) {
+  if(rsa_type == RSA_TYPE_PRIVATE || rsa_type == RSA_TYPE_CLIENT_PRIVATE
+     || rsa_type == RSA_TYPE_NM_PRIVATE) {
     Write_BN( f, d );
     Write_BN( f, p );
     Write_BN( f, q );
@@ -150,11 +204,12 @@ void Read_BN( FILE *f, BIGNUM **bn )
   BN_hex2bn( bn, bn_buf );
 }
 
-void Read_RSA( int32u rsa_type, int32u server_number, RSA *rsa) 
+void Read_RSA( int32u rsa_type, int32u server_number, RSA *rsa,char *dir) 
 {
   FILE *f;
   char fileName[50];
-  char dir[100] = "./keys";
+  //char dir[100] = "./keys";
+  char client_keys_dir[100] = "./keys";
   BIGNUM *n = NULL, *e = NULL, *d = NULL;
   BIGNUM *p = NULL, *q = NULL;
   BIGNUM *dmp1 = NULL, *dmq1 = NULL, *iqmp = NULL;
@@ -166,10 +221,14 @@ void Read_RSA( int32u rsa_type, int32u server_number, RSA *rsa)
   else if(rsa_type == RSA_TYPE_PRIVATE)
     sprintf(fileName,"%s/private_%02d.key", dir, server_number);
   else if(rsa_type == RSA_TYPE_CLIENT_PUBLIC)
-    sprintf(fileName,"%s/public_client_%02d.key", dir, server_number);
+    sprintf(fileName,"%s/public_client_%02d.key", client_keys_dir, server_number);
   else if(rsa_type == RSA_TYPE_CLIENT_PRIVATE)
-    sprintf(fileName,"%s/private_client_%02d.key", dir, server_number);
-  
+    sprintf(fileName,"%s/private_client_%02d.key", client_keys_dir, server_number);
+  else if(rsa_type == RSA_TYPE_NM_PUBLIC)
+    sprintf(fileName,"%s/public_config_mngr.key", client_keys_dir);
+  else if(rsa_type == RSA_TYPE_NM_PRIVATE)
+    sprintf(fileName,"%s/private_config_mngr.key", client_keys_dir);
+  //printf("Reading %s\n",fileName);  
   if((f = fopen( fileName, "r")) == NULL)
     Alarm(EXIT,"   ERROR: Could not open the key file: %s\n", fileName );
   
@@ -177,7 +236,8 @@ void Read_RSA( int32u rsa_type, int32u server_number, RSA *rsa)
   Read_BN( f, &e );
   if (!RSA_set0_key(rsa, n, e, d))
     Alarm(EXIT, "Error: Read_RSA: RSA_set0_key() failed (%s:%d)\n", __FILE__, __LINE__);
-  if ( rsa_type == RSA_TYPE_PRIVATE || rsa_type == RSA_TYPE_CLIENT_PRIVATE ) {
+  if ( rsa_type == RSA_TYPE_PRIVATE || rsa_type == RSA_TYPE_CLIENT_PRIVATE 
+       || rsa_type == RSA_TYPE_NM_PRIVATE) {
     Read_BN( f, &d );
     Read_BN( f, &p );
     Read_BN( f, &q );
@@ -204,14 +264,13 @@ void OPENSSL_RSA_Generate_Keys() {
     int32u s;
     BIGNUM *e;
     int ret;
-
     /* Prompt user for a secret key value. */
 
     /* Generate Keys For Servers */
     rsa = RSA_new();
     e = BN_new();
     BN_set_word(e, 3);
-    for ( s = 1; s <= NUMBER_OF_SERVERS; s++ ) {
+    for ( s = 1; s <= MAX_NUM_SERVERS; s++ ) {
       ret = RSA_generate_key_ex( rsa, 1024, e, NULL );
       if (ret != 1)
         Alarm(EXIT, "OPENSSL_RSA_Generate_Keys: RSA_generate_key failed\n");
@@ -228,36 +287,83 @@ void OPENSSL_RSA_Generate_Keys() {
       /*RSA_print_fp( stdout, rsa, 4 );*/
       Write_RSA( RSA_TYPE_CLIENT_PUBLIC,  s, rsa ); 
       Write_RSA( RSA_TYPE_CLIENT_PRIVATE, s, rsa ); 
-    } 
+    }
+
+    // MK Reconf: generating key pair for network manager
+    ret = RSA_generate_key_ex( rsa, 1024, e, NULL );
+      if (ret != 1)
+        Alarm(EXIT, "OPENSSL_RSA_Generate_Keys: RSA_generate_key failed\n");
+      /*RSA_print_fp( stdout, rsa, 4 );*/
+      Write_RSA( RSA_TYPE_NM_PUBLIC,  1, rsa ); 
+      Write_RSA( RSA_TYPE_NM_PRIVATE, 1, rsa );  
 
     RSA_free(rsa);
     BN_free(e);
 }
 
+void OPENSSL_RSA_Generate_Keys_with_args(int count,const char *keys_dir) {
+
+    RSA *rsa;
+    int32u s;
+    BIGNUM *e;
+    int ret;
+    /* Prompt user for a secret key value. */
+
+    /* Generate Keys For Servers */
+    rsa = RSA_new();
+    e = BN_new();
+    BN_set_word(e, 3);
+    for ( s = 1; s <= count; s++ ) {
+      ret = RSA_generate_key_ex( rsa, 1024, e, NULL );
+      if (ret != 1)
+        Alarm(EXIT, "OPENSSL_RSA_Generate_Keys: RSA_generate_key failed\n");
+      /*RSA_print_fp( stdout, rsa, 4 );*/
+      Write_RSA_To_Dir( RSA_TYPE_PUBLIC,  s, rsa, keys_dir ); 
+      Write_RSA_To_Dir( RSA_TYPE_PRIVATE, s, rsa, keys_dir ); 
+    } 
+
+    RSA_free(rsa);
+    BN_free(e);
+}
 /* Read all of the keys for servers or clients. All of the public keys
  * should be read and the private key for this server should be read. */
- void OPENSSL_RSA_Read_Keys(int32u my_number, int32u type)
+ void OPENSSL_RSA_Read_Keys(int32u my_number, int32u type,char *dir)
 {
-
+  //char dir[100] = "./keys";
   int32u s; 
   int32u rt;
   
-  /* Read all public keys for servers. */
-  for(s = 1; s <= NUMBER_OF_SERVERS; s++) {
+//MS2022
+    int32u READ_NUMBER_OF_SERVERS= VAR.Num_Servers;
+  Alarm(DEBUG,"**********MS2022: READ_NUMBER_OF_SERVERS=%u\n",READ_NUMBER_OF_SERVERS);
+    /* Read all public keys for servers. */
+
+  for(s = 1; s <= READ_NUMBER_OF_SERVERS; s++) {
     public_rsa_by_server[s] = RSA_new();
-    Read_RSA(RSA_TYPE_PUBLIC, s, public_rsa_by_server[s] );
+    Read_RSA(RSA_TYPE_PUBLIC, s, public_rsa_by_server[s],dir);
   } 
 
   /* Read all public keys for clients. */
   for ( s = 1; s <= NUMBER_OF_CLIENTS; s++ ) {
     public_rsa_by_client[s] = RSA_new();
-    Read_RSA( RSA_TYPE_CLIENT_PUBLIC, s, public_rsa_by_client[s] );
-  } 
+    Read_RSA( RSA_TYPE_CLIENT_PUBLIC, s, public_rsa_by_client[s],dir);
+  }
+
+  /* MK Reconf: Read public key for network manager. */
+  public_rsa_by_nm = RSA_new();
+  Read_RSA( RSA_TYPE_NM_PUBLIC, 1, public_rsa_by_nm,dir); 
     
   if ( type == RSA_SERVER ) {
     rt = RSA_TYPE_PRIVATE;
   } else if ( type == RSA_CLIENT ) {
     rt = RSA_TYPE_CLIENT_PRIVATE;
+  } else if ( type == RSA_NM ) {
+    rt = RSA_TYPE_NM_PRIVATE;
+  } else if(type== RSA_CONFIG_MNGR){
+      rt = RSA_TYPE_NM_PRIVATE;
+      printf("RSA_TYPE_CONFIG_MNGR_PRIVATE\n");
+  } else if(type== RSA_CONFIG_AGENT){
+    return;
   } else {
     printf("OPENSSL_RSA_Read_Keys: Called with invalid type.\n");
     exit(0);
@@ -265,12 +371,12 @@ void OPENSSL_RSA_Generate_Keys() {
 
   /* Read my private key. */
   private_rsa = RSA_new();
-  Read_RSA( rt, my_number, private_rsa );
+  Read_RSA( rt, my_number, private_rsa,dir);
 
   if (type == RSA_SERVER ) {
     rt = RSA_TYPE_CLIENT_PRIVATE;
     private_client_rsa = RSA_new();
-    Read_RSA( rt, my_number, private_client_rsa );
+    Read_RSA( rt, my_number, private_client_rsa,dir);
   }
 }
 
@@ -386,14 +492,15 @@ void OPENSSL_RSA_Make_Signature( const byte *digest_value, byte *signature )
   /*printf("Signature size: %d\n", rsa_size);*/
   //private_rsa = RSA_generate_key( 1024, 3, Gen_Key_Callback, NULL );
  
-  start = E_get_time();
+  //start = E_get_time();
 
   RSA_sign(NID_sha1, digest_value, DIGEST_SIZE, signature, &signature_size,private_rsa);
 
-  end = E_get_time();
+  //end = E_get_time();
   
-  diff = E_sub_time(end, start);
-  Alarm(DEBUG, "Signing: %d sec; %d microsec\n", diff.sec, diff.usec);
+  //diff = E_sub_time(end, start);
+  //Alarm(DEBUG, "Signing: %d sec; %d microsec\n", diff.sec, diff.usec);
+  //OPENSSL_RSA_Print_Digest(digest_value);
 }
 
 
@@ -419,8 +526,10 @@ int32u OPENSSL_RSA_Verify_Signature( const byte *digest_value,
 	    return 0;
 	}
 	rsa = public_rsa_by_client[number];
+    } else if (type == RSA_NM){
+      rsa = public_rsa_by_nm;
     } else {
-	if (number < 1 || number > NUMBER_OF_SERVERS ) {
+	if (number < 1 || number > VAR.Num_Servers ) {
 	    return 0;
 	}
         rsa = public_rsa_by_server[number];
@@ -489,6 +598,105 @@ int OPENSSL_RSA_Verify( const unsigned char *message, size_t message_length,
     ret =  OPENSSL_RSA_Verify_Signature( md_value, signature, number, type );
 
    
+    return ret;
+}
+
+int OPENSSL_RSA_Get_KeySize(unsigned char *pubKeyFile){
+
+   FILE *f=fopen(pubKeyFile,"r");
+   if (!f){
+        printf("Error opening file\n");
+        exit(1);
+   }
+
+   RSA *pubkey=RSA_new();
+   pubkey = PEM_read_RSA_PUBKEY(f, &pubkey, NULL, NULL);
+    if(!pubkey){
+        printf("OPENSSL_RSA: Error reading pub key\n");
+        fclose(f);
+        exit(1);
+    }
+   fclose(f);
+   return RSA_size(pubkey);
+}
+
+int OPENSSL_RSA_Encrypt(unsigned char *pubKeyFile,unsigned char *data, int data_len, unsigned char * encrypted_data){
+
+   int ret;
+
+  FILE *f=fopen(pubKeyFile,"r");
+   if (!f){
+        printf("Error opening file\n");
+        exit(1);
+   }
+
+   RSA *pubkey=RSA_new();
+   pubkey = PEM_read_RSA_PUBKEY(f, &pubkey, NULL, NULL);
+    if(!pubkey){
+        printf("OPENSSL_RSA: Error reading pub key\n");
+        fclose(f);
+        exit(1);
+    }
+   fclose(f);
+
+   /*printf("Read pub key \n");*/
+   /*printf("Read key size=%d\n",RSA_size(pubkey));*/
+
+   ret = RSA_public_encrypt(data_len,data,encrypted_data,pubkey,RSA_NO_PADDING);
+   /*ret = RSA_public_encrypt(data_len,data,encrypted_data,pubkey,RSA_PKCS1_PADDING);*/
+   if(ret<=0){
+        printf("OPENSSL_RSA: Encrypt error ret=%d\n",ret);
+        exit(1);
+   }
+   /*printf("OPENSSL_RSA: encrypted data is %s\n",encrypted_data);*/
+   fflush(stdout);
+   return ret;
+}
+
+void OPENSSL_RSA_Decrypt(unsigned char *pvtKeyFile,unsigned char *data, int data_len, unsigned char *decrypted_data){
+    int ret;
+
+   FILE *f=fopen(pvtKeyFile,"r");
+   if (!f){
+        printf("Error opening file\n");
+        exit(1);
+   }
+   RSA *pvtkey=RSA_new();
+   /*pvtkey = PEM_read_RSAPrivateKey(f, NULL, NULL, NULL);*/
+   pvtkey = PEM_read_RSAPrivateKey(f, &pvtkey, NULL, NULL);
+    if(!pvtkey){
+        printf("OPENSSL_RSA: Error reading pvt key\n");
+        fclose(f);
+        exit(1);
+    }
+   fclose(f);
+
+
+   /*RSA_PKCS1_PADDING - 11B padding */
+   /*RSA_PKCS1_OAEP_PADDING - 42B padding */
+    ret= RSA_private_decrypt(data_len,data,decrypted_data,pvtkey,RSA_NO_PADDING);
+    /*ret= RSA_private_decrypt(data_len,data,decrypted_data,pvtkey,RSA_PKCS1_PADDING);*/
+   if(ret<=0){
+        printf("OPENSSL_RSA: Decrypt error ret=%d\n",ret);
+        exit(1);
+   }
+   /*printf("OPENSSL_RSA: Decrypted text=%s\n",decrypted_data);*/
+
+}
+
+int getFileSize(unsigned char * fileName){
+    int ret=0;
+
+    FILE *fp = fopen(fileName, "r");
+    if(!fp){
+        printf("Error opening file %s\n",fileName);
+        exit(1);
+    }
+    fseek(fp, 0L, SEEK_SET);
+    fseek(fp, 0, SEEK_END);
+    ret=ftell(fp);
+    fseek(fp, 0L, SEEK_SET);
+    fclose(fp);
     return ret;
 }
 

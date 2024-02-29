@@ -4,9 +4,9 @@ configuration files, and parts of Spire must currently be recompiled when these
 files are changed.
 
 The provided conf_6 configuration corresponds the default configuration of
-Spire 1.3.
+Spire 2.1.
 
-Each example configuration directory (e.g. conf_4, conf_6, conf_3+3+3+3)
+Each example configuration directory (e.g. conf_4, conf_6, conf_3+3+3+3, conf_6+6+6)
 includes the following:
 scada_def.h           : Main Spire configuration (common/def.h)
 config.json           : PLC/RTU configuration (config/config.json)
@@ -30,7 +30,7 @@ from the top-level directory:
   
   make clean
   make libs
-  make
+  make 
 
 Note that if the total number of replicas (or clients) is increased, you will
 also need to re-run Prime's gen_keys program to create keys for the additional
@@ -40,3 +40,9 @@ replicas (or clients).
 The README.txt in each configuration directory specifies the example IP address
 we chose for each system component. You may need to update the IP addresses in
 the provided configuration files to match your own environment.
+
+Note: The confidential_spire_conf_4+4+3+3 is an example configuration of
+Confidential Spire and ss_conf_4 is an example for Spire for the Substation.
+After coping the configurations recompilation is needed in both cases.
+Instructions for compilation are in their respective READMEs in top-level
+directory.

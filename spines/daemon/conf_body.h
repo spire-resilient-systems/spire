@@ -19,7 +19,7 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2003-2024 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -50,7 +50,8 @@ void    parser_init();
 #define ext
 #endif
 
-ext     FILE		*yyin;
+/* AB: Making this real extern */
+extern     FILE		*yyin;
 
 #define MAX_CONF_STRING 20000
 ext     char            ConfStringRep[MAX_CONF_STRING];

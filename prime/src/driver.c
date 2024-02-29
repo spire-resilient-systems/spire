@@ -21,14 +21,15 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  *  	
- * Copyright (c) 2008-2023
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -60,6 +61,7 @@
 #include "utility.h"
 #include "net_wrapper.h"
 #include "merkle.h"
+#include "spines_lib.h"
 
 /* The behavior of the client can be controlled with parameters that follow */
 
@@ -89,8 +91,9 @@
 void Usage(int argc, char **argv);
 void Print_Usage (void);
 void Init_Memory_Objects(void);
-void Init_Client_Network(void); 
+void Config_Recv(channel sk, int dummy, void *dummy_p); 
 void Net_Cli_Recv(channel sk, int dummy, void *dummy_p); 
+void Init_Client_Network(void); 
 void Process_Message( signed_message *mess, int32u num_bytes );
 void Run_Client(void);
 void Send_Update(int dummy, void *dummyp);
@@ -101,14 +104,20 @@ void clean_exit(int signum);
 
 /* Client Variables */
 extern network_variables NET;
+extern server_variables  VAR;
 
 int32u My_Client_ID;
 int32u My_Server_ID;
-
+int32u My_Server_Alive;
+int32u my_global_configuration_number;
 int32u my_incarnation;
 int32u update_count;
+int32u needed_count;
 double total_time;
 int32u time_stamp;
+int ca_driver;
+struct ip_mreq mreq;
+sp_time t;
 
 /* Local buffers for receiving the packet */
 static sys_scatter srv_recv_scat;
@@ -118,7 +127,7 @@ int32u num_outstanding_updates;
 int32u send_to_server;
 int32u last_executed = 0;
 int32u executed[MAX_ACTIONS];
-int sd[NUM_SERVER_SLOTS];
+int sd[MAX_NUM_SERVER_SLOTS];
 util_stopwatch update_sw[MAX_ACTIONS];
 
 util_stopwatch sw;
@@ -143,12 +152,17 @@ int main(int argc, char** argv)
 
   Usage(argc, argv);
   Alarm_set_types(PRINT);
+  Alarm_set_types(STATUS);
+  //Alarm_set_types(DEBUG);
+  Alarm_enable_timestamp_high_res(NULL);
 
   NET.program_type = NET_CLIENT_PROGRAM_TYPE;  
   update_count     = 0;
   time_stamp       = 0;
   total_time       = 0;
-  
+  //MS2022
+  VAR.Num_Servers=18;
+  //UTIL_Client_Load_Addresses(); 
   UTIL_Load_Addresses(); 
 
   E_init(); 
@@ -156,7 +170,7 @@ int main(int argc, char** argv)
   Init_Client_Network();
   
   OPENSSL_RSA_Init();
-  OPENSSL_RSA_Read_Keys( My_Client_ID, RSA_CLIENT ); 
+  OPENSSL_RSA_Read_Keys( My_Client_ID, RSA_CLIENT,"./keys" ); 
   
   /* sprintf(buf, "latencies/client_%d.lat", My_Client_ID);
   fp = fopen(buf, "w"); */
@@ -199,7 +213,9 @@ void Usage(int argc, char **argv)
   NET.My_Address = -1;
   My_Client_ID   =  0;
   My_Server_ID   =  0;
-
+  VAR.Num_Servers=6;
+  my_global_configuration_number = 0;
+  My_Server_Alive =1; 
   while(--argc > 0) {
     argv++;
     
@@ -213,7 +229,8 @@ void Usage(int argc, char **argv)
     /* [-i client_id] */
     else if((argc > 1)&&(!strncmp(*argv, "-i", 2))) {
       sscanf(argv[1], "%d", &tmp);
-      My_Client_ID = tmp;
+      //My_Client_ID = tmp;
+      My_Client_ID = MAX_NUM_SERVER_SLOTS + tmp;
       if(My_Client_ID > NUM_CLIENTS || My_Client_ID <= 0) {
 	Alarm(PRINT, "Client ID must be between 1 and %d\n", NUM_CLIENTS);
 	exit(0);
@@ -224,13 +241,19 @@ void Usage(int argc, char **argv)
     else if((argc > 1)&&(!strncmp(*argv, "-s", 2))) {
       sscanf(argv[1], "%d", &tmp);
       My_Server_ID = tmp;
-      if(My_Server_ID > NUM_SERVERS || My_Server_ID <= 0) {
-	Alarm(PRINT, "Server ID must be between 1 and %d\n", NUM_SERVERS);
+      if(My_Server_ID > MAX_NUM_SERVERS || My_Server_ID <= 0) {
+	Alarm(PRINT, "Server ID must be between 1 and %d\n", MAX_NUM_SERVERS);
 	exit(0);
       }
       argc--; argv++;
     }
-    else {
+  /* [-c count] */
+    else if((argc > 1)&&(!strncmp(*argv, "-c", 2))) {
+      sscanf(argv[1], "%d", &tmp);
+      needed_count = tmp;
+      argc--; argv++;
+    } 
+   else {
       Print_Usage();
     }
   }
@@ -257,6 +280,7 @@ void Print_Usage()
 {
   Alarm(PRINT, "Usage: ./client\n"
 	"\t -l IP (A.B.C.D) \n"
+	"\t -c count_of_transactions_to_benchmark \n"
         "\t -i client_id, indexed base 1\n"
 	"\t[-s server_id, indexed base 1]\n");
 
@@ -283,6 +307,7 @@ void Init_Client_Network(void)
 {
   struct sockaddr_in server_addr;
   struct sockaddr_un my_addr;
+  struct sockaddr_un my_addr2;
   int32u i;
   
   /* Initialize the receiving scatters */
@@ -300,6 +325,7 @@ void Init_Client_Network(void)
  
   /* Initialize IPC socket, single one in this case */
   if (USE_IPC_CLIENT) {
+   Alarm(DEBUG,"Using IPC Client \n");
     if (My_Server_ID == 0) {
         Alarm(PRINT, "My_Server_ID is 0, must set ID to use IPC\n");
         exit(0);
@@ -345,7 +371,7 @@ void Init_Client_Network(void)
   }
   /* Initialize the TCP sockets, one per server in my site */
   else {
-    for(i = 1; i <= NUM_SERVERS; i++) {
+    for(i = 1; i <= MAX_NUM_SERVERS; i++) {
 
       /* If we're sending to a particular server, set up a connection
        * with that server only. */
@@ -383,6 +409,29 @@ void Init_Client_Network(void)
       max_snd_buff(sd[i]);
     }
   }
+  /*CA Driver IPC path*/
+    ca_driver = socket(AF_UNIX, SOCK_DGRAM, 0);
+    if (ca_driver < 0) {
+        perror("Client: Couldn't create an CA->driver IPC socket");
+        exit(0);
+    }
+    memset(&my_addr2, 0, sizeof(struct sockaddr_un));
+    my_addr2.sun_family = AF_UNIX;
+    snprintf(my_addr2.sun_path, sizeof(my_addr2.sun_path) - 1, "%s%d",
+                (char *)CA_DRIVER_IPC_PATH, My_Server_ID);
+    if (remove(my_addr2.sun_path) == -1 && errno != ENOENT) {
+        perror("client: error removing previous ca driver path binding");
+        exit(EXIT_FAILURE);
+    }
+    if (bind(ca_driver, (struct sockaddr *)&my_addr2, sizeof(struct sockaddr_un)) < 0) {
+        perror("client: error binding to ca diver path");
+        exit(EXIT_FAILURE);
+    }
+    chmod(my_addr2.sun_path, S_IRWXU | S_IRWXG | S_IROTH | S_IXOTH);
+
+    E_attach_fd(ca_driver,READ_FD, Config_Recv, 0, NULL, MEDIUM_PRIORITY);
+    Alarm(PRINT, "CA Driver IPC  (path: %s)setup done\n",my_addr2.sun_path);
+    fflush(stdout); 
 }
 
 /***********************************************************/
@@ -454,7 +503,7 @@ void Net_Cli_Recv(channel sk, int dummy, void *dummy_p)
       received_bytes = expected_total_size;
   }
     
-  Alarm(DEBUG, "Received %d bytes!\n", received_bytes);
+  //Alarm(DEBUG, "Received %d bytes!\n", received_bytes);
   
   /* Validate the client response */
   if(!Validate_Message((signed_message*)srv_recv_scat.elements[0].buf, 
@@ -479,6 +528,7 @@ void Net_Cli_Recv(channel sk, int dummy, void *dummy_p)
 int32u Validate_Message( signed_message *mess, int32u num_bytes ) 
 {
   client_response_message *r;
+  signed_message *app;
   /* int ret; */
  
   if(mess->type != CLIENT_RESPONSE) {
@@ -493,9 +543,18 @@ int32u Validate_Message( signed_message *mess, int32u num_bytes )
   }
 
   r = (client_response_message *)(mess+1);
-
+  app = (signed_message *) (r+1);
   if(r->machine_id != My_Client_ID) {
-    Alarm(DEBUG, "Received response not intended for me! targ = %d\n", r->machine_id);
+    if(app->type==CLIENT_SYSTEM_RECONF && mess->global_configuration_number==my_global_configuration_number){
+  	if(time_stamp<needed_count && My_Server_Alive==1){
+        	Alarm(DEBUG, "Received System RECONF from my Prime. So, will resume benchmarks\n");
+		t.sec=10;
+		t.usec=0;
+		E_queue(Send_Update,0,NULL,t);
+   	}
+    }else{
+    	Alarm(DEBUG, "Received response not intended for me! targ = %d response type=%d\n", r->machine_id,app->type);
+    }
     return 0;
   }
 
@@ -533,16 +592,15 @@ void Process_Message( signed_message *mess, int32u num_bytes )
   client_response_message *response_specific;
   double time;
 
+  Alarm(DEBUG, "Received mess type=%d\n",mess->type);
+
   response_specific = (client_response_message *)(mess+1);
   
   UTIL_Stopwatch_Stop(&update_sw[response_specific->seq_num]);
   time = UTIL_Stopwatch_Elapsed(&update_sw[response_specific->seq_num]);
-  if (time >= 0.1)
-    Alarm(PRINT, "** %d\ttotal=%f\tPO=%f\n", response_specific->seq_num, time,
-          response_specific->PO_time);
+  Alarm(STATUS, "Processing conf=%lu, seq=%d\ttotal=%f\tPO=%f\n",mess->global_configuration_number ,response_specific->seq_num, time,response_specific->PO_time);
 
-  Latencies[response_specific->seq_num] = time;
-  executed[response_specific->seq_num]  = 1;
+
   if (response_specific->PO_time < Min_PO_Time)
     Min_PO_Time = response_specific->PO_time;
   if (response_specific->PO_time > Max_PO_Time)
@@ -558,8 +616,9 @@ void Process_Message( signed_message *mess, int32u num_bytes )
   //usleep(100000);
   /* Wait for a random delay */
   /* usleep(rand() % DELAY_RANGE); */
-
-  Send_Update(0, NULL);
+  if(time_stamp<needed_count){
+  	Send_Update(0, NULL);
+  }
   return;
 }
 
@@ -578,7 +637,9 @@ void Run_Client()
     send_to_server = My_Server_ID;
   else
     send_to_server = 1;
-  Send_Update(0, NULL);
+  if(time_stamp<needed_count){
+  	Send_Update(0, NULL);
+  }
 }
 
 void Send_Update(int dummy, void *dummyp)
@@ -594,6 +655,7 @@ void Send_Update(int dummy, void *dummyp)
     update->machine_id = My_Client_ID;
     update->len        = sizeof(update_message) + UPDATE_SIZE;
     update->type       = UPDATE;
+    update->global_configuration_number =my_global_configuration_number;
 
     update_specific = (update_message*)(update+1);
 
@@ -644,9 +706,9 @@ void Send_Update(int dummy, void *dummyp)
       send_to_server++;
       send_to_server = send_to_server % (NUM_SERVERS);
 #endif
-      send_to_server = rand() % NUM_SERVERS;
+      send_to_server = rand() % MAX_NUM_SERVERS;
       if(send_to_server == 0)
-        send_to_server = NUM_SERVERS;
+        send_to_server = MAX_NUM_SERVERS;
     }
 
     num_outstanding_updates++;
@@ -719,8 +781,81 @@ double Compute_Average_Latency()
       Alarm(DEBUG, "High latency for update %d: %f\n", i, Latencies[i]);
     }
 
-    sum += Latencies[i];
-  }
 
   return (sum / (double)(time_stamp-1));
+  }
 }
+
+
+
+
+void Config_Recv(channel sk, int dummy, void *dummy_p){
+  int ret,ret2;
+  struct sockaddr_in from_addr;
+  socklen_t from_len=sizeof(from_addr);
+  byte buff[50000];
+  signed_message *mess;
+  nm_message *c_mess;
+
+  ret=recvfrom(ca_driver, buff, 50000, 0, (struct sockaddr *) &from_addr, &from_len);
+  if(ret>0){
+    Alarm(DEBUG, "Received spines message of size=%d\n",ret);
+   }else{
+    Alarm(DEBUG, "Received spines message of size=%d\n",ret);
+	return;
+	}
+    if(ret < sizeof(signed_message)){
+      Alarm(PRINT,"Config Message size smaller than signed message\n");
+      return;
+        }
+  mess = (signed_message*)buff;
+
+  if (ret < (sizeof(signed_message)+mess->len)){
+     Alarm(PRINT,"Config Agent: Config Message size smaller than expected\n");
+     return;
+        }
+  if (mess->type != CLIENT_OOB_CONFIG_MSG) {
+        Alarm(PRINT, "Got invalid mess type from config spines: %d\n", mess->type);
+        return;
+    }
+  ret=OPENSSL_RSA_Verify(
+       ((byte*)mess) + SIGNATURE_SIZE,
+       mess->len + sizeof(signed_message) - SIGNATURE_SIZE,
+       (byte*)mess,
+       mess->machine_id,
+       RSA_NM
+       );
+  if(!ret){
+	Alarm(PRINT, "Config Manager Signature verification failed\n");
+	}
+  
+   Alarm(DEBUG,"Verified Config Message type=%d\n",mess->type);
+  if (mess->type == CLIENT_OOB_CONFIG_MSG){
+       c_mess=(nm_message *)(mess+1);
+       if(mess->global_configuration_number<=my_global_configuration_number){
+	Alarm(PRINT, "Invalid Global Configuration Number\n");
+	return;
+	} 
+       my_global_configuration_number=mess->global_configuration_number;	
+       ret2=sendto(sd[My_Server_ID], mess, sizeof(signed_message)+mess->len, 0,
+                    (struct sockaddr *)&Conn, sizeof(struct sockaddr_un));
+	if(ret2!=sizeof(signed_message)+mess->len){
+	  Alarm(PRINT,"Failed to send config message to prime\n");
+	  return;
+	}
+	else{
+	Alarm(DEBUG, "Sent to server %d mess type=%d, size=%d\n",My_Server_ID,mess->type,ret2);
+	}
+  //Reload Keys
+  VAR.Num_Servers= c_mess->N;
+  if(c_mess->tpm_based_id[My_Server_ID-1]==0){
+	My_Server_Alive=0;
+   }else{
+	My_Server_Alive=1;
+   } 
+  OPENSSL_RSA_Read_Keys( My_Client_ID, RSA_CLIENT,"/tmp/test_keys/prime" );
+  time_stamp=0;
+  num_outstanding_updates = 0;
+  }
+}
+  

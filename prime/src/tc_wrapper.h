@@ -26,9 +26,13 @@
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
+ * 
+ *
  *      
- * Copyright (c) 2008-2023
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -40,8 +44,8 @@
 
 //#include "data_structs.h"
 
-void TC_Read_Partial_Key( int32u server_no, int32u site_id );
-void TC_Read_Public_Key();
+void TC_Read_Partial_Key( int32u server_no, int32u site_id,char *dir );
+void TC_Read_Public_Key(char *dir);
 
 int32u TC_Generate_Sig_Share( byte* destination, byte* hash  ); 
 void TC_Initialize_Combine_Phase( int32u number );
@@ -51,3 +55,6 @@ void TC_Combine_Shares( byte *signature_dest, byte *digest );
 int32u TC_Verify_Signature( int32u site, byte *signature, byte *digest );
 int TC_Check_Share( byte *digest, int32u sender_id );
 void TC_Generate(int req_shares, char *directory);
+int32u TC_Verify_SM_Signature( int32u site, byte *signature, byte *digest );
+void TC_with_args_Generate(int req_shares, char *directory, int faults,int rej_servers,int num_sites);
+

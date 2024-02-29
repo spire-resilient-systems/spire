@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2017-2024 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -252,6 +252,7 @@ static int slotButtonEvent(PARAM *p, int id, DATA *d)
         mess = PKT_Construct_HMI_Command_Msg(ps, MAX_EMU_RTU + My_ID, JHU, TRANSFORMER, i);
       else
         mess = PKT_Construct_HMI_Command_Msg(ps, MAX_EMU_RTU + My_ID, JHU, SWITCH, i);
+      mess->global_configuration_number=My_Global_Configuration_Number;
       nbytes = sizeof(signed_message) + mess->len;
       Seq_Num++;
       IPC_Send(ipc_sock, (void *)mess, nbytes, itrc_in.ipc_remote);

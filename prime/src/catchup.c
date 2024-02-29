@@ -21,14 +21,15 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
- *      
- * Copyright (c) 2008-2023
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
+ * 
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -75,14 +76,14 @@ void CATCH_Initialize_Data_Structure(void)
     DATA.CATCH.next_catchup_id = 0;
 
     now = E_get_time();
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         DATA.CATCH.last_ord_cert[i] = NULL;
         DATA.CATCH.last_catchup_request[i] = NULL;
         DATA.CATCH.sent_catchup_request[i] = NULL;
         DATA.CATCH.next_catchup_time[i] = now;
     }
 
-    DATA.CATCH.periodic_catchup_id = (rand() % NUM_SERVERS) + 1;
+    DATA.CATCH.periodic_catchup_id = (rand() % VAR.Num_Servers) + 1;
     if (DATA.CATCH.periodic_catchup_id == VAR.My_Server_ID)
         CATCH_Advance_Catchup_ID(&DATA.CATCH.periodic_catchup_id);
 
@@ -101,7 +102,7 @@ void CATCH_Upon_Reset()
 {
     int32u i;
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.CATCH.last_ord_cert[i] != NULL) {
             dec_ref_cnt(DATA.CATCH.last_ord_cert[i]);
             DATA.CATCH.last_ord_cert[i] = NULL;
@@ -290,11 +291,11 @@ void CATCH_Process_ORD_Certificate(signed_message *mess)
     commit = (signed_message *)ptr;
     commit_specific = (commit_message *)(commit + 1);
     memcpy(slot->preinstalled_snapshot+1, commit_specific->preinstalled_incarnations,
-            sizeof(int32u) * NUM_SERVERS);
+            sizeof(int32u) * VAR.Num_Servers);
     slot->snapshot = 1;
 
     /* Now, clear out the commits to correctly process the ones from the cert */
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         /* What about prepares? */
         if (slot->commit[i] != NULL) {
             dec_ref_cnt(slot->commit[i]);
@@ -460,12 +461,12 @@ void CATCH_Process_PO_Certificate(signed_message *mess)
     po_ack = (signed_message *)ptr;
     po_ack_specific = (po_ack_message *)(po_ack + 1);
     memcpy(slot->preinstalled_snapshot+1, po_ack_specific->preinstalled_incarnations,
-            sizeof(int32u) * NUM_SERVERS);
+            sizeof(int32u) * VAR.Num_Servers);
     slot->snapshot = 1;
 
     /* Clear out the PO_Acks every time, since there is a good chance the preinstalled
      * vectors will not all work out with what you have stored before getting this cert */
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (slot->ack[i] != NULL) {
             dec_ref_cnt(slot->ack[i]);
             slot->ack[i] = NULL;
@@ -523,7 +524,7 @@ void CATCH_Process_Catchup_Request(signed_message *mess)
     int32u i, j;
     int32u dest_bits, sender, window;
     catchup_request_message *c_request; //, *stored;
-    po_seq_pair ps, *eligible_ptr, tmp_eligible[NUM_SERVERS];
+    po_seq_pair ps, *eligible_ptr, tmp_eligible[VAR.Num_Servers];
     sp_time now, t; //, diff_time;
     signed_message *jump;
     ord_slot *o_slot;
@@ -649,8 +650,8 @@ void CATCH_Process_Catchup_Request(signed_message *mess)
     /* They are within my catchup window. I can help them with individual 
      * ORD / PO certificates to help them catch up */
     else {
-        Alarm(PRINT, "CATCH_Process_Catchup_Request: Send CATCHUP from %u to %u\n", 
-                c_request->aru + 1, DATA.ORD.ARU);
+        Alarm(PRINT, "CATCH_Process_Catchup_Request: Send CATCHUP from %u to %u for server=%d\n", 
+                c_request->aru + 1, DATA.ORD.ARU,sender);
 
         /* I can catch them up to me, so send them everything between their
          * ARU and my ARU, excluding PO Certs that they already claim to have */
@@ -664,7 +665,7 @@ void CATCH_Process_Catchup_Request(signed_message *mess)
                 return;
             }
  
-            for (j = 0; j < NUM_SERVERS; j++) {
+            for (j = 0; j < VAR.Num_Servers; j++) {
                 assert(PRE_ORDER_Seq_Compare(o_slot->made_eligible[j], 
                     o_slot->complete_pre_prepare.last_executed[j]) >= 0);
 
@@ -732,11 +733,11 @@ void CATCH_Process_Catchup_Request(signed_message *mess)
             eligible_ptr = (po_seq_pair *)o_slot->made_eligible;
         }
         else {
-            memset(tmp_eligible, 0, sizeof(int32u) * NUM_SERVERS);
+            memset(tmp_eligible, 0, sizeof(int32u) * VAR.Num_Servers);
             eligible_ptr = (po_seq_pair *)tmp_eligible;
         }
 
-        for (i = 1; i <= NUM_SERVERS; i++) {
+        for (i = 1; i <= VAR.Num_Servers; i++) {
 
             if ( (PRE_ORDER_Seq_Compare(c_request->po_aru[i-1], DATA.PO.cum_aru[i]) < 0) &&
                  (PRE_ORDER_Seq_Compare(eligible_ptr[i-1], DATA.PO.cum_aru[i] ) < 0) ) 
@@ -758,8 +759,8 @@ void CATCH_Process_Catchup_Request(signed_message *mess)
                 }
                 ps.seq_num++;
 
-                Alarm(PRINT, "  Sending Unordered PO_Cert from %u. [%u,%u] to [%u,%u]\n",
-                        i, ps.incarnation, ps.seq_num, DATA.PO.cum_aru[i].incarnation,
+                Alarm(PRINT, "  Sending to %d Unordered PO_Cert from %u. [%u,%u] to [%u,%u]\n",
+                        sender,i, ps.incarnation, ps.seq_num, DATA.PO.cum_aru[i].incarnation,
                         DATA.PO.cum_aru[i].seq_num);
                 for (; ps.seq_num <= DATA.PO.cum_aru[i].seq_num; ps.seq_num++) {
                     
@@ -810,7 +811,7 @@ void CATCH_Process_Catchup_Request(signed_message *mess)
         if (slot->type == SLOT_COMMIT) {
             /* Next, grab the 2f+k+1 commits */
             ccount = 0;
-            for (j = 1; j <= NUM_SERVERS && ccount < 2*VAR.F + VAR.K + 1; j++) {
+            for (j = 1; j <= VAR.Num_Servers && ccount < 2*VAR.F + VAR.K + 1; j++) {
                 if (slot->commit_certificate.commit[j] == NULL)
                     continue;
 
@@ -1037,7 +1038,7 @@ void CATCH_Process_Catchup_Reply(signed_message *mess)
                 pp->num_acks_in_this_message * sizeof(po_aru_signed_message), 
                 new_digest);
 
-        for (i = 1; i <= NUM_SERVERS; i++) {
+        for (i = 1; i <= VAR.Num_Servers; i++) {
             if (slot->pp_catchup_replies[i] == NULL)
                 continue;
 
@@ -1126,7 +1127,7 @@ void CATCH_Process_Catchup_Reply(signed_message *mess)
          * that is greater than what we've sent, update our records so that
          * we don't think we are required to send a PO ARU with it - cause
          * no progress would actually be made if we did. */
-        for(i = 1; i <= NUM_SERVERS; i++) {
+        for(i = 1; i <= VAR.Num_Servers; i++) {
             paru = PRE_ORDER_Proof_ARU(i, cum_acks);
             if (paru > DATA.PO.max_num_sent_in_proof[i])
                 DATA.PO.max_num_sent_in_proof[i] = paru;
@@ -1134,7 +1135,7 @@ void CATCH_Process_Catchup_Reply(signed_message *mess)
 
         /* Apply the PO-ARUs contained in the proof matrix, checking for
          *      any inconsistencies. NULL vectors checked in function */
-        for(i = 0; i < NUM_SERVERS; i++) {
+        for(i = 0; i < VAR.Num_Servers; i++) {
             signed_message *m = (signed_message *)&cum_acks[i];
             PRE_ORDER_Process_PO_ARU(m);
         }
@@ -1209,7 +1210,7 @@ void CATCH_Send_Catchup_Request_Periodically(int dummy, void *dummyp)
     /* OLD MCAST METHOD */
     /* request = CATCH_Construct_Catchup_Request(FLAG_CATCHUP);
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if (DATA.CATCH.sent_catchup_request[i] != NULL)
             dec_ref_cnt(DATA.CATCH.sent_catchup_request[i]);
         inc_ref_cnt(request);
@@ -1254,7 +1255,7 @@ void CATCH_Attempt_Catchup(int dummy, void *dummyp)
     max_ord = 0;
     target_replica = 0;
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
 
         /* Don't look at my own certificates */
         if (i == VAR.My_Server_ID) 
@@ -1280,8 +1281,8 @@ void CATCH_Attempt_Catchup(int dummy, void *dummyp)
     if (DATA.ORD.high_committed > DATA.ORD.ARU && DATA.ORD.high_committed > max_ord) {
         Alarm(PRINT, "CATCH_Attempt_Catchup. Catchup due to high_committed\n");
         max_ord = DATA.ORD.high_committed;
-        target_replica = (VAR.My_Server_ID + 1) % NUM_SERVERS;
-        if (target_replica == 0) target_replica = NUM_SERVERS;
+        target_replica = (VAR.My_Server_ID + 1) % VAR.Num_Servers;
+        if (target_replica == 0) target_replica = VAR.Num_Servers;
     }
 
     /* (3) Checking if there are any view change report messages telling me to 
@@ -1477,11 +1478,11 @@ void CATCH_Jump_Ahead(signed_message *mess)
     commit = (signed_message *)ptr;
     commit_specific = (commit_message *)(commit + 1);
     memcpy(o_slot->preinstalled_snapshot+1, commit_specific->preinstalled_incarnations, 
-            sizeof(int32u) * NUM_SERVERS);
+            sizeof(int32u) * VAR.Num_Servers);
     o_slot->snapshot = 1;
 
     /* Setup made_eligible to correctly calculate and enforce last_executed going forward */
-    for (i = 0; i < NUM_SERVERS; i++) {
+    for (i = 0; i < VAR.Num_Servers; i++) {
         ps = PRE_ORDER_Proof_ARU(i+1, complete_pp.cum_acks);
         if (PRE_ORDER_Seq_Compare(ps, complete_pp.last_executed[i]) > 0) 
             o_slot->made_eligible[i] = ps;
@@ -1534,7 +1535,7 @@ void CATCH_Jump_Ahead(signed_message *mess)
      * no progress would actually be made if we did. 
      *
      * In addition, update the other PO data structures */
-    for(i = 1; i <= NUM_SERVERS; i++) {
+    for(i = 1; i <= VAR.Num_Servers; i++) {
         ps = o_slot->made_eligible[i-1];
         DATA.PO.max_num_sent_in_proof[i] = ps;
         if (PRE_ORDER_Seq_Compare(ps, DATA.PO.max_acked[i]) > 0)
@@ -1610,6 +1611,7 @@ void CATCH_Jump_Ahead(signed_message *mess)
         }
         if (PRE_ORDER_Seq_Compare(ps, DATA.PO.white_line[i]) > 0)
             DATA.PO.white_line[i] = ps;
+	    Alarm(DEBUG,"Catchup DATA.PO.white_line [%d]: inc=%lu, seq=%lu\n",i, DATA.PO.white_line[i].incarnation, DATA.PO.white_line[i].seq_num);
     }
 
     if (DATA.PO.po_seq.seq_num - DATA.PO.po_seq_executed.seq_num < MAX_PO_IN_FLIGHT) {
@@ -1622,7 +1624,7 @@ void CATCH_Jump_Ahead(signed_message *mess)
 
     /* Apply the PO-ARUs contained in the proof matrix, checking for
      *      any inconsistencies. NULL vectors checked in function */
-    for(i = 0; i < NUM_SERVERS; i++) {
+    for(i = 0; i < VAR.Num_Servers; i++) {
         signed_message *m = (signed_message *)&cum_acks[i];
         PRE_ORDER_Process_PO_ARU(m);
     }
@@ -1634,9 +1636,9 @@ void CATCH_Jump_Ahead(signed_message *mess)
 
     /* int32u j;
     printf("++++++++++ JUMPING to MATRIX ++++++++++\n");
-    for (i = 0; i < NUM_SERVERS; i++)
+    for (i = 0; i < VAR.Num_Servers; i++)
     {
-      for (j = 0; j < NUM_SERVERS; j++)
+      for (j = 0; j < VAR.Num_Servers; j++)
       {
           printf("(%u, %u) ", cum_acks[i].cum_ack.ack_for_server[j].incarnation, cum_acks[i].cum_ack.ack_for_server[j].seq_num);
       }
@@ -1666,7 +1668,7 @@ void CATCH_Jump_Ahead(signed_message *mess)
         if (ord_cert->view < DATA.View) {
         /* Moving up my ARU during a jump could be the last thing I need to do
          * to collect complete state for an ongoing view change */
-            for (i = 1; i <= NUM_SERVERS; i++) {
+            for (i = 1; i <= VAR.Num_Servers; i++) {
                 VIEW_Check_Complete_State(i);
             }
         } 
@@ -1703,12 +1705,12 @@ void CATCH_Jump_Ahead(signed_message *mess)
    
 void CATCH_Advance_Catchup_ID(int32u *id)
 {
-    *id = (*id + 1) % NUM_SERVERS;
-    if (*id == 0) *id = NUM_SERVERS;
+    *id = (*id + 1) % VAR.Num_Servers;
+    if (*id == 0) *id = VAR.Num_Servers;
 
     if (*id == VAR.My_Server_ID) {
-        *id = (*id + 1) % NUM_SERVERS;
-        if (*id == 0) *id = NUM_SERVERS;
+        *id = (*id + 1) % VAR.Num_Servers;
+        if (*id == 0) *id = VAR.Num_Servers;
     }
 }
 
@@ -1743,7 +1745,7 @@ int CATCH_Compare_Catchup_Request(signed_message *m1, signed_message *m2)
      * forwards. For now, if even one entry is behind, consider the
      * whole catchup_request as older */
     higher = 0;
-    for (i = 0; i < NUM_SERVERS; i++) {
+    for (i = 0; i < VAR.Num_Servers; i++) {
         if (PRE_ORDER_Seq_Compare(cr1->po_aru[i], cr2->po_aru[i]) < 0)
             return -1;
         if (PRE_ORDER_Seq_Compare(cr1->po_aru[i], cr2->po_aru[i]) > 0)
@@ -1765,7 +1767,7 @@ int CATCH_Compare_Catchup_Request(signed_message *m1, signed_message *m2)
 int CATCH_Can_Help_Catchup(signed_message *catchup_request)
 {
     int32u i, sender;
-    po_seq_pair *eligible_ptr, tmp_eligible[NUM_SERVERS];
+    po_seq_pair *eligible_ptr, tmp_eligible[VAR.Num_Servers];
     ord_slot *slot;
     catchup_request_message *cr_specific;
 
@@ -1786,11 +1788,11 @@ int CATCH_Can_Help_Catchup(signed_message *catchup_request)
         eligible_ptr = (po_seq_pair *)slot->made_eligible;
     }
     else {
-        memset(tmp_eligible, 0, sizeof(int32u) * NUM_SERVERS);
+        memset(tmp_eligible, 0, sizeof(int32u) * VAR.Num_Servers);
         eligible_ptr = (po_seq_pair *)tmp_eligible;
     }
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <= VAR.Num_Servers; i++) {
         if ( (PRE_ORDER_Seq_Compare(cr_specific->po_aru[i-1], DATA.PO.cum_aru[i]) < 0) &&
              (PRE_ORDER_Seq_Compare(eligible_ptr[i-1], DATA.PO.cum_aru[i]) < 0) )
             return 1;

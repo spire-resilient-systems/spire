@@ -19,7 +19,7 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2003-2024 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -331,6 +331,7 @@ void Init_Session(void)
      * */
     Ses_UDP_Channel = DL_init_channel(SEND_CHANNEL | RECV_CHANNEL,
                                       (int16)(Port+SESS_UDP_PORT), 0, INADDR_ANY /*My_Address*/);
+    DL_set_large_buffers(Ses_UDP_Channel);
 
     E_attach_fd(Ses_UDP_Channel, READ_FD, Session_UDP_Read, 0, 
                     NULL, LOW_PRIORITY );
@@ -2445,7 +2446,7 @@ int Session_Deliver_Data(Session *ses, char* buff, int16u len, int32u type, int 
                             }
 
                             /* The session communicates via TCP */
-                            ret = DL_send_connected(ses->sk,  &scat);
+                            ret = DL_send_gen(ses->sk,  &scat);
 
                             Alarm(DEBUG,"Session_deliver_data(): %d %d %d %d\n",
                                   ret, ses->sk, ses->port, frag_pkt->scat.elements[i].len);
@@ -2587,7 +2588,7 @@ int Session_Deliver_Data(Session *ses, char* buff, int16u len, int32u type, int 
         }
         if((ses->udp_port == -1)||(flags == 3)) {
             /* The session communicates via TCP */
-            ret = DL_send_connected(ses->sk, &scat);
+            ret = DL_send_gen(ses->sk, &scat);
         }
         else {
 
@@ -2783,7 +2784,7 @@ void Session_Write(int sk, int sess_id, void *dummy_p)
                 scat.elements[0].buf = buff + sizeof(udp_header) + (ses->sent_bytes - sizeof(int32) - sizeof(udp_header));
             }
 
-            ret = DL_send_connected(ses->sk,  &scat);
+            ret = DL_send_gen(ses->sk,  &scat);
 
             Alarm(DEBUG, "Session_Write(): ret = %d; sk = %d; port = %d; len = %d; sent_bytes = %d; total_bytes = %d\n", ret, ses->sk, ses->port, len, ses->sent_bytes, total_bytes);
 

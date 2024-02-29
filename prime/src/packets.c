@@ -21,14 +21,15 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
- *      
- * Copyright (c) 2008-2023
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
+ * 
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -72,7 +73,8 @@ signed_message* PRE_ORDER_Construct_PO_Request()
    * I send must be TPM-signed, containing a single update that was generated
    * by my own Prime replica (also signed by TPM) */
   special_first = 0;
-  if (DATA.PR.recovery_status[VAR.My_Server_ID] == PR_RECOVERY && DATA.PO.po_seq.seq_num == 0) {
+
+    if (DATA.PR.recovery_status[VAR.My_Server_ID] == PR_RECOVERY && DATA.PO.po_seq.seq_num == 0) {
     if ((mess = UTIL_DLL_Front_Message(&DATA.PO.po_request_dll)) == NULL)
         return NULL;
     up = (update_message *)(mess + 1);
@@ -94,7 +96,7 @@ signed_message* PRE_ORDER_Construct_PO_Request()
   po_request->type             = PO_REQUEST;
   DATA.PO.po_seq.seq_num++;
   po_request_specific->seq     = DATA.PO.po_seq;
-
+  //printf("Construct_PO_Request: inc=%lu, seq=%lu\n",po_request_specific->seq.incarnation,po_request_specific->seq.seq_num);
   /* Special Case - If I am recovering and this is my first po_request,
    * it will be TPM-signed. Setup accordingly */
   /* special_first = 0;
@@ -189,7 +191,7 @@ signed_message* PRE_ORDER_Construct_PO_Ack(int32u *more_to_ack, int32u send_all_
   po_ack->len         = sizeof(po_ack_message);   // updated later with ack_parts
           
   /* Write in the latest preinstalled incarnation for each server */
-  for (i = 0; i < NUM_SERVERS; i++) 
+  for (i = 0; i < VAR.Num_Servers; i++) 
     po_ack_specific->preinstalled_incarnations[i] = DATA.PR.preinstalled_incarnations[i+1];
 
   /* we must ack all of the unacked po request messages, received contiguously */
@@ -202,31 +204,38 @@ signed_message* PRE_ORDER_Construct_PO_Ack(int32u *more_to_ack, int32u send_all_
   else
     sm = DATA.PO.po_ack_start_server;
 
-  for(; sm <= NUM_SERVERS; sm++) {
+  for(; sm <= VAR.Num_Servers; sm++) {
 
     DATA.PO.po_ack_start_server = sm;
     
     if (send_all_non_preordered) {
-        if (PRE_ORDER_Seq_Compare(DATA.PO.po_ack_start_seq, DATA.PO.cum_aru[sm]) >= 0)
-            ps = DATA.PO.po_ack_start_seq;
-        else
+        if (PRE_ORDER_Seq_Compare(DATA.PO.po_ack_start_seq, DATA.PO.cum_aru[sm]) >= 0){
+            //printf("ps set to po_ack_start_seq =%lu\n",DATA.PO.po_ack_start_seq.seq_num);
+	    ps = DATA.PO.po_ack_start_seq;
+	}
+        else{
+            //printf("ps set to cum_aru =%lu\n",DATA.PO.po_ack_start_seq.seq_num);
             ps = DATA.PO.cum_aru[sm];
-
+	}
         if (ps.incarnation < DATA.PR.preinstalled_incarnations[sm]) {
+            //printf("ps set to 0\n");
             ps.incarnation = DATA.PR.preinstalled_incarnations[sm];
             ps.seq_num = 0;
         }
-    } else {
+    	} else {
+           // printf("ps set to max_acked=%lu\n",DATA.PO.max_acked[sm].seq_num);
         ps = DATA.PO.max_acked[sm];
     }
     ps.seq_num += 1;
-
+    Alarm(DEBUG,"PRE_ORDER_Construct_PO_Ack seq_num=%lu\n",ps.seq_num);
     //assert(DATA.PO.max_acked[sm] <= DATA.PO.aru[sm]);
     //assert(PRE_ORDER_Seq_Compare(DATA.PO.max_acked[sm], DATA.PO.aru[sm]) <= 0);
     assert(ps.incarnation == DATA.PO.aru[sm].incarnation);
     
+    Alarm(DEBUG,"Before for loop DATA.PO.aru[%d].seq_num=%d\n",sm,DATA.PO.aru[sm].seq_num);
     for(; ps.seq_num <= DATA.PO.aru[sm].seq_num; ps.seq_num++) {
 
+    Alarm(DEBUG,"\t\tDATA.PO.aru[%d].seq_num=%d\n",sm,DATA.PO.aru[sm].seq_num);
       DATA.PO.po_ack_start_seq = ps;
 
       if (ps.seq_num > DATA.PO.max_acked[sm].seq_num)
@@ -248,7 +257,7 @@ signed_message* PRE_ORDER_Construct_PO_Ack(int32u *more_to_ack, int32u send_all_
   
 #if RECON_ATTACK
       /* Faulty servers don't ack anyone else's stuff */
-      if (UTIL_I_Am_Faulty() && sm > NUM_F)
+      if (UTIL_I_Am_Faulty() && sm > VAR.F)
         continue;
 #endif
 
@@ -282,7 +291,7 @@ signed_message* PRE_ORDER_Construct_PO_Ack(int32u *more_to_ack, int32u send_all_
  finish:
 
   po_ack_specific->num_ack_parts = nparts;
-  
+  Alarm(DEBUG, "nparts=%d, more_to_ack=%d\n",nparts,*more_to_ack); 
   if (nparts == 0) {
     /* There is nothing in the ack -- we will not send it */
     *more_to_ack = 0;
@@ -691,7 +700,7 @@ signed_message* PRE_ORDER_Construct_PO_ARU()
   
   po_aru_specific->num         = ++DATA.PO.po_aru_num;
 
-  for (s = 0; s < NUM_SERVERS; s++) {
+  for (s = 0; s < VAR.Num_Servers; s++) {
     /* Fill in vector of cumulative pre order acks */
     po_aru_specific->ack_for_server[s] = DATA.PO.cum_aru[s+1];
   }
@@ -716,17 +725,17 @@ void PRE_ORDER_Construct_Proof_Matrix(signed_message **mset,
     * for all of Prime's message */
     curr_part = 0;
     index = 1;
-    remaining_vectors = NUM_SERVERS;    
+    remaining_vectors = VAR.Num_Servers;    
     num_acks = (PRIME_MAX_PACKET_SIZE - sizeof(signed_message) - 
                sizeof(proof_matrix_message) - 
                (MAX_MERKLE_DIGESTS * DIGEST_SIZE)) / 
                sizeof(po_aru_signed_message);
 
-    if (num_acks < NUM_SERVERS)
+    if (num_acks <  VAR.Num_Servers)
         Alarm(EXIT, "Proof_Matrix needs space! %u bytes needed\n",
             sizeof(signed_message) + sizeof(proof_matrix_message) +
             (MAX_MERKLE_DIGESTS * DIGEST_SIZE) +
-            (NUM_SERVERS * sizeof(po_aru_signed_message)));
+            (VAR.Num_Servers * sizeof(po_aru_signed_message)));
 
     while (remaining_vectors > 0) {
         curr_part++;
@@ -828,17 +837,17 @@ void ORDER_Construct_Pre_Prepare(signed_message **mset,int32u *num_parts)
     * for all of Prime's message */
     curr_part = 0;
     index = 1;
-    remaining_vectors = NUM_SERVERS;
+    remaining_vectors =  VAR.Num_Servers;
     num_acks = (PRIME_MAX_PACKET_SIZE - sizeof(signed_message) - 
                sizeof(pre_prepare_message) - 
                (MAX_MERKLE_DIGESTS * DIGEST_SIZE)) / 
                sizeof(po_aru_signed_message);
 
-    if (num_acks < NUM_SERVERS)
+    if (num_acks <  VAR.Num_Servers)
         Alarm(EXIT, "Proof_Matrix needs space! %u bytes needed\n",
             sizeof(signed_message) + sizeof(pre_prepare_message) +
             (MAX_MERKLE_DIGESTS * DIGEST_SIZE) +
-            (NUM_SERVERS * sizeof(po_aru_signed_message)));
+            ( VAR.Num_Servers * sizeof(po_aru_signed_message)));
 
     /* TEST - forcing View Change for testing NO_OP and PC_SET messages */
     /* if (DATA.View == 1 && DATA.ORD.seq == 100)
@@ -857,6 +866,7 @@ void ORDER_Construct_Pre_Prepare(signed_message **mset,int32u *num_parts)
         mess->machine_id  = VAR.My_Server_ID;
         mess->incarnation = DATA.PR.new_incarnation_val[VAR.My_Server_ID];
         mess->len         = 0; /* Set below */
+        mess->global_configuration_number = DATA.NM.global_configuration_number;
 
         pp_specific              = (pre_prepare_message *)(mess+1);
         pp_specific->seq_num     = DATA.ORD.seq;
@@ -864,6 +874,7 @@ void ORDER_Construct_Pre_Prepare(signed_message **mset,int32u *num_parts)
         pp_specific->part_num    = curr_part;
         pp_specific->total_parts = 0; /* Set at the end of loop */
 
+        Alarm(STATUS,"ORDER_Construct_Pre_Prepare with global config=%u\n",mess->global_configuration_number);
         /* timing tests */
         //pp_specific->sec  = E_get_time().sec; 
         //pp_specific->usec = E_get_time().usec;
@@ -953,7 +964,7 @@ signed_message* ORDER_Construct_Prepare(complete_pre_prepare_message *pp)
   OPENSSL_RSA_Make_Digest((byte*)pp, sizeof(*pp), prepare_specific->digest);
 
   /* Write in the latest preinstalled incarnation for each server */
-  for (i = 0; i < NUM_SERVERS; i++) 
+  for (i = 0; i <  VAR.Num_Servers; i++) 
     prepare_specific->preinstalled_incarnations[i] = DATA.PR.preinstalled_incarnations[i+1];
   
   return prepare;
@@ -980,7 +991,7 @@ signed_message *ORDER_Construct_Commit(complete_pre_prepare_message *pp)
   OPENSSL_RSA_Make_Digest((byte*)pp, sizeof(*pp), commit_specific->digest);
 
   /* Write in the latest preinstalled incarnation for each server */
-  for (i = 0; i < NUM_SERVERS; i++) 
+  for (i = 0; i <  VAR.Num_Servers; i++) 
     commit_specific->preinstalled_incarnations[i] = DATA.PR.preinstalled_incarnations[i+1];
 
   return commit;
@@ -1167,7 +1178,7 @@ signed_message *SUSPECT_Construct_New_Leader_Proof()
     count = 0;
     next_leader_msg = (char *)(nlm_specific + 1);
 
-    for (i = 1; i <= NUM_SERVERS; i++) 
+    for (i = 1; i <=  VAR.Num_Servers; i++) 
     {
         stored = DATA.SUSP.new_leader[i];
         if (stored == NULL)
@@ -1251,7 +1262,9 @@ signed_message *VIEW_Construct_Report(void)
 
     report_specific->execARU = DATA.ORD.ARU;
     report_specific->pc_set_size = DATA.VIEW.numSeq;
-
+#if 0
+	Alarm(PRINT,"VIEW_Construct_Report:machine_id=%d, inc=%lu, rb_tag.view=%lu, execARU=%lu, pc_set_size=%d\n",report->machine_id, report->incarnation, report_specific->rb_tag.view,report_specific->execARU, report_specific->pc_set_size);
+#endif
     return report;
 }
 
@@ -1276,7 +1289,9 @@ signed_message *VIEW_Construct_PC_Set(void)
 
     assert(pc_set_specific->rb_tag.seq_num > 0);
     DATA.RB.rb_seq++;
-    
+#if 0
+    Alarm(PRINT,"VIEW_Construct_PC_Set: inc=%lu, machine_id=%lu, view=%lu, seq_num=%d\n",pc_set->incarnation, pc_set_specific->rb_tag.machine_id, pc_set_specific->rb_tag.view, pc_set_specific->rb_tag.seq_num);
+#endif 
     return pc_set;
 }
 
@@ -1323,7 +1338,7 @@ signed_message *VIEW_Construct_VC_Partial_Sig(int32u list)
     /* Calculate startSeq from stored report messages of the
      *  servers in this list */
     max_seq = 0;
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <=  VAR.Num_Servers; i++) {
         if (UTIL_Bitmap_Is_Set(&list, i) && DATA.VIEW.max_pc_seq[i] > max_seq)
             max_seq = DATA.VIEW.max_pc_seq[i];
     }
@@ -1358,9 +1373,9 @@ signed_message *VIEW_Construct_VC_Proof(int32u list, int32u startSeq, signed_mes
     vc_proof_specific->startSeq = startSeq;
     memset(vc_proof_specific->thresh_sig, 0, SIGNATURE_SIZE);
 
-    TC_Initialize_Combine_Phase(NUM_SERVERS + 1);
+    TC_Initialize_Combine_Phase( VAR.Num_Servers + 1);
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <=  VAR.Num_Servers; i++) {
         if (m_arr[i] == NULL)
             continue;
 
@@ -1373,7 +1388,7 @@ signed_message *VIEW_Construct_VC_Proof(int32u list, int32u startSeq, signed_mes
     
     OPENSSL_RSA_Make_Digest(vc_proof_specific, 3 * sizeof(int32u), digest);
     TC_Combine_Shares(vc_proof_specific->thresh_sig, digest);
-    TC_Destruct_Combine_Phase(NUM_SERVERS + 1);
+    TC_Destruct_Combine_Phase( VAR.Num_Servers + 1);
 
     if (!TC_Verify_Signature(1, vc_proof_specific->thresh_sig, digest)) {
       Alarm(PRINT, "Construct_VC_Proof: combined TC signature failed to verify!\n");
@@ -1490,7 +1505,7 @@ signed_message *CATCH_Construct_ORD_Certificate(struct dummy_ord_slot *slot)
 
     /* Next, grab the 2f+k+1 commits */
     ccount = 0;
-    for (i = 1; i <= NUM_SERVERS && ccount < 2*VAR.F + VAR.K + 1; i++) {
+    for (i = 1; i <=  VAR.Num_Servers && ccount < 2*VAR.F + VAR.K + 1; i++) {
         if (slot->commit_certificate.commit[i] == NULL)
             continue;
 
@@ -1498,7 +1513,7 @@ signed_message *CATCH_Construct_ORD_Certificate(struct dummy_ord_slot *slot)
         commit_specific = (commit_message *)(slot->commit_certificate.commit[i] + 1);
         if (memcmp(commit_specific->preinstalled_incarnations, 
                    slot->preinstalled_snapshot+1, 
-                   NUM_SERVERS * sizeof(int32u)) != 0) {
+                    VAR.Num_Servers * sizeof(int32u)) != 0) {
             Alarm(PRINT, "Construct_ORD_Cert: memcmp for commit %u failed, ignoring\n", i);
             continue;
         }
@@ -1544,7 +1559,7 @@ signed_message *CATCH_Construct_PO_Certificate(int32u rep, struct dummy_po_slot 
 
     /* Next, grab the 2f+k+1 po_acks */
     count = 0;
-    for (i = 1; i <= NUM_SERVERS && count < 2*VAR.F + VAR.K + 1; i++) {
+    for (i = 1; i <=  VAR.Num_Servers && count < 2*VAR.F + VAR.K + 1; i++) {
         if (slot->ack[i] == NULL)
             continue;
 
@@ -1554,7 +1569,7 @@ signed_message *CATCH_Construct_PO_Certificate(int32u rep, struct dummy_po_slot 
         /* Sanity check on the preinstalled incarnations vectors */
         if (memcmp(po_ack_specific->preinstalled_incarnations, 
                    slot->preinstalled_snapshot+1, 
-                   NUM_SERVERS * sizeof(int32u)) != 0) {
+                    VAR.Num_Servers * sizeof(int32u)) != 0) {
             Alarm(PRINT, "Construct_PO_Cert: memcmp for ack_part %u failed, ignoring\n", i);
             continue;
         }
@@ -1570,7 +1585,10 @@ signed_message *CATCH_Construct_PO_Certificate(int32u rep, struct dummy_po_slot 
         pc->len += size;
         offset += size;
         count++;
-    }   
+    }
+    if(count!=2*VAR.F + VAR.K + 1){
+	Alarm(DEBUG,"CATCH_Construct_PO_Certificate: count=%d, f=%d, k=%d\n",count,VAR.F,VAR.K);
+	}   
     assert(count == 2*VAR.F + VAR.K + 1); 
 
     return pc;
@@ -1595,7 +1613,7 @@ signed_message *CATCH_Construct_Catchup_Request(int32u catchup_flag)
     cr_specific->flag        = catchup_flag;
     cr_specific->nonce       = rand();   /* PRTODO: make sure this is enough entropy */
     cr_specific->aru         = DATA.ORD.ARU;
-    for (i = 1; i <= NUM_SERVERS; i++)
+    for (i = 1; i <=  VAR.Num_Servers; i++)
         cr_specific->po_aru[i-1] = DATA.PO.cum_aru[i];
     memcpy(&cr_specific->proposal_digest, &DATA.PR.proposal_digest, DIGEST_SIZE);
     
@@ -1625,7 +1643,7 @@ signed_message *CATCH_Construct_Jump(int32u sender_nonce)
     jm_specific->acked_nonce = sender_nonce;
     memcpy(&jm_specific->proposal_digest, &DATA.PR.proposal_digest, DIGEST_SIZE);
 
-    for (i = 1; i <= NUM_SERVERS; i++)
+    for (i = 1; i <=  VAR.Num_Servers; i++)
         jm_specific->installed_incarn[i-1] = DATA.PR.installed_incarnations[i];
 
     ptr = (byte *)(jm_specific + 1);
@@ -1642,8 +1660,9 @@ signed_message *CATCH_Construct_Jump(int32u sender_nonce)
             SIG_Add_To_Pending_Messages(oslot->ord_certificate, dest_bits, 
                     UTIL_Get_Timeliness(ORD_CERT));
             SIG_Make_Batch(0, NULL);
-            Alarm(PRINT, "Force Make Batch when construct Jump ORD_Cert\n");
+            Alarm(DEBUG, "Force Make Batch when construct Jump ORD_Cert\n");
             assert(oslot->signed_ord_cert == 1);
+	   
         }
         
         size = UTIL_Message_Size(oslot->ord_certificate);
@@ -1661,10 +1680,10 @@ signed_message *CATCH_Construct_Jump(int32u sender_nonce)
         SIG_Add_To_Pending_Messages(DATA.PR.reset_certificate, BROADCAST,
             UTIL_Get_Timeliness(RESET_CERT));
         SIG_Make_Batch(0, NULL);
-        Alarm(PRINT, "Force Make Batch for reset cert when constructing Jump\n");
+        Alarm(DEBUG, "Force Make Batch for reset cert when constructing Jump\n");
     }
     size = UTIL_Message_Size(DATA.PR.reset_certificate);
-    Alarm(PRINT, "JUMP: Reset cert size %u\n", size);
+    Alarm(DEBUG, "JUMP: Reset cert size %u\n", size);
     memcpy(ptr, DATA.PR.reset_certificate, size);
     jm->len += size;
 
@@ -1692,7 +1711,7 @@ signed_message *PR_Construct_New_Incarnation_Message()
     now = E_get_time();
     ni_specific->timestamp = now.sec;
     ni_specific->nonce = rand();   /* PRTODO: make sure this is enough entropy */
-
+    //printf("Generated New Incarnation with nonce : %lu,id=%d, conf=%lu\n",ni_specific->nonce,ni->machine_id,ni->global_configuration_number);
     /* PRTODO: Setup the public portion of the session key */
     memset(ni_specific->key, 0, DIGEST_SIZE);
 
@@ -1753,7 +1772,7 @@ signed_message *PR_Construct_Incarnation_Cert()
     ptr += size;
 
     count = 0;
-    for (i = 1; i <= NUM_SERVERS && count < 2*VAR.F + VAR.K + 1; i++) {
+    for (i = 1; i <=  VAR.Num_Servers && count < 2*VAR.F + VAR.K + 1; i++) {
 
         if (DATA.PR.recv_incarnation_ack[i] == NULL) 
             continue;
@@ -1798,7 +1817,7 @@ signed_message* PR_Construct_Pending_State(int32u target, int32u acked_nonce)
     if (oslot == NULL)
         assert(DATA.ORD.ARU == 0);
 
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <=  VAR.Num_Servers; i++) {
         if (oslot != NULL)
             ps = oslot->made_eligible[i-1];
         else {
@@ -1841,7 +1860,7 @@ signed_message* PR_Construct_Pending_State(int32u target, int32u acked_nonce)
     psm_specific->acked_nonce = acked_nonce;
     psm_specific->total_shares = tot_shares;
 
-    Alarm(PRINT, "Construct_Pending_State: ARU = %u, %u TOTAL shares: %u PO, %u ORD\n",
+    Alarm(DEBUG, "Construct_Pending_State: ARU = %u, %u TOTAL shares: %u PO, %u ORD\n",
                 DATA.ORD.ARU, tot_shares, tot_po, tot_ord);
 
     return psm;
@@ -1895,7 +1914,7 @@ signed_message *PR_Construct_Reset_Vote(signed_message *ni_mess)
 
     rv_specific->acked_incarnation = ni_mess->incarnation;
     rv_specific->acked_nonce = ni->nonce;
-
+    //printf("reset vote msg nonce=%lu, rv->machine_id=%d \n",rv_specific->acked_nonce,rv->machine_id);
     return rv;
 }
 
@@ -1945,7 +1964,7 @@ signed_message *PR_Construct_Reset_Proposal()
     rp_specific->num_shares = DATA.PR.reset_share_count;
     
     count = 0;
-    for (i = 1; i <= NUM_SERVERS; i++) {
+    for (i = 1; i <=  VAR.Num_Servers; i++) {
 
         if (DATA.PR.reset_share[i] == NULL) 
             continue;
@@ -2054,7 +2073,7 @@ signed_message *PR_Construct_Reset_NewLeaderProof()
     count = 0;
     next_leader_msg = (char *)(rnlp_specific + 1);
 
-    for (i = 1; i <= NUM_SERVERS; i++) 
+    for (i = 1; i <=  VAR.Num_Servers; i++) 
     {
         stored = DATA.PR.reset_newleader[i];
         if (stored == NULL)
@@ -2124,7 +2143,7 @@ signed_message *PR_Construct_Reset_ViewChange()
 
     /* Next, grab the 2f+k prepares */
     ccount = 0;
-    for (i = 1; i <= NUM_SERVERS && ccount < 2*VAR.F + VAR.K; i++) {
+    for (i = 1; i <=  VAR.Num_Servers && ccount < 2*VAR.F + VAR.K; i++) {
         if (DATA.PR.reset_prepare[i] == NULL)
             continue;
         
@@ -2197,7 +2216,7 @@ signed_message *PR_Construct_Reset_Certificate()
 
     /* Next, grab the 2f+k+1 commits */
     count = 0;
-    for (i = 1; i <= NUM_SERVERS && count < 2*VAR.F + VAR.K + 1; i++) {
+    for (i = 1; i <=  VAR.Num_Servers && count < 2*VAR.F + VAR.K + 1; i++) {
         if (DATA.PR.reset_commit[i] == NULL)
             continue;
 
@@ -2301,4 +2320,61 @@ signed_message *RECON_Construct_Recon_Erasure_Message(dll_struct *list,
   mess->len = bytes - sizeof(signed_message);
 
   return mess;
+}
+
+void print_prepare(prepare_message *pm){
+	printf("seq:%lu view:%lu , proposal digest:\n",pm->seq_num,pm->view);
+	OPENSSL_RSA_Print_Digest(pm->digest);
+	int j;
+	for(j=0;j<MAX_NUM_SERVERS;j++){
+	    printf("preinstalled inc[%d]: %lu\n",j,pm->preinstalled_incarnations[j]);
+	}
+}
+
+
+void print_complete_pre_prepare(complete_pre_prepare_message *complete_pp){
+	printf("Complete PP seq_num=%lu view=%lu\n",complete_pp->seq_num,complete_pp->view);
+	printf("Proposal original Digest: ");
+	OPENSSL_RSA_Print_Digest(complete_pp->proposal_digest);
+	int j;
+	po_aru_signed_message *cum_ack;
+	signed_message * po_aru_header;
+	po_aru_message *po_aru_mess; //ack_for_server
+	
+	for(j=0;j<MAX_NUM_SERVERS;j++){
+		printf("last_executed[%d].inc=%lu, seq_num=%d\n",j,complete_pp->last_executed[j].incarnation,complete_pp->last_executed[j].seq_num);	
+	}
+	for(j=0;j<MAX_NUM_SERVERS;j++){
+		cum_ack=&complete_pp->cum_acks[j];
+		po_aru_mess=&cum_ack->cum_ack;
+		po_aru_header=&cum_ack->header;
+		printf("j=%d, machine id %d ,says my ack_for_server is: ",j,po_aru_header->machine_id);
+		int k;
+		for(k=0;k<MAX_NUM_SERVERS;k++){
+			printf("inc=%lu, seq=%lu ",po_aru_mess->ack_for_server[k].incarnation,po_aru_mess->ack_for_server[k].seq_num);
+		}
+		printf("\n");
+	}
+	
+	}
+void print_PC_Set(signed_message * pc){
+	pc_set_message *pc_specific;
+	pre_prepare_message *pp;
+	signed_message *pp_header;
+	int pcount=0;
+	 pc_specific = (pc_set_message *)(pc + 1);
+	 printf("machine_id=%lu, inc=%lu, rb_tag.view=%d, rb_tag_seq_num=%lu\n", pc->machine_id, pc->incarnation, pc_specific->rb_tag.view ,pc_specific->rb_tag.seq_num );	 
+	//Pre-prepare
+	pp_header=(signed_message *)(pc_specific+1);
+	pp=(pre_prepare_message *)(pp_header+1);
+	printf("PrePrepare proposal digest=\n");
+	OPENSSL_RSA_Print_Digest(pp->proposal_digest);
+	printf("num_acks_in_this_message in pre prepare %d\n",pp->num_acks_in_this_message);
+	int j;
+        for(j=0;j<MAX_NUM_SERVERS;j++){
+		printf("[%d]:last executes inc:%lu seq: %lu\n",j,pp->last_executed[j].incarnation,pp->last_executed[j].seq_num);
+	}
+	fflush(stdout);
+	//2f+k prepares
+
 }

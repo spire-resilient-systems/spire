@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2017-2024 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -72,6 +72,39 @@
 
 #define MAX_PATH 1000
 
+extern int32u My_Global_Configuration_Number;
+
+void Process_Config_Msg(signed_message * conf_mess,int mess_size);
+
+void Process_Config_Msg(signed_message * conf_mess,int mess_size){
+    config_message *c_mess;
+
+    if (mess_size!= sizeof(signed_message)+sizeof(config_message)){
+        printf("Config message is %d ,not expected size of %d\n",mess_size, sizeof(signed_message)+sizeof(config_message));
+        return;
+    }
+
+    if(!OPENSSL_RSA_Verify((unsigned char*)conf_mess+SIGNATURE_SIZE,
+                sizeof(signed_message)+conf_mess->len-SIGNATURE_SIZE,
+                (unsigned char*)conf_mess,conf_mess->machine_id,RSA_CONFIG_MNGR)){
+        printf("Benchmark: Config message signature verification failed\n");
+
+        return;
+    }
+    printf("Verified Config Message\n");
+    if(conf_mess->global_configuration_number<=My_Global_Configuration_Number){
+        printf("Got config=%u and I am already in %u config\n",conf_mess->global_configuration_number,My_Global_Configuration_Number);
+        return;
+    }
+    My_Global_Configuration_Number=conf_mess->global_configuration_number;
+    c_mess=(config_message *)(conf_mess+1);
+    //Reset SM
+    Reset_SM_def_vars(c_mess->N,c_mess->f,c_mess->k,c_mess->num_cc_replicas, c_mess->num_cc,c_mess->num_dc);
+    Reset_SM_Replicas(c_mess->tpm_based_id,c_mess->replica_flag,c_mess->spines_ext_addresses,c_mess->spines_int_addresses);
+    printf("Reconf done \n");
+}
+
+
 // conver string to protocol enum
 int string_to_protocol(char * prot) {
     int p_n;
@@ -92,7 +125,7 @@ int string_to_protocol(char * prot) {
 /* RTU Proxy implementation */
 int main(int argc, char *argv[])
 {
-    int i, num, ret, nBytes, sub;
+    int i, num, ret, nBytes, sub,ret2;
     int ipc_sock;
     struct timeval now;
     struct sockaddr_in;
@@ -119,7 +152,8 @@ int main(int argc, char *argv[])
         printf("HELP: proxy sub spinesAddr:spinesPort Num_RTU_Emulated\n");
         return 0;
     }
-
+    
+    My_Global_Configuration_Number=0;
     Init_SM_Replicas();
 
     /* zero ipc_used */
@@ -146,7 +180,7 @@ int main(int argc, char *argv[])
     for(i = 0 ; i < num_locations ; i++) {
         cJSON * loc = cJSON_GetArrayItem(locations, i);
         if(My_ID == cJSON_GetObjectItem(loc, "ID")->valueint) {
-            printf("Found my loc\n");
+            printf("Found my loc: %d\n",My_ID);
             my_loc = loc;
             break;
         }
@@ -162,7 +196,7 @@ int main(int argc, char *argv[])
     for(i = 0; i < cJSON_GetArraySize(protocols); i++) {
         char * prot = cJSON_GetArrayItem(protocols, i)->valuestring;
         int p_n = string_to_protocol(prot);
-        printf("PROXY: Creating Socket for protocol: %s\n", prot);
+        printf("PROXY: Creating Socket for protocol: %s and p_n=%d\n", prot,p_n);
         memset(&protocol_data[p_n], 0, sizeof(itrc_data));
         sprintf(protocol_data[p_n].prime_keys_dir, "%s", (char *)PROXY_PRIME_KEYS);
         sprintf(protocol_data[p_n].sm_keys_dir, "%s", (char *)PROXY_SM_KEYS);
@@ -172,6 +206,7 @@ int main(int argc, char *argv[])
                 prot, My_ID);
         ipc_used[p_n] = 1;
         ipc_s[p_n] = IPC_DGram_Sock(protocol_data[p_n].ipc_local);
+        printf("Create IPC_DGram_Sock ipc_s[%d]=%d\n",p_n,ipc_s[p_n]);
 
         /* Start protocol threads */
         sprintf(path, "../%s/%s_master", prot, prot);
@@ -188,7 +223,9 @@ int main(int argc, char *argv[])
 
     }
 
+    sleep(2);
     printf("PROXY: filling in key value data structure\n");
+    fflush(stdout);
     // Figure out what RTU's I have to send to and place map the
     // id to a protocol
     key_value_init();
@@ -199,6 +236,7 @@ int main(int argc, char *argv[])
         int rtu_id = cJSON_GetObjectItem(rtu, "ID")->valueint;
         int rtu_protocol = string_to_protocol(prot_str);
         key_value_insert(rtu_id, rtu_protocol);
+        printf("key value insert id=%d, protocol %d\n",rtu_id,rtu_protocol);
     } 
 
     // Delete CJSON reference
@@ -206,7 +244,8 @@ int main(int argc, char *argv[])
 
     // Net Setup
     Type = RTU_TYPE;
-    Prime_Client_ID = (NUM_SM + 1) + My_ID;
+    //Prime_Client_ID = (NUM_SM + 1) + My_ID;
+    Prime_Client_ID = MAX_NUM_SERVER_SLOTS + My_ID;
     My_IP = getIP();
 
     // Setup IPC for the RTU Proxy main thread
@@ -231,11 +270,14 @@ int main(int argc, char *argv[])
 
     printf("PROXY: Setting up ITRC Client thread\n");
     pthread_create(&tid, NULL, &ITRC_Client, (void *)&itrc_thread);
+    fflush(stdout);
 
     FD_ZERO(&mask);
     for(i = 0; i < NUM_PROTOCOLS; i++) 
-        if(ipc_used[i] == 1)
+        if(ipc_used[i] == 1){
             FD_SET(ipc_s[i], &mask);
+            printf("FD_SET on ipc_s[%d]\n",i);
+        }
     FD_SET(ipc_sock, &mask);
 
     while (1) {
@@ -256,13 +298,25 @@ int main(int argc, char *argv[])
                 }
                 mess = (signed_message *)buff;
                 nBytes = sizeof(signed_message) + (int)mess->len;
+
+                if(mess->type ==  PRIME_OOB_CONFIG_MSG){
+                    printf("PROXY: processing OOB CONFIG MESSAGE\n");
+                    Process_Config_Msg((signed_message *)buff,ret);
+                    continue;
+                }
                 rtu_dst = ((rtu_feedback_msg *)(mess + 1))->rtu;
                 /* enqueue in correct ipc */
                 in_list = key_value_get(rtu_dst, &channel);
                 if(in_list) {
-                    printf("PROXY: Delivering msg to RTU\n");
-                    IPC_Send(ipc_s[channel], buff, nBytes, 
+                    printf("PROXY: Delivering msg to RTU channel %d at %d at path:%s\n",channel,ipc_s[channel],protocol_data[channel].ipc_remote);
+                    ret2=IPC_Send(ipc_s[channel], buff, nBytes, 
                              protocol_data[channel].ipc_remote);
+                    if(ret2!=nBytes){
+                        printf("PROXY: error delivering to RTU\n");
+                    }
+                    else{
+                        printf("PROXY: delivered to RTU\n");
+                    }
                 }
                 else {
                     fprintf(stderr, 
@@ -278,11 +332,15 @@ int main(int argc, char *argv[])
                 if (FD_ISSET(ipc_s[i], &tmask)) {
                     nBytes = IPC_Recv(ipc_s[i], buff, MAX_LEN);
                     mess = (signed_message *)buff;
+                    mess->global_configuration_number = My_Global_Configuration_Number;
                     rtud = (rtu_data_msg *)(mess + 1);
                     ps = (seq_pair *)&rtud->seq;
                     ps->incarnation = My_Incarnation;
-                    //printf("PROXY: sending data to sm\n");
+                    printf("PROXY: message from plc, sending data to sm\n");
                     ret = IPC_Send(ipc_sock, (void *)buff, nBytes, itrc_main.ipc_remote);
+                    if(ret!=nBytes){
+                        printf("PROXY: error sending to SM\n");
+                    }
                 }
             }
         }

@@ -21,14 +21,15 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
- *      
- * Copyright (c) 2008-2023
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
+ * 
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -53,6 +54,9 @@
 #define SIGNATURE_SIZE     128
 #define RSA_CLIENT         1
 #define RSA_SERVER         2
+#define RSA_NM             3 //MK Reconf: Network Manager
+#define RSA_CONFIG_MNGR    4
+#define RSA_CONFIG_AGENT   5
 
 /* Public functions */
 void OPENSSL_RSA_Init();
@@ -64,7 +68,9 @@ int OPENSSL_RSA_Verify( const unsigned char *message, size_t message_length,
 			unsigned char *signature, int32u server_number, 
 			int32u type ); 
  
-void OPENSSL_RSA_Read_Keys( int32u my_number, int32u type ); 
+void OPENSSL_RSA_Read_Keys( int32u my_number, int32u type,char *dir ); 
+
+void OPENSSL_RSA_Generate_Keys_with_args(int count, const char *keys_dir );
 
 void OPENSSL_RSA_Generate_Keys(void); 
 
@@ -82,6 +88,17 @@ void OPENSSL_RSA_Make_Digest( const void *buffer, size_t buffer_size,
 			      unsigned 	char *digest_value ); 
 
 void OPENSSL_RSA_Print_Digest( unsigned char *digest_value ); 
+
+
+int OPENSSL_RSA_Get_KeySize(unsigned char *pubKeyFile);
+
+
+void OPENSSL_RSA_Decrypt(unsigned char  *pvtKeyFile,unsigned char *data, int data_len,unsigned char *decrypted_data);
+
+
+int OPENSSL_RSA_Encrypt(unsigned char *pubKeyFile,unsigned char *data, int data_len, unsigned char * encrypted_data);
+
+int getFileSize(unsigned char * fileName);
 
 #endif
 

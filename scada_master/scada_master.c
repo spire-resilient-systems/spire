@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2017-2024 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -55,6 +55,7 @@
 #include <assert.h>
 
 #include "../common/scada_packets.h"
+#include "../common/openssl_rsa.h"
 #include "../common/net_wrapper.h"
 #include "../common/def.h"
 #include "../common/itrc.h"
@@ -95,10 +96,12 @@ void read_from_hmi(signed_message *);
 void package_and_send_state(signed_message *);
 void apply_state(signed_message *);
 void print_state();
+int Verify_Config_msg(signed_message *);
+
 
 int main(int argc, char **argv)
 {
-    int nbytes, id, i, ret;
+    int nbytes, id, i, ret,debug_ret,debug_ret2;
     char buf[MAX_LEN];
     char *ip;
     struct timeval t, now;
@@ -140,21 +143,23 @@ int main(int argc, char **argv)
     memset(&itrc_main, 0, sizeof(itrc_data));
     sprintf(itrc_main.prime_keys_dir, "%s", (char *)SM_PRIME_KEYS);
     sprintf(itrc_main.sm_keys_dir, "%s", (char *)SM_SM_KEYS);
-    sprintf(itrc_main.ipc_local, "%s%d", (char *)SM_IPC_MAIN, My_ID);
-    sprintf(itrc_main.ipc_remote, "%s%d", (char *)SM_IPC_ITRC, My_ID);
+    sprintf(itrc_main.ipc_config, "%s%d", (char *)CONFIG_AGENT, My_Global_ID);
+    sprintf(itrc_main.ipc_local, "%s%d", (char *)SM_IPC_MAIN, My_Global_ID);
+    sprintf(itrc_main.ipc_remote, "%s%d", (char *)SM_IPC_ITRC, My_Global_ID);
     ipc_sock = IPC_DGram_Sock(itrc_main.ipc_local);
 
     memset(&itrc_thread, 0, sizeof(itrc_data));
     sprintf(itrc_thread.prime_keys_dir, "%s", (char *)SM_PRIME_KEYS);
     sprintf(itrc_thread.sm_keys_dir, "%s", (char *)SM_SM_KEYS);
-    sprintf(itrc_thread.ipc_local, "%s%d", (char *)SM_IPC_ITRC, My_ID);
-    sprintf(itrc_thread.ipc_remote, "%s%d", (char *)SM_IPC_MAIN, My_ID);
-    ip = strtok(argv[2], ":");
+    sprintf(itrc_thread.ipc_config, "%s%d", (char *)CONFIG_AGENT, My_Global_ID);
+    sprintf(itrc_thread.ipc_local, "%s%d", (char *)SM_IPC_ITRC, My_Global_ID);
+    sprintf(itrc_thread.ipc_remote, "%s%d", (char *)SM_IPC_MAIN, My_Global_ID);
+    ip = strtok(argv[3], ":");
     sprintf(itrc_thread.spines_int_addr, "%s", ip);
     ip = strtok(NULL, ":");
     sscanf(ip, "%d", &itrc_thread.spines_int_port);
     if (Type == CC_TYPE) {
-        ip = strtok(argv[3], ":");
+        ip = strtok(argv[4], ":");
         sprintf(itrc_thread.spines_ext_addr, "%s", ip);
         ip = strtok(NULL, ":");
         sscanf(ip, "%d", &itrc_thread.spines_ext_port);
@@ -176,8 +181,8 @@ int main(int argc, char **argv)
     while(1) {
 
         tmask = mask;
-        select(FD_SETSIZE, &tmask, NULL, NULL, NULL);
-
+        debug_ret=select(FD_SETSIZE, &tmask, NULL, NULL, NULL);
+//	printf("debug_ret=%d\n",debug_ret);
         if (FD_ISSET(ipc_sock, &tmask)) {
             ret = IPC_Recv(ipc_sock, buf, MAX_LEN);
             mess = (signed_message *)buf;
@@ -210,6 +215,19 @@ int main(int argc, char **argv)
                 IPC_Send(ipc_sock, (void *)mess, nbytes, itrc_main.ipc_remote);
                 free(mess);
             }
+            else if(mess->type==PRIME_OOB_CONFIG_MSG){
+                /*Received OOB reconf message - we forward it to ipc_config. Handled in ITRC_Master*/
+                printf("MS2022: In scada_master: PRIME OOB RECONF MESSAGE\n");
+                struct timeval reconf_t;
+                gettimeofday(&reconf_t,NULL);
+                printf("MS2022: **reconf received = %lu   %lu\n",reconf_t.tv_sec, reconf_t.tv_usec);
+                nbytes = sizeof(signed_message) + mess->len;
+                if(Verify_Config_msg(mess))
+                    debug_ret2=IPC_Send(ipc_sock, (void *)mess, nbytes, itrc_main.ipc_config);
+		    if(debug_ret2!=nbytes){
+			printf("ITRC Main error sending to ipc_config\n");
+			}
+            }
             else if (mess->type == HMI_COMMAND) {
                 read_from_hmi(mess);
             }
@@ -218,6 +236,7 @@ int main(int argc, char **argv)
                 gettimeofday(&now, NULL);
                 ben->pong_sec = 0; //now.tv_sec;
                 ben->pong_usec = 0; //now.tv_usec;
+                //printf("MS2022: In scada_master: RECEIVED BENCHMARK MESSAGE\n");
                 IPC_Send(ipc_sock, (void *)mess, ret, itrc_main.ipc_remote);
             }
             else if (mess->type == STATE_REQUEST) {
@@ -251,28 +270,55 @@ int main(int argc, char **argv)
     pthread_exit(NULL);
 }
 
+
+
+int Verify_Config_msg(signed_message *mess)
+{
+    config_message *c_mess;
+    if(!OPENSSL_RSA_Verify((unsigned char*)mess+SIGNATURE_SIZE,
+                sizeof(signed_message)+mess->len-SIGNATURE_SIZE,
+                (unsigned char*)mess,mess->machine_id,RSA_CONFIG_MNGR)){
+        printf("Config Agent: Config message signature verification failed\n");
+
+        return 0;
+    }
+    c_mess=(config_message *)(mess+1);
+    if (mess->global_configuration_number<=My_Global_Configuration_Number)
+        return 0;
+    return 1;
+
+}
+
 // Usage
 void Usage(int argc, char **argv)
 {
     My_ID = 0;
+    My_Global_Configuration_Number=0;
+    PartOfConfig=1;
 
-    if (argc < 3 || argc > 4) {
-        printf("Usage: %s ID spinesIntAddr:spinesIntPort [spinesExtAddr:spinesExtPort]\n", argv[0]);
+    if (argc < 4 || argc > 5) {
+        printf("Usage: %s GLOBAL_ID CURRENT_ID spinesIntAddr:spinesIntPort [spinesExtAddr:spinesExtPort]\n", argv[0]);
         exit(EXIT_FAILURE);
     }
 
-    sscanf(argv[1], "%d", &My_ID);
+    sscanf(argv[1], "%d", &My_Global_ID);
+    if (My_Global_ID < 1 || My_Global_ID > MAX_NUM_SERVER_SLOTS) {
+        printf("Invalid My_ID: %d\n", My_ID);
+        exit(EXIT_FAILURE);
+    }
+
+    sscanf(argv[2], "%d", &My_ID);
     if (My_ID < 1 || My_ID > NUM_SM) {
         printf("Invalid My_ID: %d\n", My_ID);
         exit(EXIT_FAILURE);
     }
 
-    if (Is_CC_Replica(My_ID) && argc != 4) {
+    if (Is_CC_Replica(My_ID) && argc != 5) {
         printf("Invalid arguments...\n");
         printf("Control Center Replicas must have internal and external spines networks specified!\n");
         exit(EXIT_FAILURE);
     }
-    else if (Is_CC_Replica(My_ID) > NUM_CC_REPLICA && argc != 3) {
+    else if (Is_CC_Replica(My_ID) > NUM_CC_REPLICA && argc != 4) {
         printf("Invalid arguments...\n");
         printf("Data Center Replicas should only have internal spines network specified!\n");
         exit(EXIT_FAILURE);

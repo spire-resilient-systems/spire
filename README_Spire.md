@@ -35,7 +35,7 @@ engine](http://www.dsn.jhu.edu/prime). Communication between Spire components
 is protected using the [Spines intrusion-tolerant
 network](http://www.spines.org). The Spire PLC/RTU proxy can interact with any
 devices that use the Modbus or DNP3 communication protocols over IP. We use
-[OpenPLC](http://www.openplcproject.com/) to emulate PLCs. Finally, there is
+[OpenPLC](http://www.openplcproject.com/) to emulate PLCs. Additionally, there is
 also an standalone Machine Learning-based Network Intrusion Detection System 
 that is built to work with Spire.
 
@@ -64,28 +64,36 @@ same underlying infrastructure, only one of the `pnnl`, `heco_3breaker`,
 of these systems can be simultaneously run with both the `jhu` and `ems`
 systems.
 
+Spire also supports reconfiguration. A system administrator can initiate
+reconfiguration by sending a reconfiguration command on the Configuration
+Network using the provided Configuration Manager (see Deployment Overview).
+
 ---
 
 ## Deployment Overview
 
-A Spire deployment includes: SCADA Master replicas, Prime daemons, Spines
-daemons, PLC/RTU proxies, real or emulated PLCs and/or RTUs, and HMIs. These
-components can be distributed over multiple sites connected by a wide-area
+A Spire deployment includes: SCADA Master replicas, Prime 
+daemons, Spines daemons, PLC/RTU proxies, real or emulated PLCs and/or RTUs, and HMIs. 
+These components can be distributed over multiple sites connected by a wide-area
 network, over multiple logical sites within a local-area network (with or
 without emulated wide-area latency) or as a single site in a local-area
-network.
+network. To support reconfiguration, we can optionally deploy a Configuration
+Manager, Configuration Agents, and a Spines Configuration Network.
 
 We typically deploy Spire with SCADA Master replicas distributed across several
-sites. For each SCADA master replica, we also deploy a Prime daemon that the
-SCADA master connects to. Each SCADA master is located on the same machine as
-its Prime daemon and connects to it via IPC.
+sites. For each SCADA master replica, we also deploy a Prime daemon and 
+Configuration Agent that the SCADA master connects to. Each SCADA master is 
+located on the same machine as its Prime daemon and configuration agent
+and connects to them via IPC.
 
-Communication in the system occurs over two Spines overlay networks: an
-external network and an internal network. The external network is used for
-communication between the SCADA Master replicas and the PLC/RTU proxies and the
-HMIs. The internal network is used for communication among the SCADA Master
-replicas (and their Prime daemons). External and internal Spines daemons can be
-deployed on the same machines but use different ports.
+Communication in the system occurs over three Spines overlay networks: an
+external network, an internal network, and a (optional) configuration network.
+The external network is used for communication between the SCADA Master
+replicas and the PLC/RTU proxies and the HMIs. The internal network is used for
+communication among the SCADA Master replicas (and their Prime daemons). The
+Configuration Network is used to communicate the current valid configuration to
+all SCADA Master replicas and client. The external, internal, and configuration
+Spines daemons can all be deployed on the same machines but use different ports.
 
 We distinguish between two types of sites that can contain SCADA Master
 replicas: control centers and data centers. This is because power grid control
@@ -93,7 +101,8 @@ centers with full capabilities for controlling PLCs and RTUs are generally
 expensive, and utility companies are unlikely to deploy more than two. To
 support the desired resilience with only two control centers, we allow
 additional sites to be added as data-center sites that do not control PLCs or
-RTUs.
+RTUs. When supporting reconfiguration, all sites run Configuration Spines
+daemons and Configuration Agents.
 
 In each site that contains SCADA Master replicas (including both control
 centers and data centers), we typically deploy one Spines daemon that
@@ -121,6 +130,12 @@ PLCs and RTUs are periodically polled by their proxies. When a proxy has new
 PLC/RTU data, it sends the data to the control-center SCADA Master replicas
 over the external Spines network to be agreed upon and sent to the HMI. The HMI
 verifies the threshold signature on the update and updates its display.
+
+
+During reconfiguration, the Configuration Manager issues a configuration
+message on configuration network. Each Configuration Agent validates it and
+then passes it to its local replica or PLC/RTU or HMI to adopt the new
+configuration and resume normal flow of the system.
 
 ---
 
@@ -232,15 +247,31 @@ Confidential Spire configuration to a base Spire configuration, first run `make
 clean` from the top-level Spire directory, and then follow the instructions
 below to build Spire.
 
-1. Build pvbrowser, OpenPLC, dnp3, libiec61850, spines, prime (from top-level Spire directory):
+1. Build pvbrowser, OpenPLC, dnp3, libiec61850, spines (from top-level Spire directory):
 
         make libs
    
    Note: Select Y to build DNP3 and select "Blank" driver (1) to build emulated PLCs that run on Linux
 
-2. Build Spire (from top-level Spire directory):
+2. Build Spire, including SCADA Master, HMIs, PLCs, and Prime (from top-level Spire directory):
 
         make
+
+### Building for Performance Benchmarks
+
+If you are only conducting performance benchmarks of the core Spire system
+(i.e. measuring how long it takes clients to get responses for updates
+submitted to the SCADA Master), you can build only the Spines, Prime, SCADA
+Master, and benchmark program components.
+
+For that, you can use the command:
+
+```
+make core
+```
+
+Note that if you are switching from a Confidential Spire configuration, you
+still need to run `make clean` before running `make core`.
 
 ---
 
@@ -267,10 +298,10 @@ generated before the system can run.
 2. Prime
     - To generate keys:
 
-            cd prime/bin; ./gen_keys
+            cd prime/bin; ./gen_keys; ./gen_tpm_keys.sh
 
-    - This creates the following in `prime/bin/keys`:
-        - `NUM_SERVERS` server public-private key pairs (with public keys
+    - The `gen_keys` command creates the following in `prime/bin/keys`:
+       - `NUM_SERVERS` server public-private key pairs (with public keys
           `public_01.key`, `public_02.key`, ... and private keys
           `private_01.key`, `private_02.key`, ...)
         - `NUM_CLIENTS` (default 150) client public-private key pairs (e.g.
@@ -280,13 +311,25 @@ generated before the system can run.
         - `NUM_SERVERS` threshold crypto shares used to generate threshold
           signatures in the Prime protocol (`share0_1.pem`, `share1_1.pem`,
           ...)
-
-    - Each Prime daemon should have access to its own private key and threshold
-      crypto share (i.e. replica 1 should have keys `private_01.key` and
-      `share0_1.pem`) and all public keys.
-    - Note that Prime's `gen_keys` program currently generates SCADA Master
-      threshold crypto shares as well (see below)
-    - The keysizes can be set in Generate function in prime/src/openssl_rsa.c file.
+        - The keysizes can be set in Generate function in prime/src/openssl_rsa.c file.
+        - It also generates keys for configuration manager (public_config_mngr.key and
+           private_config_mngr.key)
+        - Each Prime daemon should have access to its own private key and threshold
+          crypto share (i.e. replica 1 should have keys `private_01.key` and
+          `share0_1.pem`) and all public keys (including configuration manager).
+        - Note that Prime's `gen_keys` program currently generates SCADA Master
+          threshold crypto shares as well (see below)
+ 
+    - The `gen_tpm_keys.sh` command generates the following keys in `prime/bin/tpm_keys`:
+        - `MAX_NUM_SERVERS` server public-private key pairs (with public keys
+          `tpm_public1.key`, `tpm_public2.key`, ... and private keys
+          `tpm_private1.key`, `tpm_private2.key`, ...)
+        - These keys are used during reconfiguration. Note that these are
+	  replacing the permanent hardware-based (TPM) keys. 
+        - Each Prime daemon should have access to its own tpm_private key and 
+	  public key pf configuration manager (public_config_mngr.key).
+        - The Configurtion Manager should have access to its private key
+           (private_config_mngr.key)  and tpm public keys of all replicas(tpm_publicX.key).
 
 3. Spire
     - To generate keys:
@@ -352,6 +395,7 @@ parameters in `common/def.h`
     - 1 external Spines daemon for PLC/RTU proxies to connect to
     - 1 external Spines daemon for HMI to connect to (can be the same as the
       one the proxies connect to)
+    - 1 configuration Spines daemon per site, for PLC/RTU and HMI.
     
    To run (internal Spines network):
 
@@ -361,27 +405,40 @@ parameters in `common/def.h`
     
         cd spines/daemon; ./spines -p SPINES_EXT_PORT -c spines_ext.conf -I IP_ADDRESS
 
-   Note: These commands assume that the internal and external spines
-   configuration files are located at `spines/daemon/spines_int.conf` and
-   `spines/daemon/spines_ext.conf`, respectively
+   To run (configuration Spines network):
+
+        cd spines/daemon; ./spines -p SPINES_CTRL_PORT -c spines_ctrl.conf -I IP_ADDRESS
+
+   Note: These commands assume that the configuration, internal and external spines
+   configuration files are located at`spines/daemon/spines_ctrl.conf`,
+    `spines/daemon/spines_int.conf` and `spines/daemon/spines_ext.conf`, respectively
+
 
 2. Run all SCADA masters
 
    To run (control center):
 
-        cd scada_master; ./scada_master id spines_int_ip:SPINES_INT_PORT spines_ext_ip:SPINES_EXT_PORT
+        cd scada_master; ./scada_master global_id current_id spines_int_ip:SPINES_INT_PORT spines_ext_ip:SPINES_EXT_PORT
 
    To run (data center):
 
-        cd scada_master; ./scada_master id spines_int_ip:SPINES_INT_PORT
+        cd scada_master; ./scada_master global_id current_id spines_int_ip:SPINES_INT_PORT
 
    The `spines_int_ip` and `spines_ext_ip` should be the IP addresses of the
    internal and external Spines daemons this replica connects to. They should
    match addresses specified in `SPINES_INT_SITE_ADDRS` and
    `SPINES_EXT_SITE_ADDRS` in `common/def.h`.
 
-   The `id` should be the ID of this replica, where IDs range from 1 to
-   `NUM_SM`. The code assumes replicas are striped across sites; for example,
+   The `global_id` is the SCADA Master's global ID and ranges from 1 to
+   `MAX_NUM_SERVERS`. Each SCADA Master communicates with Prime using IPC and
+   the IPC PATH uses this global id. So, each SCADA Master and its
+   corresponding Prime daemon with the same `global_id` should be run on same
+   machine. 
+
+   The `current_id` should be the current local ID of this replica.
+   The `current_id` IDs range from 1 to `NUM_SM`. It changes as configurations vary.
+ 
+   The code assumes replicas are striped across sites; for example,
    for 12 replicas and 4 sites (of which 2 sites are control centers) we have:
     - `NUM_SM` = 12, `NUM_SITES` = 4, `NUM_CC` = 2
     - Site 1 (control center): Replicas 1, 5, 9
@@ -393,13 +450,15 @@ parameters in `common/def.h`
 
    To run:
 
-        cd prime/bin; ./prime -i id
+        cd prime/bin; ./prime -i id -g global_id
 
-   The `id` of a Prime daemon must match the id of the SCADA Master that
+   The `global_id` of a Prime daemon must match the `global_id` of the SCADA Master that
    connects to it (and is running on the same machine as it).
 
-   Prime uses its configuration files to find the location of the internal
-   Spines daemon to connect to (see Prime documentation).
+   The `id` should match `current_id` of the scada_master. This is used to represent
+   the ID of the replica in the current configuration and can vary with
+   configurations (e.g. it may change after reconfiguration).
+ 
 
 4. Run PLC/RTU proxies
 
@@ -433,7 +492,58 @@ parameters in `common/def.h`
    installation folder). In the browser's address bar, give the IP address of
    the HMI and the `pv_port` (e.g. 192.168.101.108:5050).
 
-6. (Optional) Run OpenPLC PLCs
+6. (Optional) Run Configuration Manager and Agents (from `/prime/bin` directory)
+   These components are used to support reconfiguration.
+
+   Run a Configuration Agent on each SCADA Master Node, HMI Node, RTU/PLC Node:
+
+   On SCADA Master Node:
+
+        ./config_agent id IP_of_config_spines /tmp/sm_ipc_main s count sm_id_1 sm_id_2 .... sm_id_n
+
+   On RTU/PLC Node:
+
+   - If Benchmarks are run:
+
+        `./config_agent id IP_of_config_spines /tmp/bm_ipc_main p count`
+
+   - If Proxies are run:
+
+        `./config_agent id IP_of_config_spines /tmp/rtu_ipc_main p count`
+
+   On HMI Node:
+
+        ./config_agent id IP_of_config_spines /tmp/hm_ipc_main p count
+
+   - `id` is the configuration agent ID. You should give each configuration
+     agent a unique ID, starting from 1, up to the total number of SCADA
+     Master, RTU/PLC, and HMI agents.
+   - `IP_of_config_spines` is the IP address of control spines deamon to connect to.
+   - The `s` or `p` argument indicates the node type as SCADA Master
+     (`s`) or benchmark, proxy or HMI (`p`)
+   - `count` refers to number of processes running on the node. For example:
+        - If there is one SCADA Master (say with `global_id` 5) running on a
+          node we can start config agent as:
+                `./config_agent 5 /tmp/sm_ipc_main s 1 5`
+        - However, if there are multiple SCADA Masters running on the node (say with `global_ids` 1,4,7)
+          the we run config agent on that node as:
+                `./config_agent 1 /tmp/sm_ipc_main s 3 1 4 7`
+        - Similarly, if there are 10 benchmarks or proxies on the node we run
+          config agents with `count` as 10
+    - The hmi_ids are: 1 for JHU, 2 for PNNL and 3 for EMS scenario (defined in `common/scada_packets.h`). 
+      So, count 3 can be used for all 3 scenarios.	
+
+    Run Configuration Manager:
+
+        ./config_manager configuration_dir_path
+
+	- We typically run the Configuration Manager on same node as HMIs and its IP is define in `prime/src/def.h`.
+        - The `configuration_dir_path` refers to a directory with two files
+          (`conf_def.txt` and `new_conf.txt`) that are used to generate new configuraions.
+        - Examples of these files for configs 6+6+6, 6, and 6-6 are provided in
+          the `prime/bin` directory.
+
+7. (Optional) Run OpenPLC PLCs
 
         cd plcs/pnnl_plc; sudo ./openplc -m 502 -d 20000
 
@@ -455,7 +565,7 @@ parameters in `common/def.h`
    documentation](http://www.openplcproject.com/plcopen-editor) for
    instructions on creating your own PLCs
 
-7. (Optional) Run Benchmark Clients
+8. (Optional) Run Benchmark Clients
 
    We also provide a benchmark client that can be used to test and measure the
    core of the system without running an HMI, PLC/RTU proxies, or PLCs/RTUs.
@@ -474,21 +584,23 @@ parameters in `common/def.h`
    and will exit after completing `num_polls` updates. Benchmark client ids
    range from 0 to `NUM_RTU - 1`.
 
-### (Optional) Setup Intrusion Detection System
+9. (Optional) Setup Intrusion Detection System
 
-The Intrusion Detection was built as a standalone component. See inside the `ids` folder for details
-on setup and running.
+   The Intrusion Detection was built as a standalone component. See inside the
+   `ids` folder for details on setup and running.
 
 ### Example
 
 The default configuration files included with Spire create a system with:
 
 - 6 control-center sites, each consisting of a single machine that runs the
-  following four processes:
+  following six processes:
     - 1 external Spines daemon
     - 1 internal Spines daemon
+    - 1 configuration Spines daemon
     - 1 SCADA Master
     - 1 Prime daemon
+    - 1 Configuration Agent
 - 1 site with a single machine running the PLC/RTU proxy + 17 emulated PLCs (10
   for the `jhu` system, 1 for the `pnnl/heco` system, and 6 for the `ems`
   system)
@@ -511,48 +623,61 @@ To run this example, execute the following:
 
 - On control center 1 machine:
 
+        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
         cd spines/daemon; ./spines -p 8100 -c spines_int.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
-        cd scada_master; ./scada_master 1 192.168.101.101:8100 192.168.101.101:8120
-        cd prime/bin; ./prime -i 1
+        cd scada_master; ./scada_master 1 1 192.168.101.101:8100 192.168.101.101:8120
+        cd prime/bin; ./prime -i 1 -g 1
+        cd prime/bin;./config_agent 1 192.168.101.101 /tmp/sm_ipc_main s 1 1
 
 - On control center 2 machine:
 
+        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
         cd spines/daemon; ./spines -p 8100 -c spines_int.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
-        cd scada_master; ./scada_master 2 192.168.101.102:8100 192.168.101.102:8120
-        cd prime/bin; ./prime -i 2
+        cd scada_master; ./scada_master 2 2 192.168.101.102:8100 192.168.101.102:8120
+        cd prime/bin; ./prime -i 2 -g 2
+        cd prime/bin;./config_agent 2 192.168.101.102 /tmp/sm_ipc_main s 2 2
 
 - On control center 3 machine:
 
+        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
         cd spines/daemon; ./spines -p 8100 -c spines_int.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
-        cd scada_master; ./scada_master 3 192.168.101.103:8100 192.168.101.103:8120
-        cd prime/bin; ./prime -i 3
+        cd scada_master; ./scada_master 3 3 192.168.101.103:8100 192.168.101.103:8120
+        cd prime/bin; ./prime -i 3 -g 3
+        cd prime/bin;./config_agent 3 192.168.101.103 /tmp/sm_ipc_main s 3 3
 
 - On control center 4 machine:
 
+        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
         cd spines/daemon; ./spines -p 8100 -c spines_int.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
-        cd scada_master; ./scada_master 4 192.168.101.104:8100 192.168.101.104:8120
-        cd prime/bin; ./prime -i 4
+        cd scada_master; ./scada_master 4 4 192.168.101.104:8100 192.168.101.104:8120
+        cd prime/bin; ./prime -i 4 -g 4
+        cd prime/bin;./config_agent 4 192.168.101.104 s 4 4
 
 - On control center 5 machine:
 
+        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
         cd spines/daemon; ./spines -p 8100 -c spines_int.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
-        cd scada_master; ./scada_master 5 192.168.101.105:8100 192.168.101.105:8120
-        cd prime/bin; ./prime -i 5
+        cd scada_master; ./scada_master 5 5 192.168.101.105:8100 192.168.101.105:8120
+        cd prime/bin; ./prime -i 5 -g 5
+        cd prime/bin;./config_agent 5 192.168.101.105 /tmp/sm_ipc_main s 5 5
 
 - On control center 6 machine:
 
+        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
         cd spines/daemon; ./spines -p 8100 -c spines_int.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
-        cd scada_master; ./scada_master 6 192.168.101.106:8100 192.168.101.106:8120
-        cd prime/bin; ./prime -i 6
+        cd scada_master; ./scada_master 6 6 192.168.101.106:8100 192.168.101.106:8120
+        cd prime/bin; ./prime -i 6 -g 6
+        cd prime/bin;./config_agent 6 192.168.101.106 /tmp/sm_ipc_main s 6 6
 
 - On the PLC/RTU proxy machine:
 
+        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd proxy; ./proxy 0 192.168.101.107:8120 1
         ...
@@ -569,19 +694,45 @@ To run this example, execute the following:
         cd plcs/ems_hydro; sudo ./openplc -m 516 -d 20014
         cd plcs/ems_solar; sudo ./openplc -m 517 -d 20015
         cd plcs/ems_wind; sudo ./openplc -m 518 -d 20016
+        cd prime/bin;./config_agent 7 192.168.101.107 /tmp/rtu_ipc_main p 10
 
 - On the HMI machine:
 
+        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
+        cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd jhu_hmi; ./jhu_hmi 192.168.101.108:8120 -port=5051
         cd pnnl_hmi; ./pnnl_hmi 192.168.101.108:8120 -port=5052
         cd ems_hmi; ./ems_hmi 192.168.101.108:8120 -port=5053
+        cd prime/bin;./config_agent 8 192.168.101.108 /tmp/hmi_ipc_main p 3
 
-        Connect GUIs by running the pvbrowser application (located in main pvb
-        installation folder) three times. In one browser's address bar, type
-        192.168.101.108:5051, in another type 192.168.101.108:5052, and in the
-        last type 192.168.101.108:5053.
+    Connect GUIs by running the pvbrowser application (located in main pvb
+    installation folder) three times. In one browser's address bar, type
+    `192.168.101.108:5051`, in another type `192.168.101.108:5052`, and in the
+    last type `192.168.101.108:5053`.
 
-This corresponds to the `conf_6` configuration in the `example_conf` directory.
-Two additional example configurations are provided in that directory: `conf_4`
-(4 replicas, default configuration in Spire 1.0) and `conf_3+3+3+3` (12
-replicas divided across 4 sites). See `example_conf/README.txt` for details.
+	This corresponds to the `conf_6` configuration (default) in the `example_conf` directory.
+	Three additional example configurations are provided in that directory: `conf_4`
+	(4 replicas), `conf_3+3+3+3` (12 replicas divided across 4 sites) and `conf_6+6+6` 
+        (18 relicas across 3 sites). See `example_conf/README.txt` for details.
+
+- To perform reconfiguration, you can use the Configuration Manager with the
+  following commands on the HMI Machine (from prime/bin directory):
+
+    To change to config 6+6+6:
+
+        cd prime/bin;./config_manager conf_666
+
+    To change to config 6 (CC1):
+
+        cd prime/bin;./config_manager conf_6
+
+    To change to config 6(CC2):
+
+        cd prime/bin;./config_manager 2cc_conf_6
+
+
+    The `conf_666`, `conf_6` and `2cc_conf_6` are directories with the relevant
+    configurations. Examples of these are provided in the
+    `prime/bin` directory. Note that the IPs, Ports and ID in
+    `new_conf.txt` file of these directories need to be modified to match the
+    testbed.

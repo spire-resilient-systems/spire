@@ -1,8 +1,8 @@
 Here we provide example configuration files for Spire for the Substation.
 
 You should update the IP addresses in these files to match your testbed
-environment. In this example, we use 6 machines with IP addresses
-192.168.1.101-192.168.1.10
+environment. In this example, we use 5 machines with IP addresses
+192.168.101.101-192.168.101.105
 
 To use this configuration, copy the provided files to the correct locations.
 That is, copy:

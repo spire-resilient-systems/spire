@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2023 Johns Hopkins University.
+ * Copyright (c) 2017-2024 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -53,11 +53,14 @@
 
 #include "net_wrapper.h"
 #include <stdio.h>
+#include <openssl/rsa.h>
 //#include "arch.h"
 
 /* Public definitions */
 #define RSA_CLIENT         1
 #define RSA_SERVER         2
+#define RSA_CONFIG_MNGR    3
+#define RSA_CONFIG_AGENT   4
 
 /* Public functions */
 void OPENSSL_RSA_Init();
@@ -71,7 +74,11 @@ int OPENSSL_RSA_Verify( const unsigned char *message, size_t message_length,
  
 void OPENSSL_RSA_Read_Keys( int32u my_number, int32u type, const char *keys_dir ); 
 
+void OPENSSL_RSA_Reload_Prime_Keys( int32u my_number, int32u type, const char *keys_dir,int32u curr_servers ); 
+
 void OPENSSL_RSA_Generate_Keys( const char *keys_dir ); 
+
+void OPENSSL_RSA_Generate_Keys_with_args(int count, const char *keys_dir ); 
 
 void OPENSSL_RSA_Make_Signature( const unsigned char *digest_value, 
 				 unsigned char *signature ); 
@@ -88,4 +95,14 @@ void OPENSSL_RSA_Make_Digest( const void *buffer, size_t buffer_size,
 
 void OPENSSL_RSA_Print_Digest( unsigned char *digest_value ); 
 
+
+int OPENSSL_RSA_Get_KeySize(unsigned char *pubKeyFile);
+
+
+void OPENSSL_RSA_Decrypt(unsigned char  *pvtKeyFile,unsigned char *data, int data_len,unsigned char *decrypted_data);
+
+
+int OPENSSL_RSA_Encrypt(unsigned char *pubKeyFile,unsigned char *data, int data_len, unsigned char * encrypted_data);
+
+int getFileSize(unsigned char * fileName);
 #endif

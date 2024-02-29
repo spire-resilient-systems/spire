@@ -45,8 +45,13 @@ fi
 # Copy configuration files to the right locations
 cp $Confdir/spines_int.conf $SPINES_DIR/daemon/spines_int.conf         && \
 cp $Confdir/spines_ext.conf $SPINES_DIR/daemon/spines_ext.conf         && \
+cp $Confdir/scada_def.h $SCADA_DIR/common/def.h                        && \
 cp $Confdir/address.config $PRIME_DIR/bin/address.config               && \
 cp $Confdir/spines_address.config $PRIME_DIR/bin/spines_address.config && \
 cp $Confdir/prime_def.h $PRIME_DIR/src/def.h                           && \
-cp $Confdir/scada_def.h $SCADA_DIR/common/def.h                        && \
-cp $Confdir/config.json $SCADA_DIR/config/config.json
+cp $Confdir/config.json $SCADA_DIR/config/config.json                  
+
+if [ -f $Confdir/spines_ctrl.conf ]
+then
+	cp $Confdir/spines_ctrl.conf $SPINES_DIR/daemon/spines_ctrl.conf      
+fi 

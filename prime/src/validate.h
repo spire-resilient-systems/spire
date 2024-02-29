@@ -21,14 +21,17 @@
  *   John Lane            johnlane@cs.jhu.edu
  *   Marco Platania       platania@cs.jhu.edu
  *   Amy Babay            babay@pitt.edu
- *   Thomas Tantillo      tantillo@cs.jhu.edu 
- *
+ *   Thomas Tantillo      tantillo@cs.jhu.edu
  *
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
- *   Jeff Seibert         View Change protocol
+ *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
+ * 
+ *
  *      
- * Copyright (c) 2008-2023
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -57,6 +60,7 @@
 #define VAL_SIG_TYPE_MERKLE     6
 #define VAL_SIG_TYPE_TPM_SERVER 7
 #define VAL_SIG_TYPE_TPM_MERKLE 8
+#define VAL_SIG_TYPE_NM         9   // MK Reconf: Network manager valid signature type
 
 /* Validation Functions */
 
