@@ -414,7 +414,7 @@ int 	E_dequeue( void (* func)( int code, void *data ), int code,
 	return( -1 );
 }
 
-void    E_dequeue_all_time_events()
+void    E_dequeue_all_time_events( void )
 {
     time_event *t_ptr;
 
