@@ -23,9 +23,10 @@ Power grid SCADA consists of two levels: a control center level and a
 substation level. 
 
 The control-center SCADA monitors and controls many substations and Remote
-Terminal Units (RTUs) and/or Programmable Logic Controllers (PLCs). The control-center-level operations typically have a latency requirement of 100ms-200ms. The
-substation-level critical protection operations have latency requirements as
-low as a quarter-power cycle (For 60Hz, this is 4.167ms). 
+Terminal Units (RTUs) and/or Programmable Logic Controllers (PLCs). The
+control-center-level operations typically have a latency requirement of
+100ms-200ms. The substation-level critical protection operations have latency
+requirements as low as a quarter-power cycle (For 60Hz, this is 4.167ms). 
 
 We have developed Spire as a toolkit that contains modules to support
 intrusion-tolerance for power grid control systems at both the control-center
@@ -58,16 +59,16 @@ devices that use the Modbus or DNP3 communication protocols over IP. We use
 a standalone Machine Learning-based Network Intrusion Detection System that is
 built to work with Spire.
 
-Additionally, Version 2.1 (currently in beta release) adds reconfiguration
-support to Spire. Reconfiguration can be used to improve the operational
-profile of a system. For example: With reconfiguration, if the current system
-configuration (say configuration '6+6+6') becomes non-operational due to loss
-of a control center and data center but at least one control center remains up,
-the system can be reconfigured to that one control center (configuration '6')
-and resume operations. It is also possible to reconfigure preemptively when
-needed (e.g. if one control center becomes non-operational, it is better to
-reconfigure the system to configuration '6' in the remaining control center).
-The reconfiguration modules are implemented as part of the Prime replication
+Additionally, Version 2.1 adds reconfiguration support to Spire.
+Reconfiguration can be used to improve the operational profile of a system. For
+example: With reconfiguration, if the current system configuration (say
+configuration '6+6+6') becomes non-operational due to loss of a control center
+and data center but at least one control center remains up, the system can be
+reconfigured to that one control center (configuration '6') and resume
+operations. It is also possible to reconfigure preemptively when needed (e.g.
+if one control center becomes non-operational, it is better to reconfigure the
+system to configuration '6' in the remaining control center).  The
+reconfiguration modules are implemented as part of the Prime replication
 engine, and include a configuration network, configuration manager and
 configuration agent. The details of the reconfiguration mechanism are in
 `README_Spire.md` and README of Prime.
@@ -151,7 +152,7 @@ Spire for the Substation: `README_Spire_Substation.md`
 
 ## 5. Version Notes
 
-Spire 2.1 Beta adds reconfiguration support to Spire.
+Spire 2.1 adds reconfiguration support to Spire.
 
 Spire 2.0 extends the Spire 1.3 to support real-time
 Byzantine resilience of power grid substations. This release includes Spire for

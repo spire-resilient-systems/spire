@@ -29,7 +29,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2023
+ * Copyright (c) 2008-2024
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -81,7 +81,7 @@ int main(int argc, char** argv)
 
   Alarm( PRINT, "/===========================================================================\\\n");
   Alarm( PRINT, "| Prime                                                                     |\n");
-  Alarm( PRINT, "| Copyright (c) 2010 - 2020 Johns Hopkins University                        |\n"); 
+  Alarm( PRINT, "| Copyright (c) 2010 - 2024 Johns Hopkins University                        |\n"); 
   Alarm( PRINT, "| All rights reserved.                                                      |\n");
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| Prime is licensed under the Prime Open-Source License.                    |\n");
@@ -99,11 +99,13 @@ int main(int argc, char** argv)
   Alarm( PRINT, "| Major Contributors:                                                       |\n");
   Alarm( PRINT, "|    Brian Coan                Design of the Prime algorithm                |\n");
   Alarm( PRINT, "|    Jeff Seibert              View Change protocol                         |\n");
+  Alarm( PRINT, "|    Sahiti Bommareddy         Reconfiguration                              |\n");
+  Alarm( PRINT, "|    Maher Khan                Reconfiguration                              |\n");
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| WWW:     www.dsn.jhu/prime   www.dsn.jhu.edu                              |\n");
   Alarm( PRINT, "| Contact: prime@dsn.jhu.edu                                                |\n");
   Alarm( PRINT, "|                                                                           |\n");
-  Alarm( PRINT, "| Version 4.0 Beta, Built November 8, 2023                                  |\n"); 
+  Alarm( PRINT, "| Version 4.0, Built February 29, 2024                                      |\n"); 
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use       |\n");
   Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                 |\n");

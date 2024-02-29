@@ -41,4 +41,8 @@ The README.txt in each configuration directory specifies the example IP address
 we chose for each system component. You may need to update the IP addresses in
 the provided configuration files to match your own environment.
 
-Note: The confidential_spire_conf_4+4+3+3 is an example configuration of Confidential Spire and ss_conf_4 is an example for Spire for the Substation. After coping the configurations recompilation is needed in both cases. Instructions for compilation are in their respective READMEs in top-level directory.
+Note: The confidential_spire_conf_4+4+3+3 is an example configuration of
+Confidential Spire and ss_conf_4 is an example for Spire for the Substation.
+After coping the configurations recompilation is needed in both cases.
+Instructions for compilation are in their respective READMEs in top-level
+directory.

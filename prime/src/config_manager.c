@@ -326,7 +326,8 @@ void construct_keys_messages(int curr_server_count,char *base_dir){
 int main(int argc, char **argv)
 {
     setlinebuf(stdout);
-    Alarm_set_types(PRINT|STATUS|DEBUG);
+    Alarm_set_types(PRINT);
+    //Alarm_set_types(STATUS|DEBUG);
     Usage(argc,argv);
     OPENSSL_RSA_Init();
     OPENSSL_RSA_Read_Keys(0,RSA_CONFIG_MNGR,"./keys");
