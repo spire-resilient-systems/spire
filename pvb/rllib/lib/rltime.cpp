@@ -1,5 +1,5 @@
 /***************************************************************************
-                          rltime.cpp  -  description
+                      rltime_v1.cpp  -  description
                              -------------------
     begin                : Tue Jan 02 2001
     copyright            : (C) 2001 by R. Lehrig
@@ -74,6 +74,11 @@ rlTime::~rlTime()
 {
 }
 
+const char *rlTime::version()
+{
+  return __FILE__;
+}
+
 void rlTime::setTimeFromString(const char *time_string)
 {
   year        = 0;
@@ -100,13 +105,237 @@ void rlTime::setTimeFromIsoString(const char *iso_time_string)
 
 const char *rlTime::getTimeString()
 {
-  sprintf(time_string,"%04d-%02d-%02d %02d:%02d:%02d %04d",year,month,day, hour,minute,second, millisecond);
+  sprintf(time_string,"%04d-%02d-%02d %02d:%02d:%02d %03d",year, month, day, hour, minute, second, millisecond);
   return time_string;
 }
 
 const char *rlTime::getIsoTimeString()
 {
-  sprintf(time_string,"%04d-%02d-%02dT%02d:%02d:%02d.%d",year,month,day, hour,minute,second, millisecond);
+  sprintf(iso_time_string,"%04d-%02d-%02dT%02d:%02d:%02d.%03d",year, month, day, hour, minute, second, millisecond);
+  return iso_time_string;
+}
+
+/*! <pre>
+ * Returns the datetime as a string. The format parameter determines the format of the result string.
+ *
+ * These expressions may be used for the date:
+ * Expression	Output
+ * d	the day as number without a leading zero (1 to 31)
+ * dd	the day as number with a leading zero (01 to 31)
+ * M	the month as number without a leading zero (1-12)
+ * MM	the month as number with a leading zero (01-12)
+ * MMM	the abbreviated localized month name (e.g. 'Jan' to 'Dec').
+ * yy	the year as two digit number (00-99)
+ * yyyy	the year as four digit number
+ *
+ * These expressions may be used for the time:
+ * Expression	Output
+ * h	the hour without a leading zero (1 to 12 if AM/PM display)
+ * hh	the hour with a leading zero (01 to 12 if AM/PM display)
+ * H	the hour without a leading zero (0 to 23, even with AM/PM display)
+ * HH	the hour with a leading zero (00 to 23, even with AM/PM display)
+ * m	the minute without a leading zero (0 to 59)
+ * mm	the minute with a leading zero (00 to 59)
+ * s	the whole second without a leading zero (0 to 59)
+ * ss	the whole second with a leading zero where applicable (00 to 59)
+ * z	the fractional part of the second, to go after a decimal point, without trailing zeroes (0 to 999).
+ * zzz	the fractional part of the second, to millisecond precision, including trailing zeroes where applicable (000 to 999).
+ * AP or A	use AM/PM display. A/AP will be replaced by either "AM" or "PM".
+ * ap or a	use am/pm display. a/ap will be replaced by either "am" or "pm".
+ *
+ * All other input characters will be copyed
+ *
+ * Example format strings (assumed that the rlTime is 21 May 2001 14:13:09.120):
+ * Format	Result
+ * dd.MM.yyyy	    21.05.2001
+ * ddd MMMM d yy	Tue May 21 01
+ * hh:mm:ss.zzz	  14:13:09.120
+ * hh:mm:ss.z	    14:13:09.12
+ * h:m:s ap	      2:13:9 pm
+ </pre> */
+const char *rlTime::toString(const char *format)
+{
+  // See:
+  // https://doc.qt.io/qt-5/qdatetime.html#toString
+  //
+  char buf[16];
+  char *dest = time_string;
+  while(*format != '\0')
+  {
+    if     (strncmp(format,"dd",2) == 0)
+    {
+      sprintf(buf,"%02d",day);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 2;
+    }
+    else if(strncmp(format,"d",1) == 0)
+    {
+      sprintf(buf,"%d",day);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 1;
+    }
+    else if(strncmp(format,"MMM",3) == 0)
+    {
+      buf[0] = '\0';
+      if(month == 1) strcpy(buf,"Jan");
+      if(month == 2) strcpy(buf,"Feb");
+      if(month == 3) strcpy(buf,"Mar");
+      if(month == 4) strcpy(buf,"Apr");
+      if(month == 5) strcpy(buf,"May");
+      if(month == 6) strcpy(buf,"Jun");
+      if(month == 7) strcpy(buf,"Jul");
+      if(month == 8) strcpy(buf,"Aug");
+      if(month == 9) strcpy(buf,"Sep");
+      if(month == 10) strcpy(buf,"Oct");
+      if(month == 11) strcpy(buf,"Nov");
+      if(month == 12) strcpy(buf,"Dec");
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 3;
+    }
+    else if(strncmp(format,"MM",2) == 0)
+    {
+      sprintf(buf,"%02d",month);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 2;
+    }
+    else if(strncmp(format,"M",1) == 0)
+    {
+      sprintf(buf,"%d",month);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 1;
+    }
+    else if(strncmp(format,"yyyy",4) == 0)
+    {
+      sprintf(buf,"%4d",year);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 4;
+    }
+    else if(strncmp(format,"yy",2) == 0)
+    {
+      sprintf(buf,"%4d",year);
+      strcpy(dest,&buf[2]);
+      dest   += strlen(&buf[2]);
+      format += 2;
+    }
+    else if(strncmp(format,"hh",2) == 0)
+    {
+      if     (hour >  12) sprintf(buf,"%02d", hour - 12);
+      else if(hour == 0)  sprintf(buf,"%02d", 12);
+      else                sprintf(buf,"%02d", hour);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 2;
+    }
+    else if(strncmp(format,"h",1) == 0)
+    {
+      if     (hour >  12) sprintf(buf,"%2d", hour - 12);
+      else if(hour == 0)  sprintf(buf,"%2d", 12);
+      else                sprintf(buf,"%2d", hour);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 1;
+    }
+    else if(strncmp(format,"HH",2) == 0)
+    {
+      sprintf(buf,"%02d",hour);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 2;
+    }
+    else if(strncmp(format,"H",1) == 0)
+    {
+      sprintf(buf,"%d",hour);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 1;
+    }
+    else if(strncmp(format,"mm",2) == 0)
+    {
+      sprintf(buf,"%02d",minute);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 2;
+    }
+    else if(strncmp(format,"m",1) == 0)
+    {
+      sprintf(buf,"%d",minute);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 1;
+    }
+    else if(strncmp(format,"ss",2) == 0)
+    {
+      sprintf(buf,"%02d",second);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 2;
+    }
+    else if(strncmp(format,"s",1) == 0)
+    {
+      sprintf(buf,"%d",second);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 1;
+    }
+    else if(strncmp(format,"zzz",3) == 0)
+    {
+      sprintf(buf,"%03d",millisecond);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 3;
+    }
+    else if(strncmp(format,"z",1) == 0)
+    {
+      sprintf(buf,"%d",millisecond);
+      strcpy(dest,buf);
+      dest   += strlen(buf);
+      format += 1;
+    }
+    else if(strncmp(format,"AP",2) == 0)
+    {
+      if     (hour == 0) strcpy(dest,"PM");
+      else if(hour < 13) strcpy(dest,"AM");
+      else               strcpy(dest,"PM");
+      dest   += strlen("AM");
+      format += 2;
+    }
+    else if(strncmp(format,"ap",2) == 0)
+    {
+      if     (hour == 0) strcpy(dest,"pm");
+      else if(hour < 13) strcpy(dest,"am");
+      else               strcpy(dest,"pm");
+      dest   += strlen("am");
+      format += 2;
+    }
+    else if(strncmp(format,"A",1) == 0)
+    {
+      if     (hour == 0) strcpy(dest,"PM");
+      else if(hour < 13) strcpy(dest,"AM");
+      else               strcpy(dest,"PM");
+      dest   += strlen("AM");
+      format += 1;
+    }
+    else if(strncmp(format,"a",1) == 0)
+    {
+      if     (hour == 0) strcpy(dest,"pm");
+      else if(hour < 13) strcpy(dest,"am");
+      else               strcpy(dest,"pm");
+      dest   += strlen("am");
+      format += 1;
+    }
+    else
+    {
+      *dest++ = *format++;
+    }
+    if(dest - time_string + 6 > (int) sizeof(time_string)) break;
+  }
+  *dest = '\0';
   return time_string;
 }
 
@@ -436,11 +665,13 @@ rlTime rlTime::operator-(rlTime &time)
   else
   {
     //printf("before christ was born. now also ok\n");
+    /*
                       { t.month++;  t.day         -= 30;   }
     if(t.day    < 30) { t.day++;    t.hour        -= 24;   }
     if(t.hour   < 0 ) { t.hour++;   t.minute      -= 60;   }
     if(t.minute < 0 ) { t.minute++; t.second      -= 60;   } 
     if(t.second < 0 ) { t.second++; t.millisecond -= 1000; }
+    */
   }
 
   return t;
@@ -531,9 +762,11 @@ double rlTime::secondsSinceEpoche()
   memset(&begin,0,sizeof(tm));
   memset(&test,0,sizeof(tm));
 
+  // If timeptr references a date before midnight, January 1, 1970, 
+  // or if the calendar time cannot be represented ...
   begin.tm_year = 70;
   begin.tm_mon  = 0;
-  begin.tm_mday = 1;
+  begin.tm_mday = 2; // 1; // fix due to error report by George Zempekis
   begin.tm_hour = 0;
   begin.tm_min  = 0;
   begin.tm_sec  = 0;

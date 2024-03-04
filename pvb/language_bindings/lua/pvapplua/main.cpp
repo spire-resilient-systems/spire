@@ -12,12 +12,6 @@
 
 int trace = 0;
 
-const char *rltranslate(char const *txt, char const **def) // dummy
-{
-  if(def == NULL) return txt;
-  return txt;
-}
-
 // Include the Lua API header files
 #ifdef __cplusplus
 extern "C" {
@@ -46,7 +40,8 @@ int luaMain()
 
   // initialize Lua
   if(trace) printf("lua_open\n");
-  L = lua_open();
+  // L = lua_open();
+  L = luaL_newstate();
   luaL_openlibs(L);
 
   // load our custom libs

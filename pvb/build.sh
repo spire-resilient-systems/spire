@@ -1,9 +1,18 @@
 #!/bin/bash
+./rlbuild-all.sh
+exit
+#the old build.sh is following:
+
 ########################################################
 # make pvbrowser                                       #
 # if you want to use VTK uncommet CONFIG += USE_VTK in #
 # pvrowser/pvbrowser.pro                               #
 ########################################################
+
+echo "which qmake"
+which qmake
+echo "which qmake-qt5"
+which qmake-qt5
 
 # detect real OS on different linux distries
 export PVB_OSTYPE="unknown"
@@ -14,6 +23,9 @@ if [ "$OSTYPE" == "gnu-linux" ]; then
   export PVB_OSTYPE="linux"
 fi
 if [ "$OSTYPE" == "linux-gnu" ]; then
+  export PVB_OSTYPE="linux"
+fi
+if [ "$2" == "buildservice" ]; then
   export PVB_OSTYPE="linux"
 fi
 
@@ -42,7 +54,9 @@ if [ "$HOME" != "/home/lehrig" ]; then
   echo "######################################"
   echo "# then remove the exit command below #"
   echo "######################################"
+if [ "$2" != "homebrew" ]; then
   exit
+fi
 fi
 fi
 fi
@@ -76,7 +90,7 @@ cd ..
 ../qmake.sh qwt.pro 
 make $1
 cd ..
-cp qwt/designer/plugins/designer/libqwt_designer_plugin.so designer/plugins/
+cp qwt/designer/plugins/designer/libqwt_designer_plugin.* designer/plugins/
 cd pvbrowser
 ../qmake.sh pvbrowser.pro
 make $1
@@ -145,6 +159,11 @@ if [ "$PVB_OSTYPE" == "linux" ]; then
 cd language_bindings
 ./build_lua_interface.sh
 ./build_python_interface.sh
+cd ..
+fi
+if [ "$2" == "homebrew" ]; then
+cd language_bindings
+./build_lua_interface.sh
 cd ..
 fi
 echo "################################################################"

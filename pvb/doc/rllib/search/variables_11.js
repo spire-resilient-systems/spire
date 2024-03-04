@@ -1,6 +1,10 @@
 var searchData=
 [
   ['s',['s',['../classrlModbus.html#add9b1e7cbb325c771bdfe1ebf780d3b5',1,'rlModbus::s()'],['../unionSWAP.html#ab420087810b265c30db08a619cb24c9b',1,'SWAP::s()'],['../classrlSocket.html#a3f70186af86837a39592e4bf18076d24',1,'rlSocket::s()'],['../classrlSvgAnimator.html#a406f460dcef925a5f5f406f3b8ad46b9',1,'rlSvgAnimator::s()'],['../classrlSvgCat.html#aca36c1d5f0e2f4eb0622cbbfafd2719b',1,'rlSvgCat::s()'],['../classrlUdpSocket.html#a19e7817ca9eacaef8b686496bfe9a36c',1,'rlUdpSocket::s()']]],
+  ['s_5fchar',['s_char',['../unionrlModbus_1_1DATA.html#a6369ce421cc7c4a284eb9172cc4b948d',1,'rlModbus::DATA']]],
+  ['s_5ffloat',['s_float',['../unionrlModbus_1_1DATA.html#af0ab48e0586f00f0407d38e359c97580',1,'rlModbus::DATA']]],
+  ['s_5fint',['s_int',['../unionrlModbus_1_1DATA.html#acfa342c5b7537fac9a7b62a792bd4bdc',1,'rlModbus::DATA']]],
+  ['s_5fshort',['s_short',['../unionrlModbus_1_1DATA.html#a0b30c32adec2a326364b70805a1aea95',1,'rlModbus::DATA']]],
   ['saddr',['saddr',['../structrlEIBnetIP_1_1EIB__TEL.html#affbb6d5e4edcaf6d45d623c25d9e14d5',1,'rlEIBnetIP::EIB_TEL::saddr()'],['../classrlEIBnetIP.html#a1ba03e5e8658851e2fb9dfbc036c492d',1,'rlEIBnetIP::saddr()']]],
   ['save_5ftermios',['save_termios',['../classrlSerial.html#a7f311c2650a7c0d7e16485c09472d95c',1,'rlSerial']]],
   ['sched_5fpriority',['sched_priority',['../struct____sched__param.html#a3e023c3e43ac0c9e850a477c455691f3',1,'__sched_param']]],
@@ -36,6 +40,10 @@ var searchData=
   ['start',['start',['../structADD.html#adfc0e8ed21baba27dc88ab557f6eab46',1,'ADD']]],
   ['start_5fadr',['start_adr',['../structrlSiemensTCP_1_1WH.html#ad03cc7dd2b7c632d02a320c8e86f81f6',1,'rlSiemensTCP::WH::start_adr()'],['../structrlSiemensTCP_1_1FH.html#a5d914a10fd526ccc52072c19a8c05dee',1,'rlSiemensTCP::FH::start_adr()']]],
   ['starthtml',['startHtml',['../classrlHtmlDir.html#af380e03e5ec7cd9dcbcc98b0a95a2aac',1,'rlHtmlDir']]],
+  ['startswithclosebracket',['startsWithCloseBracket',['../structrlJSONrecord.html#ab37b33667adead6e2e4372ef2633b31a',1,'rlJSONrecord']]],
+  ['startswithendarray',['startsWithEndArray',['../structrlJSONrecord.html#ae7cb5cbc98c8157109d7aa058b08bcc6',1,'rlJSONrecord']]],
+  ['startswithopenbracket',['startsWithOpenBracket',['../structrlJSONrecord.html#ae6a3eb8613e61d7542526b04f0aa2747',1,'rlJSONrecord']]],
+  ['startswithtext',['startsWithText',['../structrlJSONrecord.html#affecc274d85bd02f829539e6579c2d50',1,'rlJSONrecord']]],
   ['startup_5fcommand',['startup_command',['../classrlPcontrol.html#a3e954e61d0f49656d597148b4aa607e4',1,'rlPcontrol']]],
   ['state',['state',['../classrl3964R.html#a3aea9acd62a94ce34117c1bee0c3af0e',1,'rl3964R']]],
   ['statestr',['statestr',['../rl3964r_8cpp.html#a9dad132ed0b39c633ebbd3aca529e954',1,'rl3964r.cpp']]],
