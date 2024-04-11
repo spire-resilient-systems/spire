@@ -24,6 +24,19 @@
 *.so.*
 **/.libs/
 
+#pvb Object files ignore
+*.obj
+*.OBJ
+*.dll
+*.DLL
+*.lib
+*.LIB
+.qmake.stash
+moc_*.h
+
+pvb/browserplugin/murx/
+
+
 # Autoconf log files
 **/config.log
 **/config.status
@@ -73,8 +86,8 @@ spines/testprogs/u_flooder
 spines/controlprogs/setdissem
 spines/controlprogs/setlink
 
-pvb/pvbrowser/pvbrowser
-pvb/pvserver/processviewserver
+
+
 
 plcs/*/openplc
 
@@ -221,10 +234,14 @@ pvb/pvdevelop/ui_dlgproperty.h
 pvb/pvdevelop/ui_dlgsearchreplace.h
 pvb/pvserver/pvsid.mak
 pvb/pvserver/pvsmt.mak
+pvb/pvserver/libpvsid.so.1.0.0
+pvb/pvserver/libpvsmt.so.1.0.0
 pvb/qwt/designer/moc/
 pvb/qwt/designer/resources/
 pvb/qwt/src/moc/
 pvb/rllib/rlsvg/rlsvgcat
+pvb/rllib/foreign
+pvb/rllib/lib/librllib.so.1.0.0
 pvb/fake_qmake/fake_qmake
 pvb/rllib/rlfind/rlfind
 pvb/rllib/rlhtml2pdf/rlhtml2pdf
@@ -232,6 +249,16 @@ pvb/language_bindings/lua/pvapplua/pvapplua
 pvb/language_bindings/lua/pvslua/pvslua
 pvb/rllib/rlhistory/rlhistory
 pvb/start_pvbapp/start_pvbapp
+pvb/win-mingw/bin/start_pvbapp.exe
+pvb/win-mingw/bin/SetupRegistry.exe
+pvb/win-mingw/bin/pvbrowser.exe
+pvb/win-mingw/bin/pvdevelop.exe
+pvb/win-mingw/bin/rlhistory.exe
+pvb/win-mingw/bin/fake_qmake.exe
+pvb/win-mingw/bin/rlsvgcat.exe
+
+
+
 
 # Compiled Executables
 relay_emulator/gen_event
@@ -251,6 +278,9 @@ benchmarks_ss/benchmark
 benchmarks_ss/mil_runs
 benchmarks_ss/*log*
 benchmarks_ss/*out*
+pvb/pvbrowser/pvbrowser
+pvb/pvdevelop/pvdevelop
+pvb/pvserver/processviewserver
 
 #libiec61850 misc
 libiec61850/.install

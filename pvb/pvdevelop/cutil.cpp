@@ -441,7 +441,7 @@ void generateInitialProject(const char *name)
   fprintf(fout,"macx:LIBS         += /opt/pvb/pvserver/libpvsmt.a /usr/lib/libpthread.dylib\n");
   fprintf(fout,"#macx:LIBS        += /opt/pvb/pvserver/libpvsid.a\n");
   fprintf(fout,"macx:INCLUDEPATH  += /opt/pvb/pvserver\n");
-  fprintf(fout,"macx:LIBS         += /usr/lib/librllib.dylib\n");
+  fprintf(fout,"macx:LIBS         += /usr/local/lib/librllib.dylib\n");
   fprintf(fout,"macx:INCLUDEPATH  += /opt/pvb/rllib/lib\n");
   fprintf(fout,"\n");
   fprintf(fout,"#\n");
@@ -2274,7 +2274,26 @@ get_args:
       {
         if(strstr(lastConstructor,"pvQGroupBox(") != NULL) fprintf(fout,"%s <property name=\"title\" >\n", space);
         else                                               fprintf(fout,"%s <property name=\"text\" >\n",  space);
-        fprintf(fout,"%s  <string>%s</string>\n",          space,  p[1]);
+        //fprintf(fout,"%s  <string>%s</string>\n",          space,  p[1]);
+        char pbuf[1024],cbuf[2];
+        const char *ptr = p[1];
+        int ilen = 0;
+        pbuf[0] = '\0';
+        while(*ptr != '\0')
+        {
+          if(*ptr == '&') 
+          {
+            strcat(pbuf, "&amp;");
+          }
+          else            
+          {
+            cbuf[0] = *ptr; cbuf[1] = '\0';
+            strcat(pbuf, cbuf);
+          }
+          ptr++; ilen++;
+          if(ilen > 1000) break;
+        }
+        fprintf(fout,"%s  <string>%s</string>\n",          space, pbuf);
         fprintf(fout,"%s </property>\n",                   space);
       }
       else if(strstr(line,"pvSetChecked(") != NULL)
@@ -2617,7 +2636,7 @@ start2:
     for(int i=0; i<tablist.size(); i++)
     {
       QString item = tablist.at(i);
-      fprintf(fout,"  <tabstop>%s</tabstop>\n",(const char *) item.toUtf8().constData());
+      fprintf(fout,"  <tabstop>%s</tabstop>\n",(const char *) item.toUtf8().data());
     }
     fprintf(fout, " </tabstops>\n");
     tablist.clear();

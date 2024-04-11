@@ -3,9 +3,12 @@
 ######################################################################
 
 TEMPLATE = app
-CONFIG   = warn_on release console 
+CONFIG  += warn_on release console 
 CONFIG  -= qt
-QMAKE_LFLAGS += -static-libgcc
+#mac2017 QMAKE_LFLAGS += -static-libgcc
+contains(QMAKE_CXX, g++) {
+  !symbian:QMAKE_LFLAGS += -static-libgcc
+}
 INCLUDEPATH += ../lib
 
 # Input
@@ -15,6 +18,7 @@ SOURCES += rlhistory.cpp
 !macx {
 LIBS    += ../lib/librllib.so -lpthread
 }
-macx::LIBS    += ../lib/librllib.dylib
+#macx::LIBS    += ../lib/librllib.dylib
+macx::LIBS    += ../lib/librllib.a
 
 TARGET = rlhistory

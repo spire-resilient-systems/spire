@@ -1,13 +1,12 @@
-#QT         += opengl svg webkit
-#QT         += printsupport uitools webkitwidgets widgets opengl svg webkit printsupport
-lessThan(QT_MAJOR_VERSION, 5) {
-  QT         += opengl svg webkit
-  CONFIG     += uitools warn_on release
-}else{
-  QT         += printsupport uitools webenginewidgets widgets opengl svg webengine
-  CONFIG     += warn_on release
-}    
-QMAKE_LFLAGS += -static-libgcc
+# adjust for webkit / webengine
+#QT     += printsupport opengl svg webkit
+#CONFIG += uitools warn_on release
+QT     += printsupport uitools webenginewidgets widgets opengl svg webengine
+CONFIG += warn_on release
+   
+contains(QMAKE_CXX, g++) {
+  QMAKE_LFLAGS += -static-libgcc
+}
 INCLUDEPATH  += ../pvbrowser
 #INCLUDEPATH  += ../qwt/include
 INCLUDEPATH  += ../qwt/src

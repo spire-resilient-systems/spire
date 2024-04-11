@@ -19,11 +19,21 @@
 #include <QPushButton>
 #include <QLineEdit>
 #include <QSpacerItem>
-#ifdef NO_WEBKIT
+#ifdef USE_ANDROID
+#define FOOTPRINT_OHNE
 #include <QTextBrowser>
 #else
-#include <QWebView>
+
+#ifdef PVB_FOOTPRINT_BASIC 
+#undef  FOOTPRINT_OHNE
+#define FOOTPRINT_OHNE
+#include <QTextBrowser>
+#else
+#include <QWebEngineView>
 #endif
+
+#endif
+
 #include <QVBoxLayout>
 
 QT_BEGIN_NAMESPACE
@@ -39,10 +49,10 @@ public:
     QPushButton *pushButtonFind;
     QSpacerItem *spacerItem;
     QPushButton *pushButtonClose;
-#ifdef NO_WEBKIT
-    QTextBrowser *textBrowser;
+#ifdef FOOTPRINT_OHNE
+    QTextBrowser   *textBrowser;
 #else    
-    QWebView     *textBrowser;
+    QWebEngineView *textBrowser;
 #endif    
 
     void setupUi(QDialog *DialogTextBrowser)
@@ -92,10 +102,10 @@ public:
 
     vboxLayout->addLayout(hboxLayout);
 
-#ifdef NO_WEBKIT
+#ifdef FOOTPRINT_OHNE
     textBrowser = new QTextBrowser(DialogTextBrowser);
 #else    
-    textBrowser = new QWebView(DialogTextBrowser);
+    textBrowser = new QWebEngineView(DialogTextBrowser);
 #endif
     textBrowser->setObjectName(QString::fromUtf8("textBrowser"));
 
