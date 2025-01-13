@@ -434,7 +434,8 @@ void Session_Accept(int sk_local, int port, void *dummy_p)
     if (port != SESS_CTRL && port != SESS_DATA)
         return;
 
-    sk = accept(sk_local, (struct sockaddr*)&acc_sin, &acc_sin_len);
+    sk = accept(sk_local, (struct sockaddr*)&acc_sin.addr, &acc_sin_len);
+    acc_sin.family = ((struct sockaddr*)&acc_sin.addr)->sa_family;
     Alarm(DEBUG, "Accepting socket of type %d\n", acc_sin.family);
 
     /* Increasing the buffer on the socket */

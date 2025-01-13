@@ -234,10 +234,10 @@ int spines_init(const struct sockaddr *serv_addr)
     /* Setup the Spines_Addr based on the family of the serv_addr parameter */
     if (serv_addr == NULL) {
 #ifndef ARCH_PC_WIN95
-        Spines_Addr.unix_addr.sun_family = AF_UNIX;
+        Spines_Addr.family = Spines_Addr.addr.unix_addr.sun_family = AF_UNIX;
         /* Check room for length of "data" suffix and NULL byte */
-        s_len = sizeof(Spines_Addr.unix_addr.sun_path) - strlen(SPINES_UNIX_DATA_SUFFIX) - 1;
-        ret = snprintf(Spines_Addr.unix_addr.sun_path, s_len, "%s%hu", 
+        s_len = sizeof(Spines_Addr.addr.unix_addr.sun_path) - strlen(SPINES_UNIX_DATA_SUFFIX) - 1;
+        ret = snprintf(Spines_Addr.addr.unix_addr.sun_path, s_len, "%s%hu", 
                         SPINES_UNIX_SOCKET_PATH, (unsigned short) DEFAULT_SPINES_PORT);
         if (ret > s_len) {
             Alarm(PRINT, "spines_init ERROR: Unix domain path name too long (len = %d), must be"
@@ -252,16 +252,18 @@ int spines_init(const struct sockaddr *serv_addr)
             init_flag = 0;
             return(-1);
         }
-        Spines_Addr.inet_addr.sin_family = AF_INET;
-        Spines_Addr.inet_addr.sin_port = htons(DEFAULT_SPINES_PORT);
-        memcpy(&Spines_Addr.inet_addr.sin_addr, host_ptr->h_addr, sizeof(struct in_addr));
+        Spines_Addr.addr.inet_addr.sin_family = AF_INET;
+        Spines_Addr.addr.inet_addr.sin_port = htons(DEFAULT_SPINES_PORT);
+        memcpy(&Spines_Addr.addr.inet_addr.sin_addr, host_ptr->h_addr, sizeof(struct in_addr));
 #endif
 #ifndef ARCH_PC_WIN95
     } else if (serv_addr->sa_family == AF_UNIX) {
-        memcpy(&Spines_Addr.unix_addr, (struct sockaddr_un *)serv_addr, sizeof(struct sockaddr_un));
+        Spines_Addr.family = AF_UNIX;
+        memcpy(&Spines_Addr.addr.unix_addr, (struct sockaddr_un *)serv_addr, sizeof(struct sockaddr_un));
 #endif
     } else if (serv_addr->sa_family == AF_INET) {
-        memcpy(&Spines_Addr.inet_addr, (struct sockaddr_in *)serv_addr, sizeof(struct sockaddr_in));
+        Spines_Addr.family = AF_INET;
+        memcpy(&Spines_Addr.addr.inet_addr, (struct sockaddr_in *)serv_addr, sizeof(struct sockaddr_in));
 #ifdef IPV6_SUPPORT
     } else if (serv_addr->sa_family == AF_INET6) {
         Alarm(PRINT, "spines_init ERROR: currently do not support AF_INET6\n");
@@ -484,10 +486,12 @@ int  spines_socket(int domain, int type, int protocol,
         memcpy(&sp_addr, &Spines_Addr, sizeof(sp_addr));
 #ifndef ARCH_PC_WIN95
     } else if (serv_addr->sa_family == AF_UNIX) {
-        memcpy(&sp_addr.unix_addr, (struct sockaddr_un *)serv_addr, sizeof(struct sockaddr_un));
+        sp_addr.family = AF_UNIX;
+        memcpy(&sp_addr.addr.unix_addr, (struct sockaddr_un *)serv_addr, sizeof(struct sockaddr_un));
 #endif
     } else if (serv_addr->sa_family == AF_INET) {
-        memcpy(&sp_addr.inet_addr, (struct sockaddr_in *)serv_addr, sizeof(struct sockaddr_in));
+        sp_addr.family = AF_INET;
+        memcpy(&sp_addr.addr.inet_addr, (struct sockaddr_in *)serv_addr, sizeof(struct sockaddr_in));
 #ifdef IPV6_SUPPORT
     } else if (serv_addr->sa_family == AF_INET6) {
         Alarm(PRINT, "spines_socket ERROR: currently do not support AF_INET6\n");
@@ -509,6 +513,7 @@ int  spines_socket(int domain, int type, int protocol,
 #endif
 
     /* Setup sockaddr pointers to appropriate structs for connection */
+    Alarm(DEBUG, "spines_socket(): sp_addr.family %d, AF_UNIX: %d, AF_INET %d, AF_INET6 %d\n", sp_addr.family, AF_UNIX, AF_INET, AF_INET6); // AB DEBUG
     switch (sp_addr.family) {
 #ifndef ARCH_PC_WIN95
         case AF_UNIX:
@@ -516,7 +521,7 @@ int  spines_socket(int domain, int type, int protocol,
             unix_ctrl_addr.sun_family = AF_UNIX;
             /* Check room for length of "data" suffix and NULL byte */
             s_len = sizeof(unix_addr.sun_path) - strlen(SPINES_UNIX_DATA_SUFFIX) - 1;
-            ret = snprintf(unix_ctrl_addr.sun_path, s_len, "%s", sp_addr.unix_addr.sun_path);
+            ret = snprintf(unix_ctrl_addr.sun_path, s_len, "%s", sp_addr.addr.unix_addr.sun_path);
             if (ret > s_len) {
                 Alarm(PRINT, "spines_socket(): Unix Pathname too long: len = %d, max allowed is %u\n",
                                 ret, s_len);
@@ -543,13 +548,13 @@ int  spines_socket(int domain, int type, int protocol,
 #endif
         case AF_INET:
             memset(&inet_ctrl_addr, 0, sizeof(inet_ctrl_addr));
-            memcpy(&inet_ctrl_addr, &sp_addr.inet_addr, sizeof(inet_ctrl_addr));
+            memcpy(&inet_ctrl_addr, &sp_addr.addr.inet_addr, sizeof(inet_ctrl_addr));
             inet_ctrl_addr.sin_port = htons(ntohs(inet_ctrl_addr.sin_port) + SESS_CTRL_PORT);
             ctrl_sk_addr = (struct sockaddr *)&inet_ctrl_addr;
             ctrl_sk_len = sizeof(inet_ctrl_addr);
 
             memset(&inet_addr, 0, sizeof(inet_addr));
-            memcpy(&inet_addr, &sp_addr.inet_addr, sizeof(inet_addr));
+            memcpy(&inet_addr, &sp_addr.addr.inet_addr, sizeof(inet_addr));
             inet_addr.sin_port = htons(ntohs(inet_addr.sin_port) + SESS_PORT);
             sk_addr = (struct sockaddr *)&inet_addr;
             sk_len = sizeof(inet_addr);
