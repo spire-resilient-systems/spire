@@ -29,7 +29,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  * 
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -40,8 +40,6 @@
  */
 
 #include <assert.h>
-#include "spu_memory.h"
-#include "spu_alarm.h"
 #include "utility.h"
 #include "signature.h"
 #include "validate.h"
@@ -53,6 +51,8 @@
 #include "view_change.h"
 #include "catchup.h"
 #include "proactive_recovery.h"
+#include "spu_memory.h"
+#include "spu_alarm.h"
 
 /* Global Variables */
 extern network_variables    NET;
@@ -1609,9 +1609,11 @@ void CATCH_Jump_Ahead(signed_message *mess)
             PRE_ORDER_Garbage_Collect_PO_Slot(i, p_slot->seq, 0);
             stdhash_erase(&DATA.PO.History[i], &it);
         }
+
         if (PRE_ORDER_Seq_Compare(ps, DATA.PO.white_line[i]) > 0)
             DATA.PO.white_line[i] = ps;
-	    Alarm(DEBUG,"Catchup DATA.PO.white_line [%d]: inc=%lu, seq=%lu\n",i, DATA.PO.white_line[i].incarnation, DATA.PO.white_line[i].seq_num);
+
+        Alarm(DEBUG,"Catchup DATA.PO.white_line [%d]: inc=%lu, seq=%lu\n",i, DATA.PO.white_line[i].incarnation, DATA.PO.white_line[i].seq_num);
     }
 
     if (DATA.PO.po_seq.seq_num - DATA.PO.po_seq_executed.seq_num < MAX_PO_IN_FLIGHT) {

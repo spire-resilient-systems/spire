@@ -161,7 +161,7 @@ Deployment in `example_conf/confidential_spire_conf_4+4+3+3`.
 ### HMI Prerequisites
 
 - QT development package and webkit
-    * e.g. `yum install qt-devel epel-release qtwebkit-devel`, `apt-get install qt-sdk`
+    * e.g. `yum install qt5-devel qt5-qtwebkit-devel`, `apt-get install qt5-sdk`
 
 - [pvbrowser](https://pvbrowser.de/pvbrowser/)
     * pvbrowser is packaged with Spire, located in the `pvb` directory.

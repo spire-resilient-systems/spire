@@ -30,7 +30,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -78,8 +78,6 @@ int Curr_N, Curr_K,Curr_f;
 
 void DAT_Reinitialize() 
 {
-  int32u i;
-  
   /* Initialize data structures */
   PR_Initialize_Data_Structure();
   PRE_ORDER_Initialize_Data_Structure();
@@ -96,6 +94,8 @@ void DAT_Reinitialize()
   ERASURE_Initialize();
 
   /*
+  int32u i;
+  
   BENCH.updates_executed         = 0;
   BENCH.num_po_requests_sent     = 0;
   BENCH.total_updates_requested  = 0;

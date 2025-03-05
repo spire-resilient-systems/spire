@@ -30,7 +30,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -77,8 +77,9 @@ void UTIL_DLL_Initialize(dll_struct *dll)
 void UTIL_DLL_Next( dll_struct *dll ) {
   if ( dll->current_position == NULL )
     return;
-    dll->current_position = 
-      ((dll_node_struct*)(dll->current_position))->next;
+
+  dll->current_position = 
+    ((dll_node_struct*)(dll->current_position))->next;
 }
 
 int32u UTIL_DLL_At_End( dll_struct *dll ) {

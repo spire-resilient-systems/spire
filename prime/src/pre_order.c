@@ -29,7 +29,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  * 
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -546,6 +546,12 @@ void PRE_ORDER_Process_PO_Ack_Part(po_ack_part *part, signed_message *po_ack)
     po_ack_specific = (po_ack_message *)(po_ack + 1);
 
     slot = UTIL_Get_PO_Slot_If_Exists(part->originator, part->seq);
+    /* AB Sanity checking: if this is supposed to be acking my own PO_Request,
+     * but I don't know about it already, this is clearly invalid; ignore it */
+    if (slot == NULL && part->originator == VAR.My_Server_ID) {
+        return;
+    }
+
     if (slot == NULL || slot->snapshot == 0) {
         vector_ptr = DATA.PR.preinstalled_incarnations + 1;
         use_snapshot = 0;
@@ -601,6 +607,9 @@ void PRE_ORDER_Process_PO_Ack_Part(po_ack_part *part, signed_message *po_ack)
     if(PRE_ORDER_Seq_Compare(part->seq, 
             DATA.PO.white_line[part->originator]) > 0) 
     {
+        /* AB TODO: There is a potential memory exhaustion attack here, if we
+         * do not limit the number of slots created / how "far in the future"
+         * of a sequence number we are willing to create a slot for */
         slot = UTIL_Get_PO_Slot(part->originator, part->seq);
         if(!slot->ack_received[sender]) {
           slot->ack_received[sender] = 1;

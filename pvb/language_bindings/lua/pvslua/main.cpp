@@ -8,12 +8,6 @@
 #include "pvapp.h"
 #include <unistd.h>
 
-const char *rltranslate(char const *txt, char const **def) // dummy
-{
-  if(def == NULL) return txt;
-  return txt;
-}
-
 // Include the Lua API header files
 #ifdef __cplusplus
 extern "C" {
@@ -62,7 +56,8 @@ int pvMain(PARAM *p)
 
   // initialize Lua
   if(trace) printf("lua_open\n");
-  L = lua_open();
+  //L = lua_open();
+  L = luaL_newstate();
   luaL_openlibs(L);
 
   // initialize cleanup

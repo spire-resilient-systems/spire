@@ -29,7 +29,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  * 
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -41,8 +41,6 @@
 
 #include <string.h>
 #include <assert.h>
-#include "spu_alarm.h"
-#include "spu_memory.h"
 #include "packets.h"
 #include "utility.h"
 #include "data_structs.h"
@@ -55,6 +53,9 @@
 #include "recon.h"
 #include "tc_wrapper.h"
 #include "proactive_recovery.h"
+
+#include "spu_alarm.h"
+#include "spu_memory.h"
 
 extern server_data_struct DATA; 
 extern server_variables   VAR;
@@ -2320,61 +2321,4 @@ signed_message *RECON_Construct_Recon_Erasure_Message(dll_struct *list,
   mess->len = bytes - sizeof(signed_message);
 
   return mess;
-}
-
-void print_prepare(prepare_message *pm){
-	printf("seq:%lu view:%lu , proposal digest:\n",pm->seq_num,pm->view);
-	OPENSSL_RSA_Print_Digest(pm->digest);
-	int j;
-	for(j=0;j<MAX_NUM_SERVERS;j++){
-	    printf("preinstalled inc[%d]: %lu\n",j,pm->preinstalled_incarnations[j]);
-	}
-}
-
-
-void print_complete_pre_prepare(complete_pre_prepare_message *complete_pp){
-	printf("Complete PP seq_num=%lu view=%lu\n",complete_pp->seq_num,complete_pp->view);
-	printf("Proposal original Digest: ");
-	OPENSSL_RSA_Print_Digest(complete_pp->proposal_digest);
-	int j;
-	po_aru_signed_message *cum_ack;
-	signed_message * po_aru_header;
-	po_aru_message *po_aru_mess; //ack_for_server
-	
-	for(j=0;j<MAX_NUM_SERVERS;j++){
-		printf("last_executed[%d].inc=%lu, seq_num=%d\n",j,complete_pp->last_executed[j].incarnation,complete_pp->last_executed[j].seq_num);	
-	}
-	for(j=0;j<MAX_NUM_SERVERS;j++){
-		cum_ack=&complete_pp->cum_acks[j];
-		po_aru_mess=&cum_ack->cum_ack;
-		po_aru_header=&cum_ack->header;
-		printf("j=%d, machine id %d ,says my ack_for_server is: ",j,po_aru_header->machine_id);
-		int k;
-		for(k=0;k<MAX_NUM_SERVERS;k++){
-			printf("inc=%lu, seq=%lu ",po_aru_mess->ack_for_server[k].incarnation,po_aru_mess->ack_for_server[k].seq_num);
-		}
-		printf("\n");
-	}
-	
-	}
-void print_PC_Set(signed_message * pc){
-	pc_set_message *pc_specific;
-	pre_prepare_message *pp;
-	signed_message *pp_header;
-	int pcount=0;
-	 pc_specific = (pc_set_message *)(pc + 1);
-	 printf("machine_id=%lu, inc=%lu, rb_tag.view=%d, rb_tag_seq_num=%lu\n", pc->machine_id, pc->incarnation, pc_specific->rb_tag.view ,pc_specific->rb_tag.seq_num );	 
-	//Pre-prepare
-	pp_header=(signed_message *)(pc_specific+1);
-	pp=(pre_prepare_message *)(pp_header+1);
-	printf("PrePrepare proposal digest=\n");
-	OPENSSL_RSA_Print_Digest(pp->proposal_digest);
-	printf("num_acks_in_this_message in pre prepare %d\n",pp->num_acks_in_this_message);
-	int j;
-        for(j=0;j<MAX_NUM_SERVERS;j++){
-		printf("[%d]:last executes inc:%lu seq: %lu\n",j,pp->last_executed[j].incarnation,pp->last_executed[j].seq_num);
-	}
-	fflush(stdout);
-	//2f+k prepares
-
 }

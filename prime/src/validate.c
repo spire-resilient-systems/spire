@@ -29,7 +29,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  * 
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -43,7 +43,6 @@
  * came from the server or site that should have sent them and check to make
  * sure that the lengths are correct. */
 
-#include "spu_alarm.h"
 #include "validate.h"
 #include "data_structs.h"
 #include "order.h"
@@ -55,6 +54,7 @@
 #include "packets.h"
 #include "tc_wrapper.h"
 #include "proactive_recovery.h"
+#include "spu_alarm.h"
 
 extern server_variables   VAR;
 extern server_data_struct DATA;
@@ -1641,13 +1641,7 @@ int32u VAL_Validate_PC_Set(pc_set_message *pc, int32u num_bytes)
 
     /* Calculate the digest of the commit, and compare it against the pp */
     if (!OPENSSL_RSA_Digests_Equal(pm->digest, pp_digest)) {
-	printf("sender machine id=%lu,view=%lu,seq_num=%lu\n",pc->rb_tag.machine_id,pc->rb_tag.view,pc->rb_tag.seq_num);
-	printf("Preproposal DIgest: \n");
-	OPENSSL_RSA_Print_Digest(&pp->proposal_digest);
-	print_complete_pre_prepare(&complete_pp);
-	print_prepare(pm);
-	OPENSSL_RSA_Print_Digest(pm->digest);
-	VALIDATE_FAILURE("PC_Set: prepare digest does not match pp digest");
+        VALIDATE_FAILURE("PC_Set: prepare digest does not match pp digest");
         return 0;
     }
 

@@ -206,6 +206,11 @@ int rlSocket::read(void *buf, int len, int timeout)
       disconnect();
       return -1;
     }
+  
+    //::printf("debug: read len=%d buf=", len);
+    //for(int j=0; j<len; j++) ::printf(" %d", cbuf[j]);
+    //::printf("\n");
+
     i += ret;
     if(i < len)
     {
@@ -223,6 +228,8 @@ int rlSocket::readStr(char *buf, int len, int timeout)
   if(s == -1) return -1;
   if(select(timeout) == 0) return 0; // timeout
 
+  // ::printf("debug: readStr len=%d", len);
+  
   i = 0;
   while(1)
   {
@@ -239,6 +246,9 @@ tryagain:
       buf[i] = '\0';
       return -1;
     }
+    
+    //::printf(" %d\n", buf[i]);
+    
     if(buf[i] == '\n')
     {
       buf[i+1] = '\0';
@@ -288,6 +298,10 @@ int rlSocket::write(const void *buf, int len)
   cbuf = (char *) buf;
   bytes_left = len;
   first_byte = 0;
+
+  //::printf("debug: write len=%d buf=", len);
+  //for(int i=0; i<len; i++) ::printf(" %d", cbuf[i]);
+  //::printf("\n");
 
   while(bytes_left > 0)
   {
@@ -465,6 +479,8 @@ bindv6:
         RemoteIpAddress.s_addr = inet_addr(adr);
         if(RemoteIpAddress.s_addr == INADDR_NONE)
         {
+          // mur was here: without disconnect the sockets will be created over and over
+          disconnect();
           s = -1;
           return INET_ADDR_ERR; // -1
         }

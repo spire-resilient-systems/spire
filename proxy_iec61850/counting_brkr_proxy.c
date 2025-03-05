@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2024 Johns Hopkins University.
+ * Copyright (c) 2017-2025 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced
@@ -609,8 +609,8 @@ static void PROXY_Send_Breaker_Ack()
 static void print_notice()
 {
   Alarm( PRINT, "/==================================================================================\\\n");
-  Alarm( PRINT, "| Spire 2.1                                                                         |\n");
-  Alarm( PRINT, "| Copyright (c) 2017-2024 Johns Hopkins University                                  |\n");
+  Alarm( PRINT, "| Spire                                                                             |\n");
+  Alarm( PRINT, "| Copyright (c) 2017-2025 Johns Hopkins University                                  |\n");
   Alarm( PRINT, "| All rights reserved.                                                              |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| Spire is licensed under the Spire Open-Source License.                            |\n");
@@ -631,7 +631,7 @@ static void print_notice()
   Alarm( PRINT, "| WWW:     www.dsn.jhu/spire   www.dsn.jhu.edu                                      |\n");
   Alarm( PRINT, "| Contact: spire@dsn.jhu.edu                                                        |\n");
   Alarm( PRINT, "|                                                                                   |\n");
-  Alarm( PRINT, "| Version 2.1, Built Feb 29, 2024                                                   |\n");
+  Alarm( PRINT, "| Version 2.2, Built March 5, 2025                                                  |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use               |\n");
   Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                         |\n");

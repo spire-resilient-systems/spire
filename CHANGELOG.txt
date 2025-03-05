@@ -1,3 +1,9 @@
+Version 2.2 - March 5, 2025
+	* Updates to support compiling on ARM-based architectures
+	* Uses PVBrowser 5.15.3
+	* Uses Prime 4.1 (see Prime CHANGELOG)
+	* Uses Spines 5.7 (see Spines CHANGELOG)
+
 Version 2.1 - February 29, 2024
    Added reconfiguration capability to Spire
 	* Changes to SCADA Master to support reconfiguration

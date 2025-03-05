@@ -56,17 +56,17 @@
 #include <arpa/inet.h>
 #include <signal.h>
 
-#include "spu_alarm.h"
-#include "spu_events.h"
-#include "spu_memory.h"
-#include "spu_data_link.h"
-#include "spines_lib.h"
-
 #include "packets.h"
 #include "openssl_rsa.h"
 #include "net_wrapper.h"
 #include "def.h"
 #include "data_structs.h"
+
+#include "spu_alarm.h"
+#include "spu_events.h"
+#include "spu_memory.h"
+#include "spu_data_link.h"
+#include "spines_lib.h"
 
 int ctrl_spines,config_ipc_inject;
 int SM_Flag,NON_SM_Flag ,app_path[100],app_count;

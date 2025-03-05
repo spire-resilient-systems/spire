@@ -163,7 +163,34 @@ void perhapsSetFont(QApplication &app)
      cptr++;
      sscanf(cptr,"%d",&fsize);
   }
-  app.setFont(QFont(font, fsize));
+  
+  // mur was here:
+  // no chinese characters shown on pvbrowser 4.8.4 with qt5 on embedded system (yocto)?
+  // I could solve the problem by modifying the main.cpp of pvbrowser. Now ...
+  // usage:
+  // pvbrowser -font=//usr/share/fonts/ttf/droid/DroidSansFallbackFull.ttf
+  // Here, the leading slash is recognised and removed, afterwards the font is loaded.
+  if(font[0] == '/') // perhaps load fallback font
+  {
+	  char fontfile[MAXOPT];
+	  strcpy(fontfile,font+1);
+    int id = QFontDatabase::addApplicationFont(fontfile);
+    if (id < 0) 
+    {
+		  printf("Could not load fontfile %s\n", fontfile);
+	  }
+	  else
+	  {
+		  QString family = QFontDatabase::applicationFontFamilies(id).at(0);
+	    QFont font(family,fsize);
+		  app.setFont(font);
+      printf("loaded font family %s\n", family.toUtf8().constData());
+	  }
+  }
+  else
+  {
+    app.setFont(QFont(font, fsize));
+  }
 }
 
 #ifdef BROWSERPLUGIN
@@ -171,7 +198,7 @@ int pvbinit()
 {
   char *argv[] = {"pvbrowser", ""};
   wsa(); // init windows sockets
-  init(1,argv);
+  init1(1,argv);
   return 0;
 }
 #else
@@ -190,7 +217,7 @@ int main(int argc, char *argv[])
 #endif
   wsa(); // init windows sockets
   QApplication app(argc, argv);
-  QPixmap pm(splash);
+  QPixmap pm(splash_xpm);
   QSplashScreen *splash = new QSplashScreen(pm);
   splash->show();
   init1(argc,argv);
@@ -208,7 +235,6 @@ int main(int argc, char *argv[])
   mainWin.slotReconnect();
   mainWin.slotTimeOut();
   mainWin.mythread.start(QThread::HighestPriority);
-  mainWin.hideBusyWidget();
 #if QT_VERSION >= 0x040600
   //grabGesture(Qt::TapGesture,        Qt::DontStartGestureOnChildren);
   //grabGesture(Qt::TapAndHoldGesture, Qt::DontStartGestureOnChildren);
@@ -216,6 +242,7 @@ int main(int argc, char *argv[])
   mainWin.grabGesture(Qt::PinchGesture);
   //grabGesture(Qt::SwipeGesture);
 #endif
+  mainWin.hideBusyWidget();
   return app.exec();
 }
 #endif

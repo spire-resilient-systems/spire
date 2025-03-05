@@ -30,7 +30,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -85,5 +85,7 @@ void PR_Process_Reset_NewLeaderProof(signed_message *mess);
 void PR_Process_Reset_ViewChange(signed_message *mess);
 void PR_Process_Reset_NewView(signed_message *mess);
 void PR_Process_Reset_Certificate(signed_message *mess);
+
+void PR_Clear_Reset_Data_Structures(void);
 
 #endif /* PRIME_PROACTIVE_RECOVERY_H */

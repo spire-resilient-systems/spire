@@ -1,3 +1,14 @@
+Version 4.1  - March 5, 2025
+	* Bugfixes:
+		- Fixed view change bug introduced in 4.0 release, where
+		  turn-around-times are not populated correctly
+		- Added missing sanity check on PO Ack parts to ignore acks for PO
+		  Requests that I never sent.
+		- Thanks to Aren Alyahya for the testing that revealed these bugs!
+	* Cleaned up some compiler warnings
+	* Updated outdated buildtools scripts (needed for ARM support)
+	* Updated to use Spines 5.7 (see Spines CHANGELOG)
+
 Version 4.0  - February 29, 2024
     * Added reconfiguration capability to Prime
     * Configuration Manager and Configuration Agent programs are added to support reconfiguration

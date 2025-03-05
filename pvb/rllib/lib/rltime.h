@@ -1,3 +1,4 @@
+
 /***************************************************************************
                           rltime.h  -  description
                              -------------------
@@ -13,8 +14,8 @@
  *   published by the Free Software Foundation                             *
  *                                                                         *
  ***************************************************************************/
-#ifndef _RL_TIME_H_
-#define _RL_TIME_H_
+#ifndef _RL_TIME_V1_H_
+#define _RL_TIME_V1_H_
 
 #include "rldefine.h"
 
@@ -26,8 +27,10 @@ class rlTime
 public:
   rlTime(int Year=0, int Month=0, int Day=0, int Hour=0, int Minute=0, int Second=0, int Millisecond=0);
   virtual ~rlTime();
+  const char *version();
   const char *getTimeString();
   const char *getIsoTimeString();
+  const char *toString(const char *format);
   void    getLocalTime();
   int     getFileModificationTime(const char *filename);
 
@@ -55,6 +58,8 @@ public:
   int     second;
   int     millisecond;
 private:
-  char    time_string[32]; // 2001-11-23 12:52:60 0568
+  char    time_string[32];     // 2001-11-23 12:52:60 056
+  char    iso_time_string[32]; // 2001-11-23T12:52:60.056
 };
+
 #endif

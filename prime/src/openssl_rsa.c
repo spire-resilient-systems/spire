@@ -29,7 +29,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -49,6 +49,7 @@
 #include <openssl/sha.h>
 #include <openssl/bn.h>
 #include <openssl/evp.h>
+#include <openssl/pem.h>
 #include <stdio.h>
 #include <string.h>
 #include "data_structs.h"
@@ -204,7 +205,7 @@ void Read_BN( FILE *f, BIGNUM **bn )
   BN_hex2bn( bn, bn_buf );
 }
 
-void Read_RSA( int32u rsa_type, int32u server_number, RSA *rsa,char *dir) 
+void Read_RSA( int32u rsa_type, int32u server_number, RSA *rsa, const char *dir) 
 {
   FILE *f;
   char fileName[50];
@@ -327,26 +328,25 @@ void OPENSSL_RSA_Generate_Keys_with_args(int count,const char *keys_dir) {
 }
 /* Read all of the keys for servers or clients. All of the public keys
  * should be read and the private key for this server should be read. */
- void OPENSSL_RSA_Read_Keys(int32u my_number, int32u type,char *dir)
+ void OPENSSL_RSA_Read_Keys(int32u my_number, int32u type, const char *dir)
 {
-  //char dir[100] = "./keys";
   int32u s; 
   int32u rt;
   
-//MS2022
-    int32u READ_NUMBER_OF_SERVERS= VAR.Num_Servers;
+  //MS2022
+  int32u READ_NUMBER_OF_SERVERS= VAR.Num_Servers;
   Alarm(DEBUG,"**********MS2022: READ_NUMBER_OF_SERVERS=%u\n",READ_NUMBER_OF_SERVERS);
-    /* Read all public keys for servers. */
 
+  /* Read all public keys for servers. */
   for(s = 1; s <= READ_NUMBER_OF_SERVERS; s++) {
     public_rsa_by_server[s] = RSA_new();
-    Read_RSA(RSA_TYPE_PUBLIC, s, public_rsa_by_server[s],dir);
+    Read_RSA(RSA_TYPE_PUBLIC, s, public_rsa_by_server[s], dir);
   } 
 
   /* Read all public keys for clients. */
   for ( s = 1; s <= NUMBER_OF_CLIENTS; s++ ) {
     public_rsa_by_client[s] = RSA_new();
-    Read_RSA( RSA_TYPE_CLIENT_PUBLIC, s, public_rsa_by_client[s],dir);
+    Read_RSA( RSA_TYPE_CLIENT_PUBLIC, s, public_rsa_by_client[s], dir);
   }
 
   /* MK Reconf: Read public key for network manager. */
@@ -359,24 +359,24 @@ void OPENSSL_RSA_Generate_Keys_with_args(int count,const char *keys_dir) {
     rt = RSA_TYPE_CLIENT_PRIVATE;
   } else if ( type == RSA_NM ) {
     rt = RSA_TYPE_NM_PRIVATE;
-  } else if(type== RSA_CONFIG_MNGR){
-      rt = RSA_TYPE_NM_PRIVATE;
-      printf("RSA_TYPE_CONFIG_MNGR_PRIVATE\n");
-  } else if(type== RSA_CONFIG_AGENT){
+  } else if ( type == RSA_CONFIG_MNGR ){
+    rt = RSA_TYPE_NM_PRIVATE;
+    Alarm(DEBUG, "RSA_TYPE_CONFIG_MNGR_PRIVATE\n");
+  } else if ( type == RSA_CONFIG_AGENT ){
     return;
   } else {
-    printf("OPENSSL_RSA_Read_Keys: Called with invalid type.\n");
-    exit(0);
+    Alarm(EXIT, "OPENSSL_RSA_Read_Keys: Called with invalid type.\n");
+    exit(0); // explicit exit avoids warning about rt being possibly uninitialized below
   }
 
   /* Read my private key. */
   private_rsa = RSA_new();
-  Read_RSA( rt, my_number, private_rsa,dir);
+  Read_RSA( rt, my_number, private_rsa, dir );
 
   if (type == RSA_SERVER ) {
     rt = RSA_TYPE_CLIENT_PRIVATE;
     private_client_rsa = RSA_new();
-    Read_RSA( rt, my_number, private_client_rsa,dir);
+    Read_RSA( rt, my_number, private_client_rsa, dir );
   }
 }
 
@@ -601,7 +601,7 @@ int OPENSSL_RSA_Verify( const unsigned char *message, size_t message_length,
     return ret;
 }
 
-int OPENSSL_RSA_Get_KeySize(unsigned char *pubKeyFile){
+int OPENSSL_RSA_Get_KeySize(const char *pubKeyFile){
 
    FILE *f=fopen(pubKeyFile,"r");
    if (!f){
@@ -620,7 +620,7 @@ int OPENSSL_RSA_Get_KeySize(unsigned char *pubKeyFile){
    return RSA_size(pubkey);
 }
 
-int OPENSSL_RSA_Encrypt(unsigned char *pubKeyFile,unsigned char *data, int data_len, unsigned char * encrypted_data){
+int OPENSSL_RSA_Encrypt(const char *pubKeyFile,unsigned char *data, int data_len, unsigned char * encrypted_data){
 
    int ret;
 
@@ -653,7 +653,7 @@ int OPENSSL_RSA_Encrypt(unsigned char *pubKeyFile,unsigned char *data, int data_
    return ret;
 }
 
-void OPENSSL_RSA_Decrypt(unsigned char *pvtKeyFile,unsigned char *data, int data_len, unsigned char *decrypted_data){
+void OPENSSL_RSA_Decrypt(const char *pvtKeyFile,unsigned char *data, int data_len, unsigned char *decrypted_data){
     int ret;
 
    FILE *f=fopen(pvtKeyFile,"r");
@@ -684,7 +684,7 @@ void OPENSSL_RSA_Decrypt(unsigned char *pvtKeyFile,unsigned char *data, int data
 
 }
 
-int getFileSize(unsigned char * fileName){
+int getFileSize(const char * fileName){
     int ret=0;
 
     FILE *fp = fopen(fileName, "r");

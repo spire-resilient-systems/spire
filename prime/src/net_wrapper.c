@@ -30,7 +30,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -44,7 +44,9 @@
 #include <unistd.h>
 #include <sys/un.h>
 #include <sys/socket.h>
+#include <arpa/inet.h>
 #include "net_wrapper.h"
+#include "network.h"
 #include "spu_alarm.h"
 #include "spines_lib.h"
 

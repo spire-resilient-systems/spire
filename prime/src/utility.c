@@ -29,7 +29,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  * 
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -140,7 +140,8 @@ void Load_Addrs_From_File(char *fileName, int32 addrs[MAX_NUM_SERVER_SLOTS])
   /* Open file */
   if((f = fopen(fileName, "r")) == NULL)
     Alarm(EXIT, "   ERROR Load_Addrs_From_File: Could not open the address file: %s\n", fileName);
-    Alarm(DEBUG, "Load_Addrs_From_File:Opened the address file: %s\n", fileName);
+
+  Alarm(DEBUG, "Load_Addrs_From_File: Opened the address file: %s\n", fileName);
  
   /* Read file. Each line has the following format:
    *    server_id ip1.ip2.ip3.ip4
@@ -1373,7 +1374,7 @@ int32u UTIL_Bitmap_Is_Superset(int32u *bm_old, int32u *bm_new)
     if (tmp2 == 0)
         return 1;
 
-
+    return 0;
 }
 
 erasure_node *UTIL_New_Erasure_Node(int32u dest_bits, int32u type, 
@@ -1559,7 +1560,6 @@ int32 UTIL_Get_Server_Spines_Address(int32u server)
 
 void UTIL_Load_Spines_Addresses(char *fileName) 
 {
-  char dir[100] = ".";
   int32u unique_spines;
   int32u server, i;
   

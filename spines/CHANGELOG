@@ -1,3 +1,10 @@
+Version 5.7 - March 5, 2025
+	* Updates to support MacOS-Linux interoperability
+	* Fixed bug where incorrectly sized integer was used as skiplist key
+	  (uncovered in interoperability testing between ARM and x86)
+	* Updated outdated buildtools scripts (needed for ARM support)
+	* Updated documentation
+
 Version 5.6 - February 29, 2024
     * Changes to be compatible with latest versions of GCC
 

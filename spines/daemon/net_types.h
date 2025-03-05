@@ -19,7 +19,7 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003-2024 The Johns Hopkins University.
+ * Copyright (c) 2003-2025 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -150,7 +150,6 @@ typedef int16u         Link_State_LTS;  /* NOTE: must be an unsigned type: see L
 
 /* Generic union to hold different families of sockaddr structures */
 typedef union {
-    unsigned short          family;
     struct sockaddr_in      inet_addr;
 #ifdef IPV6_SUPPORT
     struct sockaddr_in6     inet6_addr;
@@ -159,6 +158,11 @@ typedef union {
 #ifndef ARCH_PC_WIN95
     struct sockaddr_un      unix_addr;
 #endif
+} spines_socku;
+
+typedef struct dummy_spines_sockaddr {
+    unsigned short family;
+    spines_socku   addr;
 } spines_sockaddr;
 
 /* This goes in front of each packet (any kind), as it is sent on the network */

@@ -29,7 +29,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -40,12 +40,12 @@
  */
 
 #include <assert.h>
-#include "spu_memory.h"
-#include "spu_alarm.h"
 #include "utility.h"
 #include "signature.h"
 #include "reliable_broadcast.h"
 #include "process.h"
+#include "spu_memory.h"
+#include "spu_alarm.h"
 
 /* Globally Accessible Variables */
 extern server_variables     VAR;

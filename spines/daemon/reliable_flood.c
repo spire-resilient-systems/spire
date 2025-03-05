@@ -19,7 +19,7 @@
  *  Yair Amir, Claudiu Danilov, John Schultz, Daniel Obenshain,
  *  Thomas Tantillo, and Amy Babay.
  *
- * Copyright (c) 2003-2024 The Johns Hopkins University.
+ * Copyright (c) 2003-2025 The Johns Hopkins University.
  * All rights reserved.
  *
  * Major Contributor(s):
@@ -1759,6 +1759,7 @@ void Reliable_Flood_Gen_E2E(int mode, void *dummy)
     Rel_Flood_Link_Data *rfldata;
     sp_time now;
     stdit it;
+    int32u my_int_id = My_ID;
 
     UNUSED(dummy);
 
@@ -1803,7 +1804,7 @@ void Reliable_Flood_Gen_E2E(int mode, void *dummy)
 
         rfldata->e2e_stats[My_ID].unsent = 1;
         now = E_get_time();
-        stdskl_insert(&rfldata->e2e_skl, &it, &now, &My_ID, STDFALSE);
+        stdskl_insert(&rfldata->e2e_skl, &it, &now, &my_int_id, STDFALSE);
         E_queue(Reliable_Flood_E2E_Event, mode, (void*)rfldata, zero_timeout);
     }
 }
@@ -3651,6 +3652,7 @@ void Gen_Status_Change(int mode, void *dummy)
     Rel_Flood_Link_Data *rfldata;
     sp_time now;
     stdit it;
+    int32u my_int_id = My_ID;
 
     UNUSED(dummy);
 
@@ -3668,7 +3670,7 @@ void Gen_Status_Change(int mode, void *dummy)
 
         rfldata->status_change_stats[My_ID].unsent = 1;
         now = E_get_time();
-        stdskl_insert(&rfldata->status_change_skl, &it, &now, &My_ID, STDFALSE);
+        stdskl_insert(&rfldata->status_change_skl, &it, &now, &my_int_id, STDFALSE);
         E_queue(Status_Change_Event, mode, (void*)rfldata, zero_timeout);
     }
 }

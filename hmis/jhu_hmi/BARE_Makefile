@@ -35,7 +35,7 @@
  # Contributors:
  #   Samuel Beckley       Contributions to HMIs 
  #
- # Copyright (c) 2017-2024 Johns Hopkins University.
+ # Copyright (c) 2017-2025 Johns Hopkins University.
  # All rights reserved.
  #
  # Partial funding for Spire research was provided by the Defense Advanced 
@@ -47,15 +47,15 @@
 
 CC            = gcc
 CXX           = g++
-CFLAGS        = -m64 -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
-CXXFLAGS      = -m64 -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
+CFLAGS        = -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
+CXXFLAGS      = -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
 PVB			  = ../../pvb
 PRIME         = ../../prime
 SPINES        = ../../spines
 SPIRE         = ../..
 INCPATH       = -I. -I$(PVB)/pvserver -I$(PRIME)/stdutil/include -I$(SPINES)/libspines/ -I$(SPIRE)/common
 LINK          = g++
-LFLAGS        = -m64 -Wl,-O1
+LFLAGS        = -Wl,-O1
 LIBS          = $(SUBLIBS) $(PVB)/pvserver/libpvsmt.so -lpthread \
 					$(PRIME)/OpenTC-1.1/TC-lib-1.0/.libs/libTC.a \
 					$(SPINES)/libspines/libspines.a $(PRIME)/stdutil/lib/libstdutil.a \

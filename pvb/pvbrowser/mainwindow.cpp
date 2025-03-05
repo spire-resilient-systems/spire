@@ -104,6 +104,7 @@ bool MyScrollArea::event(QEvent *event)
   static int ignore_gesture = 0;
   if(event->type() == QEvent::Gesture && ignore_gesture == 0 && mw->pvbtab[mw->currentTab].s != -1)
   {
+    //::printf("gesture\n");
     QGestureEvent *ge = static_cast<QGestureEvent*>(event);
     if(QGesture *ge_pinch = ge->gesture(Qt::PinchGesture))
     {
@@ -116,9 +117,11 @@ bool MyScrollArea::event(QEvent *event)
       else if(sf > 1.01f) percent += 5;
       if(percent<10)       percent=10;
       else if(percent>250) percent=250;
+#ifndef USE_ANDROID
       char buf[80];
       sprintf(buf,"slider(%d,%d)\n",0, (int) (sf*100));
       tcp_send(&mw->pvbtab[mw->currentTab].s,buf,strlen(buf));
+#endif
       //char buf[1024];
       //sprintf(buf,"percent=%d old_percent=%d scaleFactor=%f", percent, old_percent, pinch->scaleFactor());
       //mw->statusBar()->showMessage(buf);
@@ -146,6 +149,89 @@ bool MyScrollArea::event(QEvent *event)
       return true;
     }
   }
+  else if(event->type() == QEvent::KeyPress && ignore_gesture == 0 && mw->pvbtab[mw->currentTab].s != -1)
+  // else if added by rl 21.05.2023
+  {
+    //::printf("key_press\n");
+    QKeyEvent* ke = static_cast<QKeyEvent*>(event);
+    if     (ke->key() == 'J' && ke->modifiers() == Qt::ControlModifier) 
+    {
+      //::printf("key=J\n");
+      int percent = mw->pvbtab[mw->currentTab].interpreter.percentZoomMask;
+      int old_percent = percent;
+      percent -= 5;
+      if(percent<10)       percent=10;
+      else if(percent>250) percent=250;
+      //char buf[1024];
+      //sprintf(buf,"percent=%d old_percent=%d scaleFactor=%f", percent, old_percent, pinch->scaleFactor());
+      //mw->statusBar()->showMessage(buf);
+      if(percent != old_percent  && ignore_gesture == 0)
+      {
+        ignore_gesture = 1;
+        mw->pvbtab[mw->currentTab].interpreter.zoomMask(percent);       // will set ...interpreter.percentZoomMask
+        int width  = (mw->pvbtab[mw->currentTab].w * percent) / 100;    // these lines
+        int height = (mw->pvbtab[mw->currentTab].h * percent) / 100;    // should
+        if(mw->pvbtab[mw->currentTab].rootWidget != NULL)               //
+          mw->pvbtab[mw->currentTab].rootWidget->resize(width, height); // resize
+        QEvent resize_event(QEvent::Resize);                            // scrollbars
+        QApplication::sendEvent(mw, &resize_event);                     // correctly
+        qApp->processEvents();
+        ignore_gesture = 0;
+      }
+      return ke->isAccepted();
+    }  
+    else if(ke->key() == 'K' && ke->modifiers() == Qt::ControlModifier) 
+    {
+      //::printf("key=K\n");
+      int percent = mw->pvbtab[mw->currentTab].interpreter.percentZoomMask;
+      int old_percent = percent;
+      percent += 5;
+      if(percent<10)       percent=10;
+      else if(percent>250) percent=250;
+      //char buf[1024];
+      //sprintf(buf,"percent=%d old_percent=%d scaleFactor=%f", percent, old_percent, pinch->scaleFactor());
+      //mw->statusBar()->showMessage(buf);
+      if(percent != old_percent && ignore_gesture == 0)
+      {
+        ignore_gesture = 1;
+        mw->pvbtab[mw->currentTab].interpreter.zoomMask(percent);       // will set ...interpreter.percentZoomMask
+        int width  = (mw->pvbtab[mw->currentTab].w * percent) / 100;    // these lines
+        int height = (mw->pvbtab[mw->currentTab].h * percent) / 100;    // should
+        if(mw->pvbtab[mw->currentTab].rootWidget != NULL)               //
+          mw->pvbtab[mw->currentTab].rootWidget->resize(width, height); // resize
+        QEvent resize_event(QEvent::Resize);                            // scrollbars
+        QApplication::sendEvent(mw, &resize_event);                     // correctly
+        qApp->processEvents();
+        ignore_gesture = 0;
+      }
+      return ke->isAccepted();
+    }
+    else if(ke->key() == '1' && ke->modifiers() == Qt::ControlModifier) 
+    {
+      //::printf("key=1\n");
+      int percent = mw->pvbtab[mw->currentTab].interpreter.percentZoomMask;
+      int old_percent = percent;
+      percent = 100;
+      //char buf[1024];
+      //sprintf(buf,"percent=%d old_percent=%d scaleFactor=%f", percent, old_percent, pinch->scaleFactor());
+      //mw->statusBar()->showMessage(buf);
+      if(percent != old_percent && ignore_gesture == 0)
+      {
+        ignore_gesture = 1;
+        mw->pvbtab[mw->currentTab].interpreter.zoomMask(percent);       // will set ...interpreter.percentZoomMask
+        int width  = (mw->pvbtab[mw->currentTab].w * percent) / 100;    // these lines
+        int height = (mw->pvbtab[mw->currentTab].h * percent) / 100;    // should
+        if(mw->pvbtab[mw->currentTab].rootWidget != NULL)               //
+          mw->pvbtab[mw->currentTab].rootWidget->resize(width, height); // resize
+        QEvent resize_event(QEvent::Resize);                            // scrollbars
+        QApplication::sendEvent(mw, &resize_event);                     // correctly
+        qApp->processEvents();
+        ignore_gesture = 0;
+      }
+      return ke->isAccepted();
+    }
+    return false;
+  }
 #endif  
   return QScrollArea::event(event);
 }
@@ -155,7 +241,9 @@ void MyScrollArea::wheelEvent(QWheelEvent *event)
   if(event->modifiers() == Qt::ControlModifier)
   {
     int percent;
-    if(event->delta() > 0) 
+    //rlmurx-was-here if(event->delta() > 0) 
+    //Qt::MouseEventNotSynthesized is true on systems we are thinking of currently
+    if(event->angleDelta().y() > 0) 
     {
       percent = mw->pvbtab[mw->currentTab].interpreter.percentZoomMask + 5; 
       if(percent > 250) percent = 250;
@@ -434,7 +522,8 @@ void MainWindow::closeEvent(QCloseEvent *event)
   if(opt.exitpassword == 1)
   {
     bool ok;
-    QString pass = QInputDialog::getText(this,tr("pvbrowser"),tr("Exit Password ?"),QLineEdit::Password,QString::null,&ok);
+    //rlmurx-was-here QString pass = QInputDialog::getText(this,tr("pvbrowser"),tr("Exit Password ?"),QLineEdit::Password,QString::null,&ok);
+    QString pass = QInputDialog::getText(this,tr("pvbrowser"),tr("Exit Password ?"),QLineEdit::Password,QString(),&ok);
     if( ok && !pass.isEmpty() ) 
     {
       // user entered something and pressed OK
@@ -541,7 +630,7 @@ void MainWindow::about()
  QMessageBox::about(this, tr("About pvbrowser"),
             tr(
                "pvbrowser (R) \nVersion " VERSION WEBVERSION
-               "\n(C) 2000-2017 Lehrig Software Engineering"
+               "\n(C) 2000-2023 Lehrig Software Engineering"
                "\nlehrig@t-online.de"
                "\nhttp://pvbrowser.org"
                "\nhttp://www.lehrig.de"
@@ -792,18 +881,25 @@ void MainWindow::createToolBars()
   urlComboBox->setToolTip(tr("Connect to host:\n"
                              "pv://host<:port></mask>\n"
                              "pvssh://user@host<<:remote_host>:port></mask>\n"
+                             "pv://[ipv6-address-form]\n"
                              "example: pv://localhost\n"
                              "example: pv://localhost:5050\n"
                              "example: pv://localhost:5050/maskname\n"
+                             "example: pv://[::FFFF:192.168.1.15]\n"
                              "http://host"
                              ));
 #ifdef USE_ANDROID
+  urlComboBox->setMinimumWidth(777);
+  urlComboBox->setMaximumWidth(1024);
+  urlComboBox->setMinimumHeight(88);
+  /*
   urlComboBox->setStyleSheet(
                                "QComboBox {min-height:29px; min-width:400px; margin: 1px; padding: 1x; }"
                                "QComboBox QAbstractItemView::item {min-height:30px; }"
                                "QComboBox QAbstractItemView::item:hover {min-height:30px; }"
                                "QComboBox::drop-down { width: 30px; }"
-                            );                           
+                            );
+  */                            
                             //"QComboBox::drop-down { width: 30px; image: url(your_arrow_icon.png); }"
 #endif                            
   fileToolBar->addWidget(urlComboBox);
@@ -965,7 +1061,8 @@ void MainWindow::slotNewTab()
       }  
     }
     index = tabBar->addTab("NewTab");
-    text.sprintf("%d", i);
+    //rlmurx-was-here text.sprintf("%d", i);
+    text = QString::asprintf("%d", i);
     tabBar->setTabWhatsThis(index, text);
     tabBar->setCurrentIndex(index); 
   }
@@ -1225,7 +1322,8 @@ void MainWindow::slotReconnect()
       isReconnect = 1;
       QString qbuf;
 #ifdef PVUNIX    
-      qbuf.sprintf("xterm -e %s -L %d:%s:%d %s",opt.ssh,opt.sshport,ssh_host,ssh_port,ssh_user_host);
+      //rlmurx-was-here qbuf.sprintf("xterm -e %s -L %d:%s:%d %s",opt.ssh,opt.sshport,ssh_host,ssh_port,ssh_user_host);
+      qbuf = QString::asprintf("xterm -e %s -L %d:%s:%d %s",opt.ssh,opt.sshport,ssh_host,ssh_port,ssh_user_host);
 #endif
 #ifdef PVWIN32
       qbuf.sprintf("%s -ssh -L %d:%s:%d %s",opt.ssh,opt.sshport,ssh_host,ssh_port,ssh_user_host);
@@ -1287,7 +1385,8 @@ void MainWindow::slotReconnect()
   {
     pvbtab[currentTab].s = tcp_con(opt.proxyadr,opt.proxyport);
     QString connect;
-    connect.sprintf("CONNECT %s:%d HTTP/1.1\n", buf, iport);
+    //rlmurx-was-here connect.sprintf("CONNECT %s:%d HTTP/1.1\n", buf, iport);
+    connect = QString::asprintf("CONNECT %s:%d HTTP/1.1\n", buf, iport);
     tcp_send(&pvbtab[currentTab].s,connect.toUtf8(),connect.length());
     tcp_send(&pvbtab[currentTab].s,"\n",strlen("\n"));
     tcp_rec(&pvbtab[currentTab].s, buf, sizeof(buf)-1);
@@ -1327,7 +1426,8 @@ void MainWindow::slotReconnect()
     strcat(buf, " Symbian");
 #endif
 #endif
-    QRect maxrect = QApplication::desktop()->availableGeometry();
+    //rlmurx-was-here QRect maxrect = QApplication::desktop()->availableGeometry();
+    QRect maxrect = QGuiApplication::primaryScreen()->availableGeometry();
     char tempbuf[1024];
     sprintf(tempbuf," (%dx%d)", maxrect.width(), maxrect.height());
     strcat(buf, tempbuf);
@@ -1470,7 +1570,7 @@ void MainWindow::appendIniFile(const char *host)
 void MainWindow::slotTimeOut()
 {
   int i;
-  char buf[20];
+  char buf[24];
 
   for(i=0; i<MAX_TABS; i++)
   {
@@ -1498,7 +1598,8 @@ void MainWindow::slotTimeOut()
   {
     if(opt.autoreconnect == 1) 
     {
-     if(strncmp(pvbtab[currentTab].url.toUtf8(),"http://",7) != 0)
+     if(strncmp(pvbtab[currentTab].url.toUtf8(),"http://",7)  != 0 &&
+        strncmp(pvbtab[currentTab].url.toUtf8(),"https://",8) != 0 )
      {
        isReconnect = 1;
        slotReconnect();
@@ -1590,7 +1691,8 @@ void MainWindow::slotPrint()
   }
   QPixmap pm;
   QPrinter printer;
-  printer.setOrientation(QPrinter::Landscape);
+  //rlmurx-was-here printer.setOrientation(QPrinter::Landscape);
+  printer.setPageOrientation(QPageLayout::Landscape);
   printer.setColorMode(QPrinter::Color);
   snapshot(pm);
   QPrintDialog printDialog(&printer, this);
@@ -1666,6 +1768,12 @@ void MainWindow::keyPressEvent(QKeyEvent *e)
   if     (key == Qt::Key_Menu && e->modifiers() == Qt::NoModifier)
   {
     slotToolbar();
+    return;
+  }
+  else if(e->modifiers() == Qt::NoModifier && key == Qt::Key_Home)
+  {
+    modifier = 1;
+    slotGohome();
     return;
   }
   else if(e->modifiers() == Qt::ShiftModifier)
@@ -1782,4 +1890,3 @@ void MainWindow::hideBusyWidget()
   busyWidgetTimer->stop();
   busyWidget->hide();
 }
-

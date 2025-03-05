@@ -187,7 +187,7 @@ There are several configuration files relevant to the Spire system:
 ### HMI Prerequisites
 
 - QT development package and webkit
-    * e.g. `yum install qt-devel epel-release qtwebkit-devel`, `apt-get install qt-sdk`
+    * e.g. `yum install qt5-devel  qt5-qtwebkit-devel`, `apt-get install qt5-sdk`
 
 - [pvbrowser](https://pvbrowser.de/pvbrowser/)
     * pvbrowser is packaged with Spire, located in the `pvb` directory.
@@ -623,7 +623,7 @@ To run this example, execute the following:
 
 - On control center 1 machine:
 
-        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
+        cd spines/daemon; ./spines -p 8900 -c spines_ctrl.conf
         cd spines/daemon; ./spines -p 8100 -c spines_int.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd scada_master; ./scada_master 1 1 192.168.101.101:8100 192.168.101.101:8120
@@ -632,52 +632,52 @@ To run this example, execute the following:
 
 - On control center 2 machine:
 
-        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
+        cd spines/daemon; ./spines -p 8900 -c spines_ctrl.conf
         cd spines/daemon; ./spines -p 8100 -c spines_int.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd scada_master; ./scada_master 2 2 192.168.101.102:8100 192.168.101.102:8120
         cd prime/bin; ./prime -i 2 -g 2
-        cd prime/bin;./config_agent 2 192.168.101.102 /tmp/sm_ipc_main s 2 2
+        cd prime/bin;./config_agent 2 192.168.101.102 /tmp/sm_ipc_main s 1 2
 
 - On control center 3 machine:
 
-        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
+        cd spines/daemon; ./spines -p 8900 -c spines_ctrl.conf
         cd spines/daemon; ./spines -p 8100 -c spines_int.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd scada_master; ./scada_master 3 3 192.168.101.103:8100 192.168.101.103:8120
         cd prime/bin; ./prime -i 3 -g 3
-        cd prime/bin;./config_agent 3 192.168.101.103 /tmp/sm_ipc_main s 3 3
+        cd prime/bin;./config_agent 3 192.168.101.103 /tmp/sm_ipc_main s 1 3
 
 - On control center 4 machine:
 
-        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
+        cd spines/daemon; ./spines -p 8900 -c spines_ctrl.conf
         cd spines/daemon; ./spines -p 8100 -c spines_int.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd scada_master; ./scada_master 4 4 192.168.101.104:8100 192.168.101.104:8120
         cd prime/bin; ./prime -i 4 -g 4
-        cd prime/bin;./config_agent 4 192.168.101.104 s 4 4
+        cd prime/bin;./config_agent 4 192.168.101.104 /tmp/sm_ipc_main s 1 4
 
 - On control center 5 machine:
 
-        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
+        cd spines/daemon; ./spines -p 8900 -c spines_ctrl.conf
         cd spines/daemon; ./spines -p 8100 -c spines_int.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd scada_master; ./scada_master 5 5 192.168.101.105:8100 192.168.101.105:8120
         cd prime/bin; ./prime -i 5 -g 5
-        cd prime/bin;./config_agent 5 192.168.101.105 /tmp/sm_ipc_main s 5 5
+        cd prime/bin;./config_agent 5 192.168.101.105 /tmp/sm_ipc_main s 1 5
 
 - On control center 6 machine:
 
-        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
+        cd spines/daemon; ./spines -p 8900 -c spines_ctrl.conf
         cd spines/daemon; ./spines -p 8100 -c spines_int.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd scada_master; ./scada_master 6 6 192.168.101.106:8100 192.168.101.106:8120
         cd prime/bin; ./prime -i 6 -g 6
-        cd prime/bin;./config_agent 6 192.168.101.106 /tmp/sm_ipc_main s 6 6
+        cd prime/bin;./config_agent 6 192.168.101.106 /tmp/sm_ipc_main s 1 6
 
 - On the PLC/RTU proxy machine:
 
-        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
+        cd spines/daemon; ./spines -p 8900 -c spines_ctrl.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd proxy; ./proxy 0 192.168.101.107:8120 1
         ...
@@ -698,7 +698,7 @@ To run this example, execute the following:
 
 - On the HMI machine:
 
-        cd spines/daemon; ./spines -p 8900 -c spines_config.conf
+        cd spines/daemon; ./spines -p 8900 -c spines_ctrl.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd jhu_hmi; ./jhu_hmi 192.168.101.108:8120 -port=5051
         cd pnnl_hmi; ./pnnl_hmi 192.168.101.108:8120 -port=5052
@@ -714,6 +714,13 @@ To run this example, execute the following:
 	Three additional example configurations are provided in that directory: `conf_4`
 	(4 replicas), `conf_3+3+3+3` (12 replicas divided across 4 sites) and `conf_6+6+6` 
         (18 relicas across 3 sites). See `example_conf/README.txt` for details.
+
+- To perform a simple benchmark, instead of running PLCs/RTUs and HMIs as
+  described above, you can run on the PLC/RTU proxy machine:
+
+        cd spines/daemon; ./spines -p 8900 -c spines_ctrl.conf
+        cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
+        cd benchmark; ./benchmark 1 192.168.101.107:8120 1000000 500
 
 - To perform reconfiguration, you can use the Configuration Manager with the
   following commands on the HMI Machine (from prime/bin directory):
@@ -736,3 +743,13 @@ To run this example, execute the following:
     `prime/bin` directory. Note that the IPs, Ports and ID in
     `new_conf.txt` file of these directories need to be modified to match the
     testbed.
+
+    A simpler example of reconfiguration within a single site is also
+    available. If you run the example `conf_6` as the initial configuration, as
+    described above, you can reconfigure to the (less resilient) `conf_4`:
+
+        cd prime/bin;./config_manager conf_4
+
+    To return to the original `conf_6`, you can do:
+
+        cd prime/bin;./config_manager conf_6_v2

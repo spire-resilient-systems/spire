@@ -21,7 +21,7 @@
 #ifndef PROCESSVIEWSERVER_H
 #define PROCESSVIEWSERVER_H
 
-const char pvserver_version[] = "4.8.6";
+const char pvserver_version[] = "5.15.3";
 
 // define WIN
 #ifdef _WIN32
@@ -296,6 +296,8 @@ enum ORIENTATION
 {
   HORIZONTAL = 0,
   VERTICAL   = 1
+  //jose HORIZONTAL = 1,
+  //jose VERTICAL   = 2
 };
 
 enum Orientation
@@ -437,7 +439,8 @@ Key_F12 = 0x100003b
 enum QpwLegend      { BottomLegend = 0, TopLegend, LeftLegend, RightLegend};
 enum QwtAxis        { yLeft, yRight, xBottom, xTop, axisCnt };
 enum QwtAutoscale   { pvNone = 0, IncludeRef = 1, Symmetric = 2, Floating = 4, Logarithmic = 8, Inverted = 16 };
-enum ScalePosition  { ScaleLeft, ScaleRight, ScaleTop, ScaleBottom };
+//rlmurx-was-here enum ScalePosition  { ScaleLeft, ScaleRight, ScaleTop, ScaleBottom };
+enum ScalePosition  { ScaleNone, ScaleLeft, ScaleRight, ScaleTop, ScaleBottom };
 enum ThermoPosition { ThermoNone, ThermoLeft, ThermoRight, ThermoTop, ThermoBottom};
 enum KnobSymbol     { KnobLine, KnobDot };
 enum CounterButton  { CounterButton1, CounterButton2, CounterButton3, CounterButtonCnt };
@@ -521,6 +524,7 @@ typedef struct _PARAM_
   int   fhdltmp;                         /* temporary file handle              */
   int   iclientsocket;                   /* 0 <= iclientsockert < MAX_CLIENTS index into clientsocket[] */
   int   is_binary;                       /* 0 for text message 1 otherwise     */
+  int   button;                          /* last clicked button                */
 }PARAM;
 
 #ifndef __VMS
@@ -2230,6 +2234,10 @@ Set a table cell to ComboBox.
 example:
 pvSetTableComboBox(p,Table1,2,1,1,"choice1,choice2,choice3");
 
+You can add a # in front of choice in order to make it the selectedChoice.
+example: make choice2 the selectedChoice
+pvSetTableComboBox(p,Table1,2,1,1,"choice1,#choice2,choice3");
+
 Allowed widgets: QTable
 </pre> */
 int pvSetTableComboBox(PARAM *p, int id, int x, int y, int editable, const char *textlist);
@@ -3914,9 +3922,11 @@ int qwtCompassSetValue(PARAM *p, int id, float value);
  *  QwtDial Widget
  *  @{ */
 /*! <pre>
+obsolete, no longer used
 </pre> */
 int qwtDialSetRange(PARAM *p, int id, float vmin, float vmax, float step=0.0f);
 /*! <pre>
+obsolte, no longer used
 </pre> */
 int qwtDialSetMass(PARAM *p, int id, float mass);
 /*! <pre>
@@ -3941,6 +3951,7 @@ int qwtDialSetMode(PARAM *p, int id, int mode);
 </pre> */
 int qwtDialSetWrapping(PARAM *p, int id, int wrap);
 /*! <pre>
+parameter step is no longer used
 </pre> */
 int qwtDialSetScale(PARAM *p, int id, int maxMajIntv, int maxMinIntv, float step);
 /*! <pre>

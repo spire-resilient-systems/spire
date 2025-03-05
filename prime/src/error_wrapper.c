@@ -30,7 +30,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -47,8 +47,8 @@
  * unexpected event occurs (or sometimes expected when under attack). All exits
  * should occur through these functions. */
 
-#include "spu_alarm.h"
 #include "data_structs.h"
+#include "spu_alarm.h"
 
 extern server_variables VAR;
 

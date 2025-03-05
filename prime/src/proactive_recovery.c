@@ -29,7 +29,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  * 
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -40,8 +40,6 @@
  */
 
 #include <assert.h>
-#include "spu_memory.h"
-#include "spu_alarm.h"
 #include "utility.h"
 #include "signature.h"
 #include "validate.h"
@@ -54,13 +52,15 @@
 #include "catchup.h"
 #include "proactive_recovery.h"
 
+#include "spu_memory.h"
+#include "spu_alarm.h"
+
 /* Global Variables */
 extern network_variables    NET;
 extern server_variables     VAR;
 extern server_data_struct   DATA;
 
 /* Local Functions */
-void PR_Clear_Reset_Data_Structures(void);
 void PR_Periodic_Retrans(int d1, void *d2);
 void PR_Accept_Incarnation(int32u replica);
 void PR_Check_Complete_Pending_State(int32u replica);
@@ -1208,7 +1208,6 @@ void PR_Try_To_Complete_Recovery(int32u recent_replica)
     ord_certificate_message *oc_specific;
     reset_certificate_message *rc_specific;
     reset_proposal_message *rpo_specific;
-    pending_state_message *psm;
     pending_share_message* pss;
     byte *ptr, digest[DIGEST_SIZE];
     stdit it;
@@ -1337,13 +1336,12 @@ void PR_Try_To_Complete_Recovery(int32u recent_replica)
          * (when we jumped), we could not actually check that the incarnations
          * (and signatures) were valid when we initially received these
          * messages */
-        psm = (pending_state_message *)(DATA.PR.pending_state[i] + 1);
         for (stdhash_begin(&DATA.PR.pending_shares[i], &it);
             !stdhash_is_end(&DATA.PR.pending_shares[i], &it); stdit_next(&it))
         {
             mess = *(signed_message **)stdit_val(&it);
             pss = (pending_share_message *)(mess + 1);
-            assert(pss->index > 0 && pss->index <= psm->total_shares);
+            assert(pss->index > 0 && pss->index <= ((pending_state_message *)(DATA.PR.pending_state[i] + 1))->total_shares);
             content = (signed_message *)(pss + 1); 
             to_process = UTIL_New_Signed_Message();
             memcpy(to_process, content, UTIL_Message_Size(content));
@@ -1395,8 +1393,10 @@ void PR_Send_Pending_State(int32u target, int32u acked_nonce)
         share = UTIL_DLL_Front_Message(&DATA.PR.outbound_pending_share_dll[target]);
         assert(share);
         pss = (pending_share_message *)(share + 1);
+
         content = (signed_message *)(pss + 1);
         assert(content->type == PO_REQUEST || content->type == PRE_PREPARE);
+
         UTIL_DLL_Pop_Front(&DATA.PR.outbound_pending_share_dll[target]);
         SIG_Add_To_Pending_Messages(share, dest_bits, UTIL_Get_Timeliness(PENDING_SHARE));
         dec_ref_cnt(share);

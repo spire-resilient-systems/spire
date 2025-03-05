@@ -29,7 +29,7 @@
  *   Sahiti Bommareddy    Reconfiguration 
  *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -43,8 +43,6 @@
 #include <string.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include "spu_alarm.h"
-#include "spu_memory.h"
 #include "signature.h"
 #include "data_structs.h"
 #include "openssl_rsa.h"
@@ -55,6 +53,9 @@
 #include "order.h"
 #include "validate.h"
 #include "proactive_recovery.h"
+
+#include "spu_alarm.h"
+#include "spu_memory.h"
 
 extern server_data_struct DATA;
 extern server_variables   VAR;
@@ -341,17 +342,18 @@ void SIG_Finish_Pending_Messages(byte *signature)
           /* Send non-broadcast messages to specific server that needs it,
            * e.g., proof matrix and recon messages. */
           else if (dest_bits != BROADCAST) {
-            for(i = 1; i <= VAR.Num_Servers; i++) {
-              if(UTIL_Bitmap_Is_Set(&dest_bits, i) && i != VAR.My_Server_ID)
+            for (i = 1; i <= VAR.Num_Servers; i++) {
+              if (UTIL_Bitmap_Is_Set(&dest_bits, i) && i != VAR.My_Server_ID) {
                 UTIL_Send_To_Server(mess, i);
-		Alarm(DEBUG,"UTIL_Send_To_Server non-Broadcast mess type=%s\n", UTIL_Type_To_String(mess->type));
+
+                Alarm(DEBUG,"UTIL_Send_To_Server non-Broadcast mess type=%s\n", UTIL_Type_To_String(mess->type));
+              }
             }
           }
           /* Otherwise, its a broadcast message */
           else {
-            //if (mess->type != REPLAY_COMMIT)
-	      Alarm(DEBUG,"UTIL_Send_To_Server Broadcast mess type=%s\n", UTIL_Type_To_String(mess->type));
-              UTIL_Broadcast(mess);
+            Alarm(DEBUG,"UTIL_Send_To_Server Broadcast mess type=%s\n", UTIL_Type_To_String(mess->type));
+            UTIL_Broadcast(mess);
           }
 #endif
       }

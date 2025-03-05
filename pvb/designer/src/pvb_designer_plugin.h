@@ -17,7 +17,8 @@
 #define PVB_DESIGNER_PLUGIN_H
 
 #include <qglobal.h>
-#include <QDesignerCustomWidgetInterface>
+//#include <QDesignerCustomWidgetInterface>
+#include <QtUiPlugin/QDesignerCustomWidgetInterface>
 #include <QDesignerTaskMenuExtension>
 #include <QExtensionFactory>
 
@@ -63,6 +64,10 @@ class CustomWidgetCollectionInterface: public QObject,
 {
     Q_OBJECT
     Q_INTERFACES(QDesignerCustomWidgetCollectionInterface)
+
+#if QT_VERSION >= 0x050000
+    Q_PLUGIN_METADATA(IID "org.qt-project.Qt.QDesignerCustomWidgetCollectionInterface" )
+#endif
 
 public:
     CustomWidgetCollectionInterface(QObject *parent = NULL);

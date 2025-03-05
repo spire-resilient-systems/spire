@@ -26,8 +26,10 @@
  * Major Contributors:
  *   Brian Coan           Design of the Prime algorithm
  *   Jeff Seibert         View Change protocol 
+ *   Sahiti Bommareddy    Reconfiguration 
+ *   Maher Khan           Reconfiguration 
  *      
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -134,11 +136,15 @@
  * of messages sent over the WAN, we can use a multicast address of the form:
  * 254.255.0.X to send to all replicas reliably */
 #define SPINES_MCAST_ADDR      "254.255.0.20"
+/*IP and Port Used for Multicast on Configuration Network*/
 #define CONF_SPINES_MCAST_ADDR "224.1.1.3"
-#define CONF_MNGR_ADDR "192.168.53.73"
-#define CONFIGUATION_SPINES_PORT       8900
 #define CONF_SPINES_MCAST_PORT 9900
+/*IP Address of Configuration Manager- Please edit to match testbed*/
+#define CONF_MNGR_ADDR "192.168.101.108"
+/*Ports of Spines Configuration Network used by Configuration Manager and Agents*/
+#define CONFIGUATION_SPINES_PORT       8900
 #define CTRL_BASE_PORT      9580
+
 #define SPINES_PRIORITY 1
 
 #define SPINES_CONNECT_SEC  2
@@ -191,7 +197,7 @@
 #define THROTTLE_OUTGOING_MESSAGES 0
 
 /* These values define the maximum outgoing bandwidth of each traffic
- //* class when throttling is used.  The number are in bits per second
+ * class when throttling is used.  The number are in bits per second
  * (e.g., 10000000 means the outgoing bandwidth is not to exceed
  * 10Mbps). Note that in the current release, RECON messages are
  * always throttled, regardless of whether the

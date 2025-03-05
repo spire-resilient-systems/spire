@@ -35,7 +35,7 @@
  # Contributors:
  #   Samuel Beckley       Contributions to HMIs 
  #
- # Copyright (c) 2017-2024 Johns Hopkins University.
+ # Copyright (c) 2017-2025 Johns Hopkins University.
  # All rights reserved.
  #
  # Partial funding for Spire research was provided by the Defense Advanced 
@@ -47,11 +47,11 @@
 
 CC            = gcc
 CXX           = g++
-CFLAGS       += -m64 -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
-CXXFLAGS     += -m64 -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
+CFLAGS       += -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
+CXXFLAGS     += -pipe -O2 -Wall -W -fPIE -g $(DEFINES)
 INCPATH       = -I. -I ../prime/stdutil/include -I ../spines/libspines/ -I ../spines/libspread-util/include -I ../common
 LINK          = g++
-LFLAGS        = -m64 -Wl,-O1
+LFLAGS        = -Wl,-O1
 LIBS          = $(SUBLIBS) -lpthread \
 				../prime/OpenTC-1.1/TC-lib-1.0/.libs/libTC.a \
 				../spines/libspines/libspines.a ../prime/stdutil/lib/libstdutil.a \

@@ -31,7 +31,7 @@
  * 
  *
  *      
- * Copyright (c) 2008-2024
+ * Copyright (c) 2008-2025
  * The Johns Hopkins University.
  * All rights reserved.
  * 
@@ -42,9 +42,6 @@
  */
 
 #include <assert.h>
-#include "spu_memory.h"
-#include "spu_alarm.h"
-#include "objects.h"
 #include "utility.h"
 #include "signature.h"
 #include "view_change.h"
@@ -54,6 +51,10 @@
 #include "order.h"
 #include "tc_wrapper.h"
 #include "catchup.h"
+
+#include "spu_memory.h"
+#include "spu_alarm.h"
+#include "objects.h"
 
 /* Global Variables */
 extern server_variables     VAR;
@@ -291,9 +292,9 @@ void VIEW_Start_View_Change()
         /* First, grab the pre-prepare - TODO - resolve the parts issue*/
         size = UTIL_Message_Size(slot->pre_prepare_parts_msg[1]);
         memcpy(offset, slot->pre_prepare_parts_msg[1], size);
- 	//print_PC_Set(pc);	
         pc->len += size;
         offset += size;
+
         /* Next, grab the 2f+k prepares */
         pcount = 0;
         for (j = 1; j <= VAR.Num_Servers && pcount < 2*VAR.F + VAR.K; j++) {
@@ -302,13 +303,7 @@ void VIEW_Start_View_Change()
 
             size = UTIL_Message_Size(slot->prepare_certificate.prepare[j]);
             memcpy(offset, slot->prepare_certificate.prepare[j], size);
-            signed_message *p_header;
-	    p_header=(signed_message *)offset;
-	    prepare_message *p_mess;
-	    p_mess= (prepare_message *) (p_header+1);
-	    //printf("j=%d, seq_num=%lu, view=%lu, digest: \n",j,p_mess->seq_num,p_mess->view);
-	    //OPENSSL_RSA_Print_Digest(p_mess->digest);
-	    pc->len += size;
+            pc->len += size;
             offset += size;
             pcount++;
         }
