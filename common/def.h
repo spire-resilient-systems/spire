@@ -107,35 +107,35 @@
 /* List of IP addresses for Spines daemons on the external Spines network
  * connecting the control center sites with the PLC/RTU proxies and HMIs. We
  * assume there is one Spines daemon per site */
-#define SPINES_EXT_SITE_ADDRS {"192.168.53.104", \
-                               "192.168.53.105", \
-                               "192.168.53.106", \
-                               "192.168.53.107",\
-                               "192.168.53.108",\
-                               "192.168.53.109" }
+#define SPINES_EXT_SITE_ADDRS {"192.168.101.101", \
+                               "192.168.101.102", \
+                               "192.168.101.103", \
+                               "192.168.101.104",\
+                               "192.168.101.105",\
+                               "192.168.101.106" }
 
 /* List of IP addresses for Spines daemons on the internal Spines network
  * connecting all the control-center and data-center sites with one another. We
  * assume there is one Spines daemon per site */
-#define SPINES_INT_SITE_ADDRS {"192.168.53.104", \
-                               "192.168.53.105", \
-                               "192.168.53.106", \
-                               "192.168.53.107", \
-                               "192.168.53.108", \
-                               "192.168.53.109" }
+#define SPINES_INT_SITE_ADDRS {"192.168.101.101", \
+                               "192.168.101.102", \
+                               "192.168.101.103", \
+                               "192.168.101.104", \
+                               "192.168.101.105", \
+                               "192.168.101.106" }
 
 /* IP address for the Spines daemon that connects with the PLC/RTU proxy or
  * proxies */
-#define SPINES_RTU_ADDR "192.168.53.102"
+#define SPINES_RTU_ADDR "192.168.101.107"
 
 /* IP address for the Spines daemon that connects with the HMI(s) */
-#define SPINES_HMI_ADDR "192.168.53.101"
+#define SPINES_HMI_ADDR "192.168.101.108"
 
 /*Control Center Connectors for Integrated Architecture Scenario*/
 #define NUM_CC_CONNECTORS 2
 
-#define CC_CONNECTORS {"192.168.53.102", \
-		       "192.168.53.103" }
+#define CC_CONNECTORS {"192.168.101.107", \
+		       "192.168.101.108" }
 
 /************************
  *    Spines defines    *

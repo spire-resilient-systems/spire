@@ -13,7 +13,7 @@
                     "scenario":"JHU",
                     "protocol":"dnp3",
                     "PORT":20001,
-                    "IP":"192.168.53.102"
+                    "IP":"192.168.101.107"
                 }
             ]
         },
@@ -28,7 +28,7 @@
                     "scenario":"JHU",
                     "protocol":"dnp3",
                     "PORT":20002,
-                    "IP":"192.168.53.102"
+                    "IP":"192.168.101.107"
                 }
             ]
         },
@@ -43,7 +43,7 @@
                     "scenario":"JHU",
                     "protocol":"dnp3",
                     "PORT":20003,
-                    "IP":"192.168.53.102"
+                    "IP":"192.168.101.107"
                 }
             ]
         },
@@ -58,7 +58,7 @@
                     "scenario":"JHU",
                     "protocol":"modbus",
                     "PORT":506,
-                    "IP":"192.168.53.102",
+                    "IP":"192.168.101.107",
                     "NUM_CYCLES":6,
                     "DEBUG":1,
                     "CYCLES": [
@@ -83,7 +83,7 @@
                     "scenario":"JHU",
                     "protocol":"modbus",
                     "PORT":507,
-                    "IP":"192.168.53.102",
+                    "IP":"192.168.101.107",
                     "NUM_CYCLES":5,
                     "DEBUG":1,
                     "CYCLES": [
@@ -108,7 +108,7 @@
                     "scenario":"JHU",
                     "protocol":"dnp3",
                     "PORT":20006,
-                    "IP":"192.168.53.102"
+                    "IP":"192.168.101.107"
                 }
             ]
         },
@@ -124,7 +124,7 @@
                     "scenario":"JHU",
                     "protocol":"dnp3",
                     "PORT":20007,
-                    "IP":"192.168.53.102"
+                    "IP":"192.168.101.107"
                 }
             ]
         },
@@ -140,7 +140,7 @@
                     "scenario":"JHU",
                     "protocol":"dnp3",
                     "PORT":20008,
-                    "IP":"192.168.53.102"
+                    "IP":"192.168.101.107"
                 }
             ]
         },
@@ -156,7 +156,7 @@
                     "scenario":"JHU",
                     "protocol":"modbus",
                     "PORT":511,
-                    "IP":"192.168.53.102",
+                    "IP":"192.168.101.107",
                     "NUM_CYCLES":3,
                     "DEBUG":1,
                     "CYCLES": [
@@ -179,7 +179,7 @@
                     "scenario":"JHU",
                     "protocol":"modbus",
                     "PORT":512,
-                    "IP":"192.168.53.102",
+                    "IP":"192.168.101.107",
                     "NUM_CYCLES":3,
                     "DEBUG":1,
                     "CYCLES": [
@@ -203,7 +203,7 @@
                     "protocol":"modbus",
                     "scenario":"PNNL",
                     "PORT":502,
-                    "IP":"192.168.53.102",
+                    "IP":"192.168.101.107",
                     "NUM_CYCLES":3,
                     "DEBUG":1,
                     "CYCLES": [
@@ -226,7 +226,7 @@
                     "protocol":"modbus",
                     "scenario":"EMS",
                     "PORT":513,
-                    "IP":"192.168.53.102",
+                    "IP":"192.168.101.107",
                     "NUM_CYCLES":3,
                     "DEBUG":1,
                     "CYCLES": [
@@ -249,7 +249,7 @@
                     "protocol":"modbus",
                     "scenario":"EMS",
                     "PORT":514,
-                    "IP":"192.168.53.102",
+                    "IP":"192.168.101.107",
                     "NUM_CYCLES":3,
                     "DEBUG":1,
                     "CYCLES": [
@@ -272,7 +272,7 @@
                     "protocol":"modbus",
                     "scenario":"EMS",
                     "PORT":515,
-                    "IP":"192.168.53.102",
+                    "IP":"192.168.101.107",
                     "NUM_CYCLES":3,
                     "DEBUG":1,
                     "CYCLES": [
@@ -295,7 +295,7 @@
                     "protocol":"modbus",
                     "scenario":"EMS",
                     "PORT":516,
-                    "IP":"192.168.53.102",
+                    "IP":"192.168.101.107",
                     "NUM_CYCLES":3,
                     "DEBUG":1,
                     "CYCLES": [
@@ -318,7 +318,7 @@
                     "protocol":"modbus",
                     "scenario":"EMS",
                     "PORT":517,
-                    "IP":"192.168.53.102",
+                    "IP":"192.168.101.107",
                     "NUM_CYCLES":3,
                     "DEBUG":1,
                     "CYCLES": [
@@ -341,7 +341,7 @@
                     "protocol":"modbus",
                     "scenario":"EMS",
                     "PORT":518,
-                    "IP":"192.168.53.102",
+                    "IP":"192.168.101.107",
                     "NUM_CYCLES":3,
                     "DEBUG":1,
                     "CYCLES": [
@@ -363,7 +363,7 @@
                     "scenario":"SUBSTATION",
                     "protocol":"iec61850",
                     "PORT":20001,
-                    "IP":"192.168.53.102"
+                    "IP":"192.168.101.107"
                 }
             ]
         },
@@ -378,7 +378,7 @@
                     "scenario":"SUBSTATION",
                     "protocol":"iec61850",
                     "PORT":20002,
-                    "IP":"192.168.53.102"
+                    "IP":"192.168.101.107"
                 }
             ]
         },
@@ -393,7 +393,7 @@
                     "scenario":"SUBSTATION",
                     "protocol":"iec61850",
                     "PORT":20002,
-                    "IP":"192.168.53.102"
+                    "IP":"192.168.101.107"
                 }
             ]
         }
