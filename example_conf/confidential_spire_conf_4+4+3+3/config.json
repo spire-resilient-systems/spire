@@ -1,6 +1,6 @@
 {
-    "num_rtus":17,
-    "num_locations":17,
+    "num_rtus":20,
+    "num_locations":20,
     "locations": [
         {
             "ID":0,
@@ -349,6 +349,51 @@
                         "1,holdingRegisters(0,0)",
                         "3,inputRegisters(0,0)"
                     ]
+                }
+            ]
+        },
+	{
+            "ID":17,
+            "protocols": [
+                "iec61850"
+            ],
+            "rtus": [
+                {
+                    "ID":17,
+                    "scenario":"SUBSTATION",
+                    "protocol":"iec61850",
+                    "PORT":20001,
+                    "IP":"192.168.101.105"
+                }
+            ]
+        },
+        {
+            "ID":18,
+            "protocols": [
+                "iec61850"
+            ],
+            "rtus": [
+                {
+                    "ID":18,
+                    "scenario":"SUBSTATION",
+                    "protocol":"iec61850",
+                    "PORT":20002,
+                    "IP":"192.168.101.105"
+                }
+            ]
+        },
+	{
+            "ID":19,
+            "protocols": [
+                "iec61850"
+            ],
+            "rtus": [
+                {
+                    "ID":19,
+                    "scenario":"SUBSTATION",
+                    "protocol":"iec61850",
+                    "PORT":20002,
+                    "IP":"192.168.101.105"
                 }
             ]
         }

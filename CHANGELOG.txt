@@ -1,4 +1,4 @@
-Version 3.0 - TODO
+Version 3.0 - August 27, 2025
    Added end-to-end intrusion-tolerance capabilities
 	* Created end-to-end intrusion-tolerant architecture at all levels i.e.,
 	  from control center level to substation 

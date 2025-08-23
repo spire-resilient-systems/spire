@@ -76,6 +76,15 @@ engine, and include a configuration network, configuration manager and
 configuration agent. The details of the reconfiguration mechanism are in
 `README_Spire.md` and README of Prime.
 
+Version 3.0 is the first time a Byzantine-resilient SCADA system has been
+architected to span multiple levels of the power grid—control centers,
+substations, and field devices—while sustaining end-to-end intrusion tolerance.
+This architectural breakthrough is critical because real-world power grids are
+heterogeneous and interconnected; protecting only a single layer is
+insufficient. By enabling coordinated, resilient operations across the full
+control loop, Spire 3.0 addresses the practical needs of real deployments and
+sets a new benchmark for secure SCADA system design.
+
 ### Confidential Spire
         
 Confidential Spire is an intrusion-tolerant SCADA system that provides the same
@@ -155,9 +164,10 @@ Spire for the Substation: `README_Spire_Substation.md`
 
 ## 5. Version Notes
 
-Spire 3.0 introduces end-to-end intrusion-tolerance capabilities across both
-the control center and substation levels. This integrated architecture is
-described in Sahiti Bommareddy's PhD thesis.
+Spire 3.0 introduces end-to-end intrusion-tolerance capabilities spanning from
+the control center to substation and field devices. This integrated architecture
+is described in Sahiti Bommareddy's PhD thesis
+(https://www.cs.jhu.edu/~yairamir/SahitiBommareddy_PhD_Thesis.pdf).
 
 Spire 2.1 adds reconfiguration support to Spire.
 

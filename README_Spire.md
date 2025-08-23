@@ -166,7 +166,16 @@ There are several configuration files relevant to the Spire system:
     - NOTE: the Modbus and DNP3 configuration settings for the PLCs/RTUs must
       match the specification of the real (or emulated) PLC/RTU devices in
       order to properly connect with, monitor, and control those devices.
-
+    - Starting with Version 3.0, the Spire Toolkit has been extended into a
+      fully Byzantine-resilient system that provides end-to-end intrusion
+      tolerance. As part of this release, substations are now included in the
+      configuration file (IDs 17–19). These substations use IEC 61850 and can be
+      deployed simultaneously. Additional details on substation setup and
+      operation are provided in `README_Spire_substation.md`. Since each
+      substation involves resilient architecture with multiple components, an
+      additional configuration file is required per substation, this is described
+      in Step 5.
+    
 3. Prime configuration files (`prime/src/def.h`, `prime/bin/address.config`,
    `prime/bin/spines_address.config`) -- see Prime documentation for details
 

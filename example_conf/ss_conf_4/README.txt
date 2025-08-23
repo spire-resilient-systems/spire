@@ -11,10 +11,15 @@ ss_spines_ext.conf -> (top-level Spire dir)/spines/daemon/ss_spines_ext.conf)
 
 ss_spines_int.conf -> (top-level Spire dir)/spines/daemon/ss_spines_int.conf)
 
-scada_def.h -> (top-level Spire dir)/common/def.h)
+ss17.conf -> (top-level Spire dir)/common/ss17.conf)
+
+scada_def.h -> (top-level Spire dir)/common/def.h) 
 
 Then, at the top-level Spire directory, run:
 
 make clean
 make libs
 make substation
+
+
+Note that ss17.conf is used to run one substation. For 
