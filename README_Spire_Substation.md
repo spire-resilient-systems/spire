@@ -1,6 +1,6 @@
 # Spire for the Substation: Real-Time Byzantine Resilience for Power Grid Substation
 
-For more information see [www.dsn.jhu.edu/spire/](http://www.dsn.jhu.edu/spire/)
+For more information, see [https://jhu-dsn.github.io/spire/](https://jhu-dsn.github.io/spire/)
 
 Spire for the Substation was added to the open source release in Spire 2.0.
 
