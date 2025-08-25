@@ -157,8 +157,9 @@ Spire for the Substation: `README_Spire_Substation.md`
 ## 5. Version Notes
 
 Spire 3.0 introduces end-to-end intrusion-tolerance capabilities spanning from
-the control center to substation and field devices. This integrated architecture
-is described in [Sahiti Bommareddy's PhD thesis](https://www.cs.jhu.edu/~yairamir/SahitiBommareddy_PhD_Thesis.pdf).
+the control center to substation and field devices. This integrated
+architecture is described in [Sahiti Bommareddy's PhD
+thesis](https://www.cs.jhu.edu/~yairamir/SahitiBommareddy_PhD_Thesis.pdf).
 
 Spire 2.1 adds reconfiguration support to Spire.
 
