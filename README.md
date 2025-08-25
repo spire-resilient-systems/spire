@@ -40,8 +40,9 @@ Spire consists of three components: **Spire** and **Confidential Spire** for
 intrusion-tolerant SCADA at the control-center level, and **Spire for the
 Substation** at the substation level.
 
-Note that Spire at the control center level can work with Spire for the
-Substation providing end-to-end resilience.
+As of Version 3.0, Spire at the control center level and Spire for the
+Substation can be deployed together in an **integrated architecture** 
+that provides end-to-end intrusion tolerance.
 
 ### Spire
         
@@ -75,15 +76,6 @@ reconfiguration modules are implemented as part of the Prime replication
 engine, and include a configuration network, configuration manager and
 configuration agent. The details of the reconfiguration mechanism are in
 `README_Spire.md` and README of Prime.
-
-Version 3.0 is the first time a Byzantine-resilient SCADA system has been
-architected to span multiple levels of the power grid—control centers,
-substations, and field devices—while sustaining end-to-end intrusion tolerance.
-This architectural breakthrough is critical because real-world power grids are
-heterogeneous and interconnected; protecting only a single layer is
-insufficient. By enabling coordinated, resilient operations across the full
-control loop, Spire 3.0 addresses the practical needs of real deployments and
-sets a new benchmark for secure SCADA system design.
 
 ### Confidential Spire
         
