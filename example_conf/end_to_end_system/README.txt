@@ -1,4 +1,8 @@
-This configuration demonstrates an end-to-end intrusion-tolerant system that integrates Spire at the control center level with substations. It includes 6 control-center sites, all PLCs, and 3 substations. This setup supports one compromised replica and one proactive recovery simultaneously.
+This configuration demonstrates an end-to-end intrusion-tolerant system that
+integrates Spire at the control center level with Spire for substations. It
+includes 6 control-center replicas, all example PLCs supported by Spire, and 3
+substations. This setup supports one compromised replica and one proactive
+recovery simultaneously.
 
 ### Configuration Overview
 
