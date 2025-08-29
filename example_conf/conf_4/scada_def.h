@@ -88,7 +88,7 @@
 #define NUM_SITES        4
 
 /* Number of PLCs/RTUs in the system */
-#define NUM_RTU          21
+#define NUM_RTU          20
 
 /* Maximum number of PLCs/RTUs in the system (must have NUM_RTU <= MAX_EMU_RTU)
  * */
