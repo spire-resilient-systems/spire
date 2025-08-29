@@ -240,7 +240,7 @@ All instructions are from top-level directory.
     - The `id` should be the id of this relay node, starting from 1. For example,
       with four relay nodes they are 1-4.
     - The `substation_id` is the id of substation, starting from 17. For example,
-       with 1st relay in subsattion 17 the command is ./trip_master 1 17
+       with 1st relay in substation 17 the command is ./trip_master 1 17
 
 3. Run emulated relays
 
@@ -405,7 +405,7 @@ On these nodes run each connector node, run a connector for each substation.
     
 	- The `subsation_id` is is same as trip_master
 	- The `id` start from 1 and go on until NUM_CC_CONNECTORS
-	  This is to enable multple cc connectors for each substation 
+	  This is to enable multiple cc connectors for each substation 
 
 
 
@@ -539,7 +539,9 @@ For below instructions let substation with substation_id 17 have the following I
     - Relay Node 3: 192.168.101.103
     - Relay Node 4: 192.168.101.104
     - Breaker Node: 192.168.101.105
-    - HMI Node    : 192.168.101.106 
+    - HMI Node    : 192.168.101.106
+
+And other relevant nodes defined in common/def.h: 
     - 2 CC Connectors: 192.168.101.107, 192.168.101.108
 
     On 192.168.101.101:
@@ -639,6 +641,9 @@ The following commands from stdin of the program will generate Samples Value (SV
 
 `s 0` - Generate Simple Close, i.e., all relays will issue Close action GOOSE immediately.
 
-`b relay1_delay relay1_event relay2_delay relay2_event  relay3_delay relay3_event relay4_delay relay4_event` - Relays generate their event(0/1 for close or trip) with the specified delays. This helps generate Byzantine behavior.
+`b relay1_delay relay1_event relay2_delay relay2_event  relay3_delay
+relay3_event relay4_delay relay4_event` - Relays generate their event(0/1 for
+close or trip) with the specified delays. This helps generate Byzantine
+behavior.
 
 Instead of benchmarks program, please run breaker proxy with breaker IED.
