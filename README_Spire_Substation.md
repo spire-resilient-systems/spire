@@ -222,6 +222,14 @@ All instructions are from top-level directory.
     Each relay node needs to run both internal and external Spines networks. 
     The Breaker node needs to run an external Spines network daemon.
 
+    As of V3.0 we can run multiple substations simultaneously. Hence, we need to define spines ports as below: 
+    SS_SPINES_EXT_PORT = SS_SPINES_EXT_BASE_PORT + 10* (substation_id -16)
+    SS_SPINES_INT_PORT = SS_SPINES_INT_BASE_PORT + 10* (substation_id -16)
+
+    For example for substation-id 17:
+     the SS_SPINES_EXT_BASE_PORT from common/def.h is 10200, then SS_SPINES_EXT_PORT is 10210
+     the SS_SPINES_INT_BASE_PORT from common/def.h is 10000, then SS_SPINES_INT_PORT is 10010
+
     To run (internal Spines network):
 
         cd spines/daemon; ./spines -p SS_SPINES_INT_PORT -c ss_spines_int.conf -I IP_ADDRESS
@@ -296,6 +304,14 @@ All instructions are from top-level spire directory.
     Each relay node needs to run only external Spines networks. 
     The Breaker node needs to run an external Spines network daemon.
 
+  As of V3.0 we can run multiple substations simultaneously. Hence, we need to define spines ports as below: 
+    SS_SPINES_EXT_PORT = SS_SPINES_EXT_BASE_PORT + 10* (substation_id -16)
+    SS_SPINES_INT_PORT = SS_SPINES_INT_BASE_PORT + 10* (substation_id -16)
+
+    For example for substation_id 17:
+     the SS_SPINES_EXT_BASE_PORT from common/def.h is 10200, then SS_SPINES_EXT_PORT is 10210
+     the SS_SPINES_INT_BASE_PORT from common/def.h is 10000, then SS_SPINES_INT_PORT is 10010
+
    To run (external Spines network):
 
         cd spines/daemon; ./spines -p SS_SPINES_EXT_PORT -c ss_spines_ext.conf -I IP_ADDRESS
@@ -312,7 +328,7 @@ All instructions are from top-level spire directory.
     - The `id` should be the id of this relay node, starting from 1. For example,
       with four relay nodes they are 1-4.
     - The `substation_id` is the id of substation, starting from 17. For example,
-       with 1st relay in subsattion 17 the command is ./trip_master 1 17
+       with 1st relay in substation 17 the command is ./trip_master 1 17
 
 3. Run emulated relays
 
@@ -365,7 +381,7 @@ Note: proxy and hmis folder compiles by compiling Spire with 'make' from top lev
 
 1. Substation HMI and IED Connector: 
 
-Note: These processes are optional, not needed for benchmarks but can be used to support operator commands from substation
+Note: These processes are optional, not needed for benchmarks but can be used to support operator commands from substation HMI
 
   Run IED Connector on each relay node:
  
@@ -403,8 +419,8 @@ On these nodes run each connector node, run a connector for each substation.
 
 	cd proxy; ./cc_connector substation_id id
     
-	- The `subsation_id` is is same as trip_master
-	- The `id` start from 1 and go on until NUM_CC_CONNECTORS
+	- The `substation_id` is the same as trip_master
+	- The `id` start from 1 and go on until NUM_CC_CONNECTORS (default is set to 2)
 	  This is to enable multiple cc connectors for each substation 
 
 
@@ -437,76 +453,76 @@ For Substation HMI we would additionally need IED connector on each relay node a
 For integrated scenario, we would need to run cc connectors also.
 
 For below instructions let substation with substation_id 17 have the following IPs defined in common/ss17.conf file:
-    - Relay Node 1: 192.168.101.101
-    - Relay Node 2: 192.168.101.102
-    - Relay Node 3: 192.168.101.103
-    - Relay Node 4: 192.168.101.104
-    - Breaker Node: 192.168.101.105
-    - HMI Node    : 192.168.101.106 
+    - Relay Node 1: 192.168.101.109
+    - Relay Node 2: 192.168.101.110
+    - Relay Node 3: 192.168.101.111
+    - Relay Node 4: 192.168.101.112
+    - Breaker Node: 192.168.101.113
+    - HMI Node    : 192.168.101.114 
 
 And other relevant nodes defined in common/def.h:
     - 2 CC Connectors: 192.168.101.107, 192.168.101.108 
 
 
-    On 192.168.101.101:
+    On 192.168.101.109:
 
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
-        cd spines/daemon; ./spines -p 10010 -c ss_spines_int.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
+        cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
         cd trip_master;sudo ./trip_master 1 17
         cd relay_emulator; sudo ./goose_publisher interface 1 17
         cd proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo1Master/LLN0$GO$GoCB01 lo lo SPNo1Master SPNo1Master/LLN0$dataset1 1
-        cd proxy;sudo ./ied_connector 192.168.101.101 1 lo 17
+        cd proxy;sudo ./ied_connector 192.168.101.109 1 lo 17
 
-    On 192.168.101.102:
+    On 192.168.101.110:
 
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
-        cd spines/daemon; ./spines -p 10010 -c ss_spines_int.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
+        cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
         cd trip_master; ./trip_master 2 17
         cd relay_emulator; sudo ./goose_publisher interface 2 17
         cd ~/spire/proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo2Master/LLN0$GO$GoCB01 lo lo SPNo2Master SPNo2Master/LLN0$dataset1 1
-        cd proxy;sudo ./ied_connector 192.168.101.102 2 lo 17
+        cd proxy;sudo ./ied_connector 192.168.101.110 2 lo 17
 
-    On 192.168.101.103:
+    On 192.168.101.111:
 
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
-        cd spines/daemon; ./spines -p 10010 -c ss_spines_int.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
+        cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
         cd trip_master; ./trip_master 3 17
         cd relay_emulator; sudo ./goose_publisher interface 3 17
         cd ~/spire/proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo3Master/LLN0$GO$GoCB01 lo lo SPNo3Master SPNo3Master/LLN0$dataset1 1
-        cd proxy;sudo ./ied_connector 192.168.101.103 3 lo 17
+        cd proxy;sudo ./ied_connector 192.168.101.111 3 lo 17
 
 
-    On 192.168.101.104:
+    On 192.168.101.112:
 
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
-        cd spines/daemon; ./spines -p 10010 -c ss_spines_int.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
+        cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
         cd trip_master; ./trip_master 4 18
         cd relay_emulator; sudo ./goose_publisher interface 4 18
         cd ~/spire/proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo4Master/LLN0$GO$GoCB01 lo lo SPNo4Master SPNo4Master/LLN0$dataset1 1
-        cd proxy;sudo ./ied_connector 192.168.101.104 4 lo 18
+        cd proxy;sudo ./ied_connector 192.168.101.112 4 lo 18
 
-    On 192.168.101.105 (only if benchmarks are to be run):
+    On 192.168.101.113 (only if benchmarks are to be run):
 
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd  benchmarks_ss; ./benchmark 17 100
 
  Note: If using breaker proxy please see instructions below
 
-    On 192.168.101.106:
+    On 192.168.101.114:
 	
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
-        cd hmis/ss1_hmi; ./ss_hmi 192.168.101.106 17 -port=4577
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
+        cd hmis/ss1_hmi; ./ss_hmi 192.168.101.114 17 -port=4577
     In pvbrowser address bar enter:
-        pvb://192.168.101.106:4577
+        pvb://192.168.101.114:4577
 
     On 192.168.101.107:
 	
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd proxy;./cc_connector 17 1
     
     On 192.168.101.108:
 	
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
 	cd proxy;./cc_connector 17 2
 
 While you run control center, you need to run Spire in any of the control center configs to issue commands.
@@ -534,69 +550,69 @@ For Substation HMI we would additionally need IED connector on each relay node a
 For integrated scenario, we would need to run cc connectors also.
 
 For below instructions let substation with substation_id 17 have the following IPs defined in common/ss17.conf file:
-    - Relay Node 1: 192.168.101.101
-    - Relay Node 2: 192.168.101.102
-    - Relay Node 3: 192.168.101.103
-    - Relay Node 4: 192.168.101.104
-    - Breaker Node: 192.168.101.105
-    - HMI Node    : 192.168.101.106
+    - Relay Node 1: 192.168.101.109
+    - Relay Node 2: 192.168.101.110
+    - Relay Node 3: 192.168.101.111
+    - Relay Node 4: 192.168.101.112
+    - Breaker Node: 192.168.101.113
+    - HMI Node    : 192.168.101.114
 
 And other relevant nodes defined in common/def.h: 
     - 2 CC Connectors: 192.168.101.107, 192.168.101.108
 
-    On 192.168.101.101:
+    On 192.168.101.109:
 
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd trip_master_v2; ./trip_master 1 17
         cd relay_emulator; sudo ./goose_publisher interface 1 17
         cd ~/spire/proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo1Master/LLN0$GO$GoCB01 lo lo SPNo1Master SPNo1Master/LLN0$dataset1 1
-        cd proxy;sudo ./ied_connector 192.168.101.101 1 lo 17
+        cd proxy;sudo ./ied_connector 192.168.101.109 1 lo 17
 
-    On 192.168.101.102:
+    On 192.168.101.110:
 
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd trip_master_v2; ./trip_master 2 17
         cd relay_emulator; sudo ./goose_publisher interface 2 17
         cd ~/spire/proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo2Master/LLN0$GO$GoCB01 lo lo SPNo2Master SPNo2Master/LLN0$dataset1 1
-        cd proxy;sudo ./ied_connector 192.168.101.102 2 lo 17
+        cd proxy;sudo ./ied_connector 192.168.101.110 2 lo 17
 
-    On 192.168.101.103:
+    On 192.168.101.111:
 
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd trip_master_v2; ./trip_master 3 17
         cd relay_emulator; sudo ./goose_publisher interface 3 17
         cd ~/spire/proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo3Master/LLN0$GO$GoCB01 lo lo SPNo3Master SPNo3Master/LLN0$dataset1 1;
-        cd proxy;sudo ./ied_connector 192.168.101.103 3 lo 17
+        cd proxy;sudo ./ied_connector 192.168.101.111 3 lo 17
 
-    On 192.168.101.104:
+    On 192.168.101.112:
 
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd trip_master_v2; ./trip_master 4 17
         cd relay_emulator; sudo ./goose_publisher interface 4 17
         cd ~/spire/proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo4Master/LLN0$GO$GoCB01 lo lo SPNo4Master SPNo4Master/LLN0$dataset1 1
-        cd proxy;sudo ./ied_connector 192.168.101.104 4 lo 17
+        cd proxy;sudo ./ied_connector 192.168.101.112 4 lo 17
 
-    On 192.168.101.105:
+    On 192.168.101.113:
 
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd  benchmarks_ss; ./benchmark2 17 100
  Note: If using breaker proxy please see instructions below
      
-    On 192.168.101.106:
+    On 192.168.101.114:
         
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
-        cd hmis/ss1_hmi; ./ss_hmi 192.168.101.106 17 -port=4577
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
+        cd hmis/ss1_hmi; ./ss_hmi 192.168.101.114 17 -port=4577
     In pvbrowser address bar enter:
-        pvb://192.168.101.106:4577
+        pvb://192.168.101.114:4577
 
     On 192.168.101.107:
 	
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd proxy;./cc_connector 17 1
     
     On 192.168.101.108:
 	
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd proxy;./cc_connector 17 2
 
 
@@ -615,9 +631,9 @@ Please note that when we use real relays, we should not run emulated relays.
 
 
 The Breaker Proxy can be run with their respective Trip Master modules by commands:
-On 192.168.101.105:
+On 192.168.101.113:
 
-        cd spines/daemon; ./spines -p 10210 -c ss_spines_ext.conf
+        cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd proxy_iec61850;sudo ./simple_cb_proxy interface substation_id (For Peer protocol with trip_master)
                             or
         cd proxy_iec61850;sudo ./counting_cb_proxy interface substation_id (For Arbiter protocol with trip_master_v2)
