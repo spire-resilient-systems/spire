@@ -48,7 +48,7 @@ This will install all the needed conf files correctly
    make clean
    make libs
    make
-   make subsation
+   make substation
 ```
 3.  Refer to README_Spire_Substation.md for detailed run instructions.
 
