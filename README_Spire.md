@@ -31,7 +31,7 @@ The Spire system includes a SCADA Master and PLC/RTU proxy designed from
 scratch to support intrusion tolerance, as well as several example HMIs based
 on [pvbrowser](https://pvbrowser.de/pvbrowser/index.php). The SCADA Master is
 replicated using the [Prime intrusion-tolerant replication
-engine](http://www.dsn.jhu.edu/prime). Communication between Spire components
+engine](https://jhu-dsn.github.io/prime/). Communication between Spire components
 is protected using the [Spines intrusion-tolerant
 network](http://www.spines.org). The Spire PLC/RTU proxy can interact with any
 devices that use the Modbus or DNP3 communication protocols over IP and with
@@ -166,7 +166,16 @@ There are several configuration files relevant to the Spire system:
     - NOTE: the Modbus and DNP3 configuration settings for the PLCs/RTUs must
       match the specification of the real (or emulated) PLC/RTU devices in
       order to properly connect with, monitor, and control those devices.
-
+    - Starting with Version 3.0, the Spire Toolkit has been extended to support
+      end-to-end intrusion tolerance spanning the control center and substation
+      levels. As part of this release, substations are now included in the
+      configuration file (IDs 17–19). These substations use IEC 61850 and can
+      be deployed simultaneously. Additional details on substation setup and
+      operation are provided in `README_Spire_substation.md`. Since each
+      substation involves a resilient architecture with multiple components, an
+      additional configuration file is required per substation, this is
+      described in Step 5.
+    
 3. Prime configuration files (`prime/src/def.h`, `prime/bin/address.config`,
    `prime/bin/spines_address.config`) -- see Prime documentation for details
 

@@ -40,8 +40,9 @@ Spire consists of three components: **Spire** and **Confidential Spire** for
 intrusion-tolerant SCADA at the control-center level, and **Spire for the
 Substation** at the substation level.
 
-Note that Spire at the control center level can work with Spire for the
-Substation providing end-to-end resilience.
+As of Version 3.0, Spire at the control center level and Spire for the
+Substation can be deployed together in an **integrated architecture** 
+that provides end-to-end intrusion tolerance.
 
 ### Spire
         
@@ -155,9 +156,10 @@ Spire for the Substation: `README_Spire_Substation.md`
 
 ## 5. Version Notes
 
-Spire 3.0 introduces end-to-end intrusion-tolerance capabilities across both
-the control center and substation levels. This integrated architecture is
-described in Sahiti Bommareddy's PhD thesis.
+Spire 3.0 introduces end-to-end intrusion-tolerance capabilities spanning from
+the control center to substation and field devices. This integrated
+architecture is described in [Sahiti Bommareddy's PhD
+thesis](https://www.cs.jhu.edu/~yairamir/SahitiBommareddy_PhD_Thesis.pdf).
 
 Spire 2.1 adds reconfiguration support to Spire.
 
