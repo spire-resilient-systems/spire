@@ -195,17 +195,19 @@ There are several configuration files relevant to the Spire system:
 ### General Prerequisites
 
 - OpenSSL development package
-    * e.g. `yum install openssl-devel`, `apt-get install libssl-dev`
+    * e.g. `dnf install openssl-devel`, `apt-get install libssl-dev`
 
 ### Spines Prerequisites
 
 - Lex and Yacc
-	* e.g. `yum install flex byacc`, `apt-get install flex byacc`
+	* e.g. `dnf install flex byacc`, `apt-get install flex byacc`
 
 ### HMI Prerequisites
 
-- QT development package and webkit
-    * e.g. `yum install qt5-devel  qt5-qtwebkit-devel`, `apt-get install qt5-sdk`
+- QT development package and webkit. Note that for AlmaLinux these require CRB
+  and EPEL repos to be enabled (`dnf config-manager --set-enabled crb`, `dnf
+  install epel-release`
+    * e.g. `dnf install qt5-devel qt5-qtwebengine-devel`, `apt-get install qt5-sdk`
 
 - [pvbrowser](https://pvbrowser.de/pvbrowser/)
     * pvbrowser is packaged with Spire, located in the `pvb` directory.
@@ -220,7 +222,7 @@ There are several configuration files relevant to the Spire system:
 
 ### DNP3 Support Prerequisites
 
-- cmake (e.g. `yum install cmake`, `apt-get install cmake`)
+- cmake (e.g. `dnf install cmake`, `apt-get install cmake`)
 
 - gcc and g++ version 8.3.1 or higher
 
@@ -244,6 +246,8 @@ There are several configuration files relevant to the Spire system:
       `OpenPLC_v2/core/core_builders/dnp3_enabled/build_normal.sh`.
 
 ### OpenPLC (optional, for PLC emulation/creation)
+
+- autotools (e.g. `dnf install autoconf automake`)
 
 - [A (slightly modified) version of OpenPLC](https://github.com/dqian3/OpenPLC_v2.git)
   is packaged  with Spire in the `OpenPLC_v2` directory. 
@@ -642,10 +646,10 @@ The default configuration files included with Spire create a system with:
   following six processes:
     - 1 external Spines daemon
     - 1 internal Spines daemon
-    - 1 configuration Spines daemon
+    - 1 configuration Spines daemon (only needed for reconfiguration)
     - 1 SCADA Master
     - 1 Prime daemon
-    - 1 Configuration Agent
+    - 1 Configuration Agent (only needed for reconfiguration)
 - 1 site with a single machine running the PLC/RTU proxy + 17 emulated PLCs (10
   for the `jhu` system, 1 for the `pnnl/heco` system, and 6 for the `ems`
   system)
@@ -745,10 +749,10 @@ To run this example, execute the following:
 
         cd spines/daemon; ./spines -p 8900 -c spines_ctrl.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
-        cd jhu_hmi; ./jhu_hmi 192.168.101.108:8120 -port=5051
-        cd pnnl_hmi; ./pnnl_hmi 192.168.101.108:8120 -port=5052
-        cd ems_hmi; ./ems_hmi 192.168.101.108:8120 -port=5053
-        cd cc_hmi; ./cc_hmi 192.168.101.108:8120 -port=5054
+        cd hmis/jhu_hmi; ./jhu_hmi 192.168.101.108:8120 -port=5051
+        cd hmis/pnnl_hmi; ./pnnl_hmi 192.168.101.108:8120 -port=5052
+        cd hmis/ems_hmi; ./ems_hmi 192.168.101.108:8120 -port=5053
+        cd hmis/cc_hmi; ./cc_hmi 192.168.101.108:8120 -port=5054
         cd prime/bin;./config_agent 8 192.168.101.108 /tmp/hmi_ipc_main p 3
 
     Connect GUIs by running the pvbrowser application (located in main pvb
@@ -767,6 +771,7 @@ To run this example, execute the following:
         cd spines/daemon; ./spines -p 8900 -c spines_ctrl.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd benchmark; ./benchmark 1 192.168.101.107:8120 1000000 500
+        cd prime/bin; ./config_agent 7 192.168.101.107 /tmp/bm_ipc_main p 1
 
 - To perform reconfiguration, you can use the Configuration Manager with the
   following commands on the HMI Machine (from prime/bin directory):

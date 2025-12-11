@@ -152,15 +152,15 @@ There are several configuration files relevant to the Spire for the Substation s
 
 1. Build libraries, Spines and Prime (from top-level Spire directory):
 
-    make libs
+        make libs
 
 2. Build Spire for the Substation (from top-level Spire directory):
 
-    make substation
+        make substation
 
 3. Note that we can clean with:
 
-    make clean_substation
+        make clean_substation
 
 ---
 
@@ -187,7 +187,7 @@ generated and distributed before the system can run.
 2. Trip Master Keys
     - To generate keys for Peer Protocol:
         
-        cd trip_master;./gen_keys
+            cd trip_master;./gen_keys
 
     - This generates the needed threshold signature scheme keys in
       trip_master/tm_keys) for Peer Protocol.
@@ -198,7 +198,7 @@ generated and distributed before the system can run.
 3. Trip Master_v2 Keys
     - To generate keys for Arbiter Protocol
 
-        cd trip_master_v2;./gen_keys
+            cd trip_master_v2;./gen_keys
 
     - This generates private-public key pairs for all relay nodes
       (`private_01.key` and `public_01.key`, `private_02.key` and
@@ -222,13 +222,15 @@ All instructions are from top-level directory.
     Each relay node needs to run both internal and external Spines networks. 
     The Breaker node needs to run an external Spines network daemon.
 
-    As of V3.0 we can run multiple substations simultaneously. Hence, we need to define spines ports as below: 
-    SS_SPINES_EXT_PORT = SS_SPINES_EXT_BASE_PORT + 10* (substation_id -16)
-    SS_SPINES_INT_PORT = SS_SPINES_INT_BASE_PORT + 10* (substation_id -16)
+    As of V3.0 we can run multiple substations simultaneously. Hence, we need
+    to define spines ports as below: 
+
+        SS_SPINES_EXT_PORT = SS_SPINES_EXT_BASE_PORT + 10* (substation_id -16)
+        SS_SPINES_INT_PORT = SS_SPINES_INT_BASE_PORT + 10* (substation_id -16)
 
     For example for substation-id 17:
-     the SS_SPINES_EXT_BASE_PORT from common/def.h is 10200, then SS_SPINES_EXT_PORT is 10210
-     the SS_SPINES_INT_BASE_PORT from common/def.h is 10000, then SS_SPINES_INT_PORT is 10010
+    the SS_SPINES_EXT_BASE_PORT from common/def.h is 10200, then SS_SPINES_EXT_PORT is 10210
+    the SS_SPINES_INT_BASE_PORT from common/def.h is 10000, then SS_SPINES_INT_PORT is 10010
 
     To run (internal Spines network):
 
@@ -243,7 +245,8 @@ All instructions are from top-level directory.
    `spines/daemon/ss_spines_ext.conf`, respectively
 
 2. Run all Trip Masters
-    cd trip_master; ./trip_master id substation_id 
+
+        cd trip_master; ./trip_master id substation_id 
 
     - The `id` should be the id of this relay node, starting from 1. For example,
       with four relay nodes they are 1-4.
@@ -252,7 +255,7 @@ All instructions are from top-level directory.
 
 3. Run emulated relays
 
-    cd relay_emulator; sudo ./goose_publisher interface id substation_id
+        cd relay_emulator; sudo ./goose_publisher interface id substation_id
 
     - The interface is the network interface to publish on. With emulated
       relays we recommend using `lo` (loopback)
@@ -261,7 +264,7 @@ All instructions are from top-level directory.
 
 4. Run relay proxy
 
-    cd proxy_iec61850;sudo ./relay_proxy relay_CB_Ref breaker_CB_Ref sub_interface pub_interface goID dataset trip_loaction_in_relay_goose
+        cd proxy_iec61850;sudo ./relay_proxy relay_CB_Ref breaker_CB_Ref sub_interface pub_interface goID dataset trip_loaction_in_relay_goose
 
     - `relay_CB_Ref`: Relay control block reference that relay proxies
       subscribe to. For example: `simpleIOGenericIO/LLN0$GO$gcbAnalogValues`
@@ -278,11 +281,12 @@ All instructions are from top-level directory.
     - `trip_location_in_relay_goose`: Location of goose trip or close payload
       in relay GOOSE of subscriber. For emulated relays the value is `1`
     - For example:
- sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo1Master/LLN0$GO$GoCB01 lo lo SPNo1Master SPNo1Master/LLN0$dataset1 1 
+
+            sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo1Master/LLN0$GO$GoCB01 lo lo SPNo1Master SPNo1Master/LLN0$dataset1 1 
 
 5. Benchmarking the Spire for the Substation
     
-    cd benchmarks_ss; ./benchmark substation_id count
+        cd benchmarks_ss; ./benchmark substation_id count
 
     - The `substation_id` is same as trip master
     - The `count` is number of actions to run. We support 1-1000000 actions.
@@ -304,9 +308,10 @@ All instructions are from top-level spire directory.
     Each relay node needs to run only external Spines networks. 
     The Breaker node needs to run an external Spines network daemon.
 
-  As of V3.0 we can run multiple substations simultaneously. Hence, we need to define spines ports as below: 
-    SS_SPINES_EXT_PORT = SS_SPINES_EXT_BASE_PORT + 10* (substation_id -16)
-    SS_SPINES_INT_PORT = SS_SPINES_INT_BASE_PORT + 10* (substation_id -16)
+    As of V3.0 we can run multiple substations simultaneously. Hence, we need to define spines ports as below: 
+
+        SS_SPINES_EXT_PORT = SS_SPINES_EXT_BASE_PORT + 10* (substation_id -16)
+        SS_SPINES_INT_PORT = SS_SPINES_INT_BASE_PORT + 10* (substation_id -16)
 
     For example for substation_id 17:
      the SS_SPINES_EXT_BASE_PORT from common/def.h is 10200, then SS_SPINES_EXT_PORT is 10210
@@ -322,8 +327,7 @@ All instructions are from top-level spire directory.
 
 2. Run all Trip Masters
     
-    cd trip_master_v2; ./trip_master id substation_id
-
+        cd trip_master_v2; ./trip_master id substation_id
 
     - The `id` should be the id of this relay node, starting from 1. For example,
       with four relay nodes they are 1-4.
@@ -332,7 +336,7 @@ All instructions are from top-level spire directory.
 
 3. Run emulated relays
 
-     cd relay_emulator; sudo ./goose_publisher interface id substation_id
+        cd relay_emulator; sudo ./goose_publisher interface id substation_id
 
     - The interface is the network interface to publish on. With emulated
       relays we recommend using `lo` (loopback)
@@ -341,7 +345,7 @@ All instructions are from top-level spire directory.
 
  4. Run relay proxy
 
-    cd proxy_iec61850;./relay_proxy relay_CB_Ref breaker_CB_Ref sub_interface pub_interface goID dataset trip_loaction_in_relay_goose
+        cd proxy_iec61850;./relay_proxy relay_CB_Ref breaker_CB_Ref sub_interface pub_interface goID dataset trip_loaction_in_relay_goose
 
     - `relay_CB_Ref`: Relay control block reference that relay proxies
       subscribe to. For example: `simpleIOGenericIO/LLN0$GO$gcbAnalogValues`
@@ -358,11 +362,12 @@ All instructions are from top-level spire directory.
     - `trip_location_in_relay_goose`: Location of goose trip or close payload
       in relay GOOSE of subscriber. For emulated relays the value is `1`
     - For example:
- sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo1Master/LLN0$GO$GoCB01 lo lo SPNo1Master SPNo1Master/LLN0$dataset1 1 
+
+            sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo1Master/LLN0$GO$GoCB01 lo lo SPNo1Master SPNo1Master/LLN0$dataset1 1 
 
 5. Benchmarking the Spire for the Substation
 
-    cd benchmarks_ss; ./benchmark2 substation_id count
+        cd benchmarks_ss; ./benchmark2 substation_id count
 
     - The `substation_id` is same as trip master
     - The `count` is number of actions to run. We support 1-1000000 actions.
@@ -375,17 +380,20 @@ Note on Logging: The print level in all main Modules is controlled by enabling
 needed type in `Alarm_set_types`. The PRINT level is minimal logging followed
 by STATUS and DEBUG levels.
 
-Other optional Modules for both protocols:
+---
 
-Note: proxy and hmis folder compiles by compiling Spire with 'make' from top level directory.
+## Other optional modules for both protocols:
+
+Note: proxy and hmis folder compiles by compiling Spire with `make` from top level directory.
 
 1. Substation HMI and IED Connector: 
 
-Note: These processes are optional, not needed for benchmarks but can be used to support operator commands from substation HMI
+    Note: These processes are optional, not needed for benchmarks but can be
+    used to support operator commands from substation HMI
 
-  Run IED Connector on each relay node:
+    Run IED Connector on each relay node:
  
-  cd proxy; sudo ./ied_connector ip id interface substation_id 
+        cd proxy; sudo ./ied_connector ip id interface substation_id 
   
     - `ip` is the IP address of the node
     - `interface` to publish commands to real or emulated relay on.
@@ -393,11 +401,12 @@ Note: These processes are optional, not needed for benchmarks but can be used to
     - `id` same as that of its trip master
     - `substation_id` same as that of its trip master
 
-  On HMI node: 
+    On HMI node: 
+
     - Run external spines
     - Run one of the substation HMIs (ss1_hmi or ss2_hmi or ss3_hmi).
    
-   cd hmis/ss1_hmi; ./ss_hmi ip subsattion_id -port=pvbrowser_port
+        cd hmis/ss1_hmi; ./ss_hmi ip subsattion_id -port=pvbrowser_port
     
     - `ip` is the IP address of the node
     - `substation_id` same as that of its trip master
@@ -411,26 +420,28 @@ Note: These processes are optional, not needed for benchmarks but can be used to
     
 2. CC Connectors:
   
- It is optional, needed only when we want to run the end-to-end system (Spire at control center with integrated scenario (cc_hmi).
+    CC connectors are optional, needed only when we want to run the end-to-end
+    system (Spire at control center with integrated scenario (cc_hmi).
 
-Note that the number of cc connectors and their IPs are define in common/def.h (NUM_CC_CONNECTORS, and CC_CONNECTORS).
+    Note that the number of cc connectors and their IPs are defined in
+    common/def.h (NUM_CC_CONNECTORS, and CC_CONNECTORS).
 
-On these nodes run each connector node, run a connector for each substation.
+    On these nodes run each connector node, run a connector for each substation.
 
-	cd proxy; ./cc_connector substation_id id
+        cd proxy; ./cc_connector substation_id id
     
 	- The `substation_id` is the same as trip_master
 	- The `id` start from 1 and go on until NUM_CC_CONNECTORS (default is set to 2)
 	  This is to enable multiple cc connectors for each substation 
-
-
 
 ### (Optional) Setup Intrusion Detection System
 
 The Intrusion Detection was built as a standalone component. See inside the `ids` folder for details
 on setup and running.
 
-### Example to run Spire for the Substation with Peer Protocol
+---
+
+## Example to run Spire for the Substation with Peer Protocol
 
 The default configuration files can support both protocols. The configuration
 file of each substation (common/ss<id>.conf) defines a system with four relay nodes, one Breaker
@@ -453,6 +464,7 @@ For Substation HMI we would additionally need IED connector on each relay node a
 For integrated scenario, we would need to run cc connectors also.
 
 For below instructions let substation with substation_id 17 have the following IPs defined in common/ss17.conf file:
+
     - Relay Node 1: 192.168.101.109
     - Relay Node 2: 192.168.101.110
     - Relay Node 3: 192.168.101.111
@@ -461,10 +473,12 @@ For below instructions let substation with substation_id 17 have the following I
     - HMI Node    : 192.168.101.114 
 
 And other relevant nodes defined in common/def.h:
+
     - 2 CC Connectors: 192.168.101.107, 192.168.101.108 
 
+To run this example, execute:
 
-    On 192.168.101.109:
+    - On 192.168.101.109:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
@@ -473,7 +487,7 @@ And other relevant nodes defined in common/def.h:
         cd proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo1Master/LLN0$GO$GoCB01 lo lo SPNo1Master SPNo1Master/LLN0$dataset1 1
         cd proxy;sudo ./ied_connector 192.168.101.109 1 lo 17
 
-    On 192.168.101.110:
+    - On 192.168.101.110:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
@@ -482,7 +496,7 @@ And other relevant nodes defined in common/def.h:
         cd ~/spire/proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo2Master/LLN0$GO$GoCB01 lo lo SPNo2Master SPNo2Master/LLN0$dataset1 1
         cd proxy;sudo ./ied_connector 192.168.101.110 2 lo 17
 
-    On 192.168.101.111:
+    - On 192.168.101.111:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
@@ -492,7 +506,7 @@ And other relevant nodes defined in common/def.h:
         cd proxy;sudo ./ied_connector 192.168.101.111 3 lo 17
 
 
-    On 192.168.101.112:
+    - On 192.168.101.112:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
@@ -501,33 +515,36 @@ And other relevant nodes defined in common/def.h:
         cd ~/spire/proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo4Master/LLN0$GO$GoCB01 lo lo SPNo4Master SPNo4Master/LLN0$dataset1 1
         cd proxy;sudo ./ied_connector 192.168.101.112 4 lo 18
 
-    On 192.168.101.113 (only if benchmarks are to be run):
+    - On 192.168.101.113 (only if benchmarks are to be run):
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd  benchmarks_ss; ./benchmark 17 100
 
- Note: If using breaker proxy please see instructions below
+Note: If using breaker proxy please see instructions below
 
-    On 192.168.101.114:
+    - On 192.168.101.114:
 	
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd hmis/ss1_hmi; ./ss_hmi 192.168.101.114 17 -port=4577
-    In pvbrowser address bar enter:
+
+      In pvbrowser address bar enter:
         pvb://192.168.101.114:4577
 
-    On 192.168.101.107:
+    - On 192.168.101.107:
 	
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd proxy;./cc_connector 17 1
     
-    On 192.168.101.108:
+    - On 192.168.101.108:
 	
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
-	cd proxy;./cc_connector 17 2
+	    cd proxy;./cc_connector 17 2
 
 While you run control center, you need to run Spire in any of the control center configs to issue commands.
 
-### Example to run Spire for the Substation with Arbiter Protocol
+---
+
+## Example to run Spire for the Substation with Arbiter Protocol
 
 The default configuration files can support both protocols. The configuration
 file of each substation (common/ss<id>.conf) defines a system with four relay
@@ -550,6 +567,7 @@ For Substation HMI we would additionally need IED connector on each relay node a
 For integrated scenario, we would need to run cc connectors also.
 
 For below instructions let substation with substation_id 17 have the following IPs defined in common/ss17.conf file:
+
     - Relay Node 1: 192.168.101.109
     - Relay Node 2: 192.168.101.110
     - Relay Node 3: 192.168.101.111
@@ -558,9 +576,12 @@ For below instructions let substation with substation_id 17 have the following I
     - HMI Node    : 192.168.101.114
 
 And other relevant nodes defined in common/def.h: 
+
     - 2 CC Connectors: 192.168.101.107, 192.168.101.108
 
-    On 192.168.101.109:
+To run this example, execute:
+
+    - On 192.168.101.109:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd trip_master_v2; ./trip_master 1 17
@@ -568,7 +589,7 @@ And other relevant nodes defined in common/def.h:
         cd ~/spire/proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo1Master/LLN0$GO$GoCB01 lo lo SPNo1Master SPNo1Master/LLN0$dataset1 1
         cd proxy;sudo ./ied_connector 192.168.101.109 1 lo 17
 
-    On 192.168.101.110:
+    - On 192.168.101.110:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd trip_master_v2; ./trip_master 2 17
@@ -576,7 +597,7 @@ And other relevant nodes defined in common/def.h:
         cd ~/spire/proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo2Master/LLN0$GO$GoCB01 lo lo SPNo2Master SPNo2Master/LLN0$dataset1 1
         cd proxy;sudo ./ied_connector 192.168.101.110 2 lo 17
 
-    On 192.168.101.111:
+    - On 192.168.101.111:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd trip_master_v2; ./trip_master 3 17
@@ -584,7 +605,7 @@ And other relevant nodes defined in common/def.h:
         cd ~/spire/proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo3Master/LLN0$GO$GoCB01 lo lo SPNo3Master SPNo3Master/LLN0$dataset1 1;
         cd proxy;sudo ./ied_connector 192.168.101.111 3 lo 17
 
-    On 192.168.101.112:
+    - On 192.168.101.112:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd trip_master_v2; ./trip_master 4 17
@@ -592,25 +613,27 @@ And other relevant nodes defined in common/def.h:
         cd ~/spire/proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo4Master/LLN0$GO$GoCB01 lo lo SPNo4Master SPNo4Master/LLN0$dataset1 1
         cd proxy;sudo ./ied_connector 192.168.101.112 4 lo 17
 
-    On 192.168.101.113:
+    - On 192.168.101.113:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd  benchmarks_ss; ./benchmark2 17 100
- Note: If using breaker proxy please see instructions below
+ 
+      Note: If using breaker proxy please see instructions below
      
-    On 192.168.101.114:
+    - On 192.168.101.114:
         
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd hmis/ss1_hmi; ./ss_hmi 192.168.101.114 17 -port=4577
-    In pvbrowser address bar enter:
+
+      In pvbrowser address bar enter:
         pvb://192.168.101.114:4577
 
-    On 192.168.101.107:
+    - On 192.168.101.107:
 	
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd proxy;./cc_connector 17 1
     
-    On 192.168.101.108:
+    - On 192.168.101.108:
 	
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd proxy;./cc_connector 17 2
