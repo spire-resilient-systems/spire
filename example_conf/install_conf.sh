@@ -63,6 +63,7 @@ elif [[ "$Confdir" == *end_to_end_system* ]]; then
     cp $Confdir/ss19_spines_int.conf $SPINES_DIR/daemon/ss19_spines_int.conf
     cp $Confdir/spines_int.conf $SPINES_DIR/daemon/spines_int.conf         && \
     cp $Confdir/spines_ext.conf $SPINES_DIR/daemon/spines_ext.conf         && \
+    cp $Confdir/spines_ctrl.conf $SPINES_DIR/daemon/spines_ctrl.conf       && \
     cp $Confdir/scada_def.h $SCADA_DIR/common/def.h                        && \
     cp $Confdir/address.config $PRIME_DIR/bin/address.config               && \
     cp $Confdir/spines_address.config $PRIME_DIR/bin/spines_address.config && \
@@ -74,6 +75,7 @@ elif [[ "$Confdir" == *end_to_end_system* ]]; then
 else
     cp $Confdir/spines_int.conf $SPINES_DIR/daemon/spines_int.conf         && \
     cp $Confdir/spines_ext.conf $SPINES_DIR/daemon/spines_ext.conf         && \
+    cp $Confdir/spines_ctrl.conf $SPINES_DIR/daemon/spines_ctrl.conf       && \
     cp $Confdir/scada_def.h $SCADA_DIR/common/def.h                        && \
     cp $Confdir/address.config $PRIME_DIR/bin/address.config               && \
     cp $Confdir/spines_address.config $PRIME_DIR/bin/spines_address.config && \
