@@ -249,6 +249,8 @@ There are several configuration files relevant to the Spire system:
 
 - autotools (e.g. `dnf install autoconf automake`)
 
+- bison (e.g. `dnf install bison`)
+
 - [A (slightly modified) version of OpenPLC](https://github.com/dqian3/OpenPLC_v2.git)
   is packaged  with Spire in the `OpenPLC_v2` directory. 
   Building Spire (below) will build these components also.
