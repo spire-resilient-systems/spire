@@ -618,7 +618,7 @@ To run this example, execute:
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd  benchmarks_ss; ./benchmark2 17 100
  
-      Note: If using breaker proxy please see instructions below
+Note: If using breaker proxy please see instructions below
      
 - On 192.168.101.114:
         
