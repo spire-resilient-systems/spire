@@ -146,6 +146,12 @@ There are several configuration files relevant to the Spire for the Substation s
       Makefiles in the hmi directories to point to your installation (e.g.
       `/opt/pvb`)
 
+### Clock Synchronization
+
+- The IEC61850 protocol used in substations requires substation nodes to be
+  synchronized to within 1 millisecond of each other. We recommend using PTP
+  (Precision Time Protocol) to synchronize clocks.
+
 ---
 
 ## Building Spire for the Substation
@@ -482,8 +488,8 @@ To run this example, execute:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
-        cd trip_master;sudo ./trip_master 1 17
-        cd relay_emulator; sudo ./goose_publisher interface 1 17
+        cd trip_master; sudo ./trip_master 1 17
+        cd relay_emulator; sudo ./goose_publisher lo 1 17
         cd proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo1Master/LLN0$GO$GoCB01 lo lo SPNo1Master SPNo1Master/LLN0$dataset1 1
         cd proxy;sudo ./ied_connector 192.168.101.109 1 lo 17
 
@@ -491,8 +497,8 @@ To run this example, execute:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
-        cd trip_master; ./trip_master 2 17
-        cd relay_emulator; sudo ./goose_publisher interface 2 17
+        cd trip_master; sudo ./trip_master 2 17
+        cd relay_emulator; sudo ./goose_publisher lo 2 17
         cd proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo2Master/LLN0$GO$GoCB01 lo lo SPNo2Master SPNo2Master/LLN0$dataset1 1
         cd proxy;sudo ./ied_connector 192.168.101.110 2 lo 17
 
@@ -500,8 +506,8 @@ To run this example, execute:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
-        cd trip_master; ./trip_master 3 17
-        cd relay_emulator; sudo ./goose_publisher interface 3 17
+        cd trip_master; sudo ./trip_master 3 17
+        cd relay_emulator; sudo ./goose_publisher lo 3 17
         cd proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo3Master/LLN0$GO$GoCB01 lo lo SPNo3Master SPNo3Master/LLN0$dataset1 1
         cd proxy;sudo ./ied_connector 192.168.101.111 3 lo 17
 
@@ -510,8 +516,8 @@ To run this example, execute:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
-        cd trip_master; ./trip_master 4 18
-        cd relay_emulator; sudo ./goose_publisher interface 4 18
+        cd trip_master; sudo ./trip_master 4 18
+        cd relay_emulator; sudo ./goose_publisher lo 4 18
         cd proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo4Master/LLN0$GO$GoCB01 lo lo SPNo4Master SPNo4Master/LLN0$dataset1 1
         cd proxy;sudo ./ied_connector 192.168.101.112 4 lo 18
 
@@ -584,32 +590,36 @@ To run this example, execute:
 - On 192.168.101.109:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
-        cd trip_master_v2; ./trip_master 1 17
-        cd relay_emulator; sudo ./goose_publisher interface 1 17
+        cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
+        cd trip_master_v2; sudo ./trip_master 1 17
+        cd relay_emulator; sudo ./goose_publisher lo 1 17
         cd proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo1Master/LLN0$GO$GoCB01 lo lo SPNo1Master SPNo1Master/LLN0$dataset1 1
         cd proxy;sudo ./ied_connector 192.168.101.109 1 lo 17
 
 - On 192.168.101.110:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
-        cd trip_master_v2; ./trip_master 2 17
-        cd relay_emulator; sudo ./goose_publisher interface 2 17
+        cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
+        cd trip_master_v2; sudo ./trip_master 2 17
+        cd relay_emulator; sudo ./goose_publisher lo 2 17
         cd proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo2Master/LLN0$GO$GoCB01 lo lo SPNo2Master SPNo2Master/LLN0$dataset1 1
         cd proxy;sudo ./ied_connector 192.168.101.110 2 lo 17
 
 - On 192.168.101.111:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
-        cd trip_master_v2; ./trip_master 3 17
-        cd relay_emulator; sudo ./goose_publisher interface 3 17
+        cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
+        cd trip_master_v2; sudo ./trip_master 3 17
+        cd relay_emulator; sudo ./goose_publisher lo 3 17
         cd proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo3Master/LLN0$GO$GoCB01 lo lo SPNo3Master SPNo3Master/LLN0$dataset1 1;
         cd proxy;sudo ./ied_connector 192.168.101.111 3 lo 17
 
 - On 192.168.101.112:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
-        cd trip_master_v2; ./trip_master 4 17
-        cd relay_emulator; sudo ./goose_publisher interface 4 17
+        cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
+        cd trip_master_v2; sudo ./trip_master 4 17
+        cd relay_emulator; sudo ./goose_publisher lo 4 17
         cd proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo4Master/LLN0$GO$GoCB01 lo lo SPNo4Master SPNo4Master/LLN0$dataset1 1
         cd proxy;sudo ./ied_connector 192.168.101.112 4 lo 17
 
