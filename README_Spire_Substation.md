@@ -123,17 +123,19 @@ There are several configuration files relevant to the Spire for the Substation s
 ### General Prerequisites
 
 - OpenSSL development package
-    * e.g. `yum install openssl-devel`, `apt-get install libssl-dev`
+    * e.g. `dnf install openssl-devel`, `apt-get install libssl-dev`
 
 ### Spines Prerequisites
 
 - Lex and Yacc
-    * e.g. `yum install flex byacc`, `apt-get install flex byacc`
+	* e.g. `dnf install flex byacc`, `apt-get install flex byacc`
 
 ### HMI Prerequisites
 
-- QT development package and webkit
-    * e.g. `yum install qt5-devel  qt5-qtwebkit-devel`, `apt-get install qt5-sdk`
+- QT development package and webkit. Note that for AlmaLinux these require CRB
+  and EPEL repos to be enabled (`dnf config-manager --set-enabled crb`, `dnf
+  install epel-release`
+    * e.g. `dnf install qt5-devel qt5-qtwebengine-devel`, `apt-get install qt5-sdk`
 
 - [pvbrowser](https://pvbrowser.de/pvbrowser/)
     * pvbrowser is packaged with Spire, located in the `pvb` directory.

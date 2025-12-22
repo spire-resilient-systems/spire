@@ -151,17 +151,19 @@ Deployment in `example_conf/confidential_spire_conf_4+4+3+3`.
 ### General Prerequisites
 
 - OpenSSL development package
-    * e.g. `yum install openssl-devel`, `apt-get install libssl-dev`
+    * e.g. `dnf install openssl-devel`, `apt-get install libssl-dev`
 
 ### Spines Prerequisites
 
 - Lex and Yacc
-	* e.g. `yum install flex byacc`, `apt-get install flex byacc`
+	* e.g. `dnf install flex byacc`, `apt-get install flex byacc`
 
 ### HMI Prerequisites
 
-- QT development package and webkit
-    * e.g. `yum install qt5-devel qt5-qtwebkit-devel`, `apt-get install qt5-sdk`
+- QT development package and webkit. Note that for AlmaLinux these require CRB
+  and EPEL repos to be enabled (`dnf config-manager --set-enabled crb`, `dnf
+  install epel-release`
+    * e.g. `dnf install qt5-devel qt5-qtwebengine-devel`, `apt-get install qt5-sdk`
 
 - [pvbrowser](https://pvbrowser.de/pvbrowser/)
     * pvbrowser is packaged with Spire, located in the `pvb` directory.
@@ -176,7 +178,7 @@ Deployment in `example_conf/confidential_spire_conf_4+4+3+3`.
 
 ### DNP3 Support Prerequisites
 
-- cmake (e.g. `yum install cmake`, `apt-get install cmake`)
+- cmake (e.g. `dnf install cmake`, `apt-get install cmake`)
 
 - gcc and g++ version 8.3.1 or higher
 
@@ -200,6 +202,10 @@ Deployment in `example_conf/confidential_spire_conf_4+4+3+3`.
       `OpenPLC_v2/core/core_builders/dnp3_enabled/build_normal.sh`.
 
 ### OpenPLC (optional, for PLC emulation/creation)
+
+- autotools (e.g. `dnf install autoconf automake`)
+
+- bison (e.g. `dnf install bison`)
 
 - [A (slightly modified) version of OpenPLC](https://github.com/dqian3/OpenPLC_v2.git)
   is packaged  with Spire in the `OpenPLC_v2` directory. 
