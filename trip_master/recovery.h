@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt
+ * https://jhu-dsn.github.io/spire/LICENSE.txt
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
