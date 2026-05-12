@@ -721,7 +721,7 @@ static void print_notice()
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| Spire is licensed under the Spire Open-Source License.                            |\n");
   Alarm( PRINT, "| You may only use this software in compliance with the License.                    |\n");
-  Alarm( PRINT, "| A copy of the License can be found at https://jhu-dsn.github.io/spire/LICENSE.txt    |\n");
+  Alarm( PRINT, "| A copy of the License can be found at https://jhu-dsn.github.io/spire/LICENSE.txt |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| Creators:                                                                         |\n");
   Alarm( PRINT, "|    Yair Amir                 yairamir@cs.jhu.edu                                  |\n");
