@@ -23,7 +23,7 @@
  *       "This product includes software developed at The Center for
  *        Networking and Distributed Systems at the Johns Hopkins 
  *        University for use in the Spire project 
- *        (https://jhu-dsn.github.io.edu/spire). 
+ *        (https://jhu-dsn.github.io/spire). 
  *    Alternately, this acknowledgment may appear in the software itself,
  *    if and wherever such third-party acknowledgments normally appear.
  *

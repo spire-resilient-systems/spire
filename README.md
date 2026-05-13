@@ -55,7 +55,7 @@ The Spire system includes a SCADA Master and PLC/RTU proxy designed from
 scratch to support intrusion tolerance, as well as several example HMIs based
 on [pvbrowser](https://pvbrowser.de/pvbrowser/index.php). The SCADA Master is
 replicated using the [Prime intrusion-tolerant replication
-engine](https://jhu-dsn.github.io.edu/prime). Communication between Spire components
+engine](https://jhu-dsn.github.io/prime/). Communication between Spire components
 is protected using the [Spines intrusion-tolerant
 network](http://www.spines.org). The Spire PLC/RTU proxy can interact with any
 devices that use the Modbus or DNP3 communication protocols over IP. We use
