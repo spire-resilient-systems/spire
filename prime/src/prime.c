@@ -103,7 +103,7 @@ int main(int argc, char** argv)
   Alarm( PRINT, "|    Maher Khan                Reconfiguration                              |\n");
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| WWW:     https://jhu-dsn.github.io/prime   https://jhu-dsn.github.io.edu  |\n");
-  Alarm( PRINT, "| Contact: prime@dsn.jhu.edu                                                |\n");
+  Alarm( PRINT, "| Contact: prime@spire-sys.org                                              |\n");
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| Version 4.1, Built March 5, 2025                                          |\n");
   Alarm( PRINT, "|                                                                           |\n");

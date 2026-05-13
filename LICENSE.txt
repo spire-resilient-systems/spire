@@ -30,11 +30,11 @@
  * 4. The names "Spire" and "Johns Hopkins University" must not be used 
  *    to endorse or promote products derived from this software without 
  *    prior written permission. For written permission, please 
- *    contact spire@dsn.jhu.edu.
+ *    contact spire@spire-sys.org.
  *
  * 5. Products derived from this software may not be called "Spire",
  *    nor may "Spire" appear in their name, without prior written
- *    permission. For written permission, please contact spire@dsn.jhu.edu.
+ *    permission. For written permission, please contact spire@spire-sys.org.
  *
  * THIS SOFTWARE IS PROVIDED ``AS IS'' AND ANY EXPRESSED OR IMPLIED
  * WARRANTIES, INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES

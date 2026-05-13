@@ -137,7 +137,7 @@ static void print_notice()
   Alarm( PRINT, "|    Daniel Qian               Contributions to Trip Master and IDS                 |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| WWW:     https://jhu-dsn.github.io/spire   https://jhu-dsn.github.io.edu          |\n");
-  Alarm( PRINT, "| Contact: spire@dsn.jhu.edu                                                        |\n");
+  Alarm( PRINT, "| Contact: spire@spire-sys.org                                                      |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| Version 3.0, Built Aug 27, 2025                                                   |\n");
   Alarm( PRINT, "|                                                                                   |\n");

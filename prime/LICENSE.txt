@@ -33,7 +33,7 @@
  * 4. The names "Prime" and "Johns Hopkins University" must not be used 
  *    to endorse or promote products derived from this software without 
  *    prior written permission. For written permission, please 
- *    contact prime@dsn.jhu.edu.
+ *    contact prime@spire-sys.org.
  *
  * 5. Products derived from this software may not be called "Prime",
  *    nor may "Prime" appear in their name, without prior written
