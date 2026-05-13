@@ -1,5 +1,5 @@
 ### Changes
-This version of OpenPLC_v2 has been modified to work with [Spire](http://www.dsn.jhu.edu/spire/), an intrusion tolerant SCADA system for the power grid. It contains small changes so that Opendnp3 is installed locally to `dnp3_build/install`, as well as some compatability changes for CentOS.
+This version of OpenPLC_v2 has been modified to work with [Spire](https://jhu-dsn.github.io.edu/spire/), an intrusion tolerant SCADA system for the power grid. It contains small changes so that Opendnp3 is installed locally to `dnp3_build/install`, as well as some compatability changes for CentOS.
 
 # OpenPLC v2
 This program is intended to emulate a PLC on a Linux machine. This virtual PLC uses the OpenPLC Software Stack to execute IEC 61131-3 programs and reply to MODBUS/TCP requests. Programs can be created using the PLCopen editor and then uploaded to this virtual PLC.

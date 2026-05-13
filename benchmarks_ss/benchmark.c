@@ -533,7 +533,7 @@ static void print_notice()
   Alarm( PRINT, "| Creators:                                                                         |\n");
   Alarm( PRINT, "|    Yair Amir                 yairamir@cs.jhu.edu                                  |\n");
   Alarm( PRINT, "|    Trevor Aron               taron1@cs.jhu.edu                                    |\n");
-  Alarm( PRINT, "|    Amy Babay                 babay@pitt.edu                                     |\n");
+  Alarm( PRINT, "|    Amy Babay                 babay@pitt.edu                                       |\n");
   Alarm( PRINT, "|    Thomas Tantillo           tantillo@cs.jhu.edu                                  |\n");
   Alarm( PRINT, "|    Sahiti Bommareddy         sahiti@cs.jhu.edu                                    |\n");
   Alarm( PRINT, "|                                                                                   |\n");
@@ -541,10 +541,10 @@ static void print_notice()
   Alarm( PRINT, "|    Marco Platania            Contributions to architecture design                 |\n");
   Alarm( PRINT, "|    Daniel Qian               Contributions to Trip Master and IDS                 |\n");
   Alarm( PRINT, "|                                                                                   |\n");
-  Alarm( PRINT, "| WWW:     www.dsn.jhu/spire   www.dsn.jhu.edu                                      |\n");
+  Alarm( PRINT, "| WWW:     https://jhu-dsn.github.io/spire   https://jhu-dsn.github.io.edu          |\n");
   Alarm( PRINT, "| Contact: spire@dsn.jhu.edu                                                        |\n");
   Alarm( PRINT, "|                                                                                   |\n");
-  Alarm( PRINT, "| Version 3.0, Built Aug 27, 2025                                                  |\n");
+  Alarm( PRINT, "| Version 3.0, Built Aug 27, 2025                                                   |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use               |\n");
   Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                         |\n");
