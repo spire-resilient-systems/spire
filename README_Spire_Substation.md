@@ -211,7 +211,7 @@ generated and distributed before the system can run.
     - This generates private-public key pairs for all relay nodes
       (`private_01.key` and `public_01.key`, `private_02.key` and
       `public_02.key`, ...) and the Breaker node (`private_client_01.key` and
-      `public_client_01.key`). The keys will be located in trip_master/tm_keys.
+      `public_client_01.key`). The keys will be located in trip_master_v2/tm_keys.
     - Each relay node should have access to its own key pair and the Breaker
       node's public key
     - The Breaker node has access to its own key pair and all relay nodes
@@ -250,7 +250,8 @@ All instructions are from top-level directory.
 
    Note: These commands assume that the internal and external spines
    configuration files are located at `spines/daemon/ss_spines_int.conf` and
-   `spines/daemon/ss_spines_ext.conf`, respectively
+   `spines/daemon/ss_spines_ext.conf`, respectively. You should copy the
+   example configuration files to those locations if needed.
 
 2. Run all Trip Masters
 
@@ -272,7 +273,7 @@ All instructions are from top-level directory.
 
 4. Run relay proxy
 
-        cd proxy_iec61850;sudo ./relay_proxy relay_CB_Ref breaker_CB_Ref sub_interface pub_interface goID dataset trip_loaction_in_relay_goose
+        cd proxy_iec61850;sudo ./relay_proxy relay_CB_Ref breaker_CB_Ref sub_interface pub_interface goID dataset trip_location_in_relay_goose
 
     - `relay_CB_Ref`: Relay control block reference that relay proxies
       subscribe to. For example: `simpleIOGenericIO/LLN0$GO$gcbAnalogValues`
@@ -331,7 +332,8 @@ All instructions are from top-level spire directory.
 
    Note: These commands assume that the internal and external spines
    configuration files are located at `spines/daemon/ss_spines_int.conf` and
-   `spines/daemon/ss_spines_ext.conf`, respectively
+   `spines/daemon/ss_spines_ext.conf`, respectively. You should copy the
+   example configuration files to those locations if needed.
 
 2. Run all Trip Masters
     
@@ -353,7 +355,7 @@ All instructions are from top-level spire directory.
 
  4. Run relay proxy
 
-        cd proxy_iec61850;./relay_proxy relay_CB_Ref breaker_CB_Ref sub_interface pub_interface goID dataset trip_loaction_in_relay_goose
+        cd proxy_iec61850;./relay_proxy relay_CB_Ref breaker_CB_Ref sub_interface pub_interface goID dataset trip_location_in_relay_goose
 
     - `relay_CB_Ref`: Relay control block reference that relay proxies
       subscribe to. For example: `simpleIOGenericIO/LLN0$GO$gcbAnalogValues`
@@ -403,7 +405,7 @@ Note: proxy and hmis folder compiles by compiling Spire with `make` from top lev
  
         cd proxy; sudo ./ied_connector ip id interface substation_id 
   
-    - `ip` is the IP address of the node
+    - `ip` is the IP address of the node (running local Spines daemon)
     - `interface` to publish commands to real or emulated relay on.
       With emulated relays use lo (loopback)
     - `id` same as that of its trip master
@@ -414,9 +416,9 @@ Note: proxy and hmis folder compiles by compiling Spire with `make` from top lev
     - Run external spines
     - Run one of the substation HMIs (ss1_hmi or ss2_hmi or ss3_hmi).
    
-            cd hmis/ss1_hmi; ./ss_hmi ip subsattion_id -port=pvbrowser_port
+            cd hmis/ss1_hmi; ./ss_hmi ip substation_id -port=pvbrowser_port
     
-        - `ip` is the IP address of the node
+        - `ip` is the IP address of the node (running local Spines daemon)
         - `substation_id` same as that of its trip master
         - `pvbrowser_port` is the port on which the HMI will accept pvbrowser
           connections to interface with the GUI that reflects the current power
@@ -518,10 +520,10 @@ To run this example, execute:
 
         cd spines/daemon; ./spines -p 10210 -c ss17_spines_ext.conf
         cd spines/daemon; ./spines -p 10010 -c ss17_spines_int.conf
-        cd trip_master; sudo ./trip_master 4 18
-        cd relay_emulator; sudo ./goose_publisher lo 4 18
+        cd trip_master; sudo ./trip_master 4 17
+        cd relay_emulator; sudo ./goose_publisher lo 4 17
         cd proxy_iec61850; sudo ./relay_proxy simpleIOGenericIO/LLN0$GO$gcbAnalogValues SPNo4Master/LLN0$GO$GoCB01 lo lo SPNo4Master SPNo4Master/LLN0$dataset1 1
-        cd proxy;sudo ./ied_connector 192.168.101.112 4 lo 18
+        cd proxy;sudo ./ied_connector 192.168.101.112 4 lo 17
 
 - On 192.168.101.113 (only if benchmarks are to be run):
 

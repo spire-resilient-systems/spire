@@ -415,14 +415,14 @@ generated before the system can run.
 
             cd trip_master; ./gen_keys
 
-    - The keys generated are stored in the `tm_keys` directory
+    - The keys generated are stored in the `tm_keys` subdirectory
     - Each Trip Master should have access to its share and public key
 
     - For Arbiter Protocol of Spire for the Substation
 
             cd trip_master_v2; ./gen_keys
 
-    - The keys generated are stored in the `tm_keys` directory
+    - The keys generated are stored in the `tm_keys` subdirectory
     - Each Trip Master should have access to its private key and all public keys
 
 ---
@@ -575,10 +575,10 @@ parameters in `common/def.h`
    - `count` refers to number of processes running on the node. For example:
         - If there is one SCADA Master (say with `global_id` 5) running on a
           node we can start config agent as:
-                `./config_agent 5 /tmp/sm_ipc_main s 1 5`
+                `./config_agent 5 192.168.101.105 /tmp/sm_ipc_main s 1 5`
         - However, if there are multiple SCADA Masters running on the node (say with `global_ids` 1,4,7)
           the we run config agent on that node as:
-                `./config_agent 1 /tmp/sm_ipc_main s 3 1 4 7`
+                `./config_agent 1 192.168.101.101 /tmp/sm_ipc_main s 3 1 4 7`
         - Similarly, if there are 10 benchmarks or proxies on the node we run
           config agents with `count` as 10
     - The hmi_ids are: 1 for JHU, 2 for PNNL and 3 for EMS scenario (defined in `common/scada_packets.h`). 
