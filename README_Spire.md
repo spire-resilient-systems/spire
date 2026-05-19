@@ -357,7 +357,7 @@ generated before the system can run.
 	  replacing the permanent hardware-based (TPM) keys. 
         - Each Prime daemon should have access to its own tpm_private key and 
 	  public key pf configuration manager (public_config_mngr.key).
-        - The Configurtion Manager should have access to its private key
+        - The Configuration Manager should have access to its private key
            (private_config_mngr.key)  and tpm public keys of all replicas(tpm_publicX.key).
 
 3. Spire
