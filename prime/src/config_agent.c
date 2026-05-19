@@ -69,7 +69,8 @@
 #include "spines_lib.h"
 
 int ctrl_spines,config_ipc_inject;
-int SM_Flag,NON_SM_Flag ,app_path[100],app_count;
+int SM_Flag,NON_SM_Flag, app_count;
+char app_path[100];
 int sm_node_ids[MAX_NUM_SERVER_SLOTS];
 int needed_keys_ids[MAX_NUM_SERVER_SLOTS];
 sp_time timeout;
