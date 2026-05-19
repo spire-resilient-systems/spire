@@ -365,7 +365,7 @@ int main(int argc, char* argv[])
     Alarm( PRINT, "|    Sahiti Bommareddy         sahiti@jhu.edu                               |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "|                                                                           |\n");
-    Alarm( PRINT, "| WWW:     www.spines.org      https://jhu-dsn.github.io                |\n");
+    Alarm( PRINT, "| WWW:     www.spines.org      https://jhu-dsn.github.io                    |\n");
     Alarm( PRINT, "| Contact: spines@spines.org                                                |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| Version 5.7, Built March 5, 2025                                          |\n");
