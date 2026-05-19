@@ -148,22 +148,22 @@ void send_to_app(int code, void *dummy){
 			      continue;
                 	sprintf(ipc_config, "%s%d", app_path, i);
                 	ret2=IPC_Send(config_ipc_inject,curr_config_msg,sizeof(signed_message)+sizeof(nm_message), ipc_config);
-                	if (ret2!=sizeof(nm_message)){
-                    		Alarm(PRINT, "Config Agent: Error sending to %s\n",ipc_config);
+                	if (ret2!=sizeof(signed_message)+sizeof(nm_message)){
+                    		Alarm(PRINT, "Config Agent: Error sending to %s, ret=%d, expected %d\n",ipc_config, ret2, sizeof(nm_message));
 				repeat=1;
 			}
-                	Alarm(DEBUG,"Sent to %s mesage of type=%d, size= %d\n",ipc_config,((signed_message *)curr_config_msg)->type,ret2);
+                	Alarm(PRINT,"Sent to %s message of type=%d, size= %d\n",ipc_config,((signed_message *)curr_config_msg)->type,ret2);
 		}
             }
 	if (NON_SM_Flag){
 		for(i=1;i<=app_count;i++){
 			sprintf(ipc_config,"%s%d",app_path,i);
 			ret2=IPC_Send(config_ipc_inject,curr_config_msg,sizeof(signed_message)+sizeof(nm_message), ipc_config);	
-                	if (ret2!=sizeof(nm_message)){
-                    		Alarm(PRINT, "Config Agent: Error sending to %s\n",ipc_config);
+                	if (ret2!=sizeof(signed_message)+sizeof(nm_message)){
+                    		Alarm(PRINT, "Config Agent: Error sending to %s, ret=%d, expected %d\n",ipc_config, ret2, sizeof(nm_message));
 				repeat=1;
 			}
-                	Alarm(DEBUG,"Sent to %s mesage of type=%d, size= %d\n",ipc_config,((signed_message *)curr_config_msg)->type,ret2);
+                	Alarm(PRINT,"Sent to %s message of type=%d, size= %d\n",ipc_config,((signed_message *)curr_config_msg)->type,ret2);
 		}
 	}
         if(!repeat)
