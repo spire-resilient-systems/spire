@@ -43,6 +43,6 @@ the provided configuration files to match your own environment.
 
 Note: The confidential_spire_conf_4+4+3+3 is an example configuration of
 Confidential Spire and ss_conf_4 is an example for Spire for the Substation.
-After coping the configurations recompilation is needed in both cases.
+After copying the configurations, recompilation is needed in both cases.
 Instructions for compilation are in their respective READMEs in top-level
 directory.

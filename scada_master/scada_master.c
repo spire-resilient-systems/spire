@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt 
+ * https://jhu-dsn.github.io/spire/LICENSE.txt 
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -77,6 +77,9 @@ pnnl_fields pnnl_data;
 
 // Storage for EMS
 ems_fields ems_data[EMS_NUM_GENERATORS];
+
+// Storage for SUBSTATION
+substation_fields substation_scenario_data;
 
 //size info
 int stat_len;
@@ -211,6 +214,15 @@ int main(int argc, char **argv)
                         printf("ID: %d Current: %d Target: %d Max: %d\n", remove_me, ems_data[remove_me].curr_generation, ems_data[remove_me].target_generation, ems_data[remove_me].max_generation);
                     }*/
                 }
+		else if (rtud->scen_type == INTEGRATED_CC) {
+                    printf("Constructing HMI Update for SUBSTATION scenario in integrated arch.\n");
+                    printf("size of substation_scenario_data=%lu\n",sizeof(substation_scenario_data));
+                    mess = PKT_Construct_HMI_Update_Msg(rtud->seq, rtud->scen_type,
+                    //mess = PKT_Construct_HMI_Update_Msg(rtud->seq, PNNL,
+                                sizeof(substation_fields),
+                                (char *)(((char *)&substation_scenario_data)),
+                                t.tv_sec, t.tv_usec);
+                }
                 nbytes = sizeof(signed_message) + mess->len;
                 IPC_Send(ipc_sock, (void *)mess, nbytes, itrc_main.ipc_remote);
                 free(mess);
@@ -260,6 +272,7 @@ int main(int argc, char **argv)
 
                 /* Initialize PNNL Scenario */
                 memset(&pnnl_data, 0, sizeof(pnnl_fields));
+		memset(&substation_scenario_data, 0, sizeof(substation_fields));
             }
             else {
                 printf("SM_MAIN: invalid message type %d\n", mess->type);
@@ -614,6 +627,11 @@ int read_from_rtu(signed_message *mess, struct timeval *t)
         memcpy(&ems_data[ems->id], ems, sizeof(ems_fields));
         return ems->id;
     }
+    else if (payload->scen_type == INTEGRATED_CC) {
+        //printf("Sahiti**** read_from_rtu SUBSTATION\n");
+        pf = (substation_fields *)(payload->data);
+        memcpy(&substation_scenario_data, pf, sizeof(substation_scenario_data));
+    }
     return 0;
 }
 
@@ -713,6 +731,24 @@ void read_from_hmi(signed_message *mess)
                         (EMS_RTU_ID_BASE+payload->ttip_pos),
                         0, // Hardcode to 0 b/c we always write to the target, which is the first R/W Int
                         ems_data[payload->ttip_pos].target_generation);
+    }
+    else if (payload->scen_type == INTEGRATED_CC) {
+        printf("Read form HMI : Scenario Type is INTEGRATED CC\n");
+        assert(payload->ttip_pos >= 0 && payload->ttip_pos < NUM_BREAKER);
+
+        if (payload->type == BREAKER_FLIP) {
+            val=0;
+        }
+        else if (payload->type == BREAKER_ON) {
+            val = 1;
+        }
+        else if (payload->type == BREAKER_OFF) {
+            val = 0;
+        }
+
+        dad_mess = PKT_Construct_RTU_Feedback_Msg(payload->seq, payload->scen_type,
+                        BREAKER, (SUBSTATION_RTU_ID_BASE+payload->ttip_pos-1),
+                        (SUBSTATION_RTU_ID_BASE+payload->ttip_pos-1), payload->ttip_pos, val);
     }
 
     /* With the message constructed (from either scenario), send it on */

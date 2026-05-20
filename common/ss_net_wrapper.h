@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt 
+ * https://jhu-dsn.github.io/spire/LICENSE.txt 
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -72,12 +72,15 @@
 #define int32u uint32_t
 #endif
 
-extern char* Relay_Int_Addrs[NUM_REPLICAS];
-extern char* Relay_Ext_Addrs[NUM_REPLICAS];
-
+extern char Relay_Int_Addrs[NUM_REPLICAS][32];
+extern char Relay_Ext_Addrs[NUM_REPLICAS][32];
+extern char Breaker_Addr[32];
+extern char HMI_Addr[32];
 /* Macros */
 # define MAX(a,b) (((a)>(b))?(a):(b))
 # define MIN(a,b) (((a)<(b))?(a):(b))
+
+void Load_SS_Conf(int ss_id);
 
 int serverTCPsock(int port, int qlen);
 int clientTCPsock(int port, int addr);

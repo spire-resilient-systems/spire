@@ -1,6 +1,6 @@
 # Spire: Intrusion-Tolerant SCADA for the Power grid
 
-For more information, see [www.dsn.jhu.edu/spire/ ](https://www.dsn.jhu.edu/spire/)
+For more information, see [https://jhu-dsn.github.io/spire/](https://jhu-dsn.github.io/spire/)
 
 ---
 
@@ -29,8 +29,8 @@ control-center-level operations typically have a latency requirement of
 requirements as low as a quarter-power cycle (For 60Hz, this is 4.167ms). 
 
 We have developed Spire as a toolkit that contains modules to support
-intrusion-tolerance for power grid control systems at both the control-center
-and substation levels.
+intrusion-tolerance for power grid control systems at: the control-center
+level, substation level  and across both levels end-to-end.
 
 ---
 
@@ -39,6 +39,10 @@ and substation levels.
 Spire consists of three components: **Spire** and **Confidential Spire** for
 intrusion-tolerant SCADA at the control-center level, and **Spire for the
 Substation** at the substation level.
+
+As of Version 3.0, Spire at the control center level and Spire for the
+Substation can be deployed together in an **integrated architecture** 
+that provides end-to-end intrusion tolerance.
 
 ### Spire
         
@@ -51,7 +55,7 @@ The Spire system includes a SCADA Master and PLC/RTU proxy designed from
 scratch to support intrusion tolerance, as well as several example HMIs based
 on [pvbrowser](https://pvbrowser.de/pvbrowser/index.php). The SCADA Master is
 replicated using the [Prime intrusion-tolerant replication
-engine](http://www.dsn.jhu.edu/prime). Communication between Spire components
+engine](https://jhu-dsn.github.io/prime/). Communication between Spire components
 is protected using the [Spines intrusion-tolerant
 network](http://www.spines.org). The Spire PLC/RTU proxy can interact with any
 devices that use the Modbus or DNP3 communication protocols over IP. We use
@@ -102,9 +106,9 @@ LAN, while meeting the stringent quarter-of-a-power-cycle latency requirement
 (4.167ms).
 
 The Spire for the Substation includes a Trip Master, Relay Proxy and Breaker
-Proxy. Additionally, we provide emulated relays to simulate real substation
-fault-free and faulty operating conditions. We support substation communication
-protocol of IEC61850 using open-source libiec61850.
+Proxy. Additionally, we provide emulated merging unit and emulated relays to
+simulate real substation fault-free and faulty operating conditions. We support
+substation communication protocol of IEC61850 using open-source libiec61850.
 
 ---
 
@@ -152,6 +156,11 @@ Spire for the Substation: `README_Spire_Substation.md`
 
 ## 5. Version Notes
 
+Spire 3.0 introduces end-to-end intrusion-tolerance capabilities spanning from
+the control center to substation and field devices. This integrated
+architecture is described in [Sahiti Bommareddy's PhD
+thesis](https://www.cs.jhu.edu/~yairamir/SahitiBommareddy_PhD_Thesis.pdf).
+
 Spire 2.1 adds reconfiguration support to Spire.
 
 Spire 2.0 extends the Spire 1.3 to support real-time
@@ -168,7 +177,7 @@ described in the paper "Toward Intrusion Tolerance as a Service:
 Confidentiality in Partially Cloud-Based BFT Systems" published at [IEEE DSN
 2021](https://ieeexplore.ieee.org/document/9505127).
 
-Spire 1.3 updates Spire 1.2 to use OpenSSL 1.1.0. Additionally, an Machine
+Spire 1.3 updates Spire 1.2 to use OpenSSL 1.1.0. Additionally, a Machine
 Learning-based Network Intrusion Detection Module is added to Spire.
 
 Spire 1.2  updates Spire 1.1 to use Spines 5.4, fixing a bug in Spines that

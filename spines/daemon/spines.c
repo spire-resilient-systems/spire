@@ -354,7 +354,7 @@ int main(int argc, char* argv[])
     Alarm( PRINT, "|    John Lane Schultz         jschultz@spreadconcepts.com                  |\n");
     Alarm( PRINT, "|    Daniel Obenshain          dano@cs.jhu.edu                              |\n");
     Alarm( PRINT, "|    Thomas Tantillo           tantillo@cs.jhu.edu                          |\n");
-    Alarm( PRINT, "|    Amy Babay                 babay@cs.jhu.edu                             |\n");
+    Alarm( PRINT, "|    Amy Babay                 babay@pitt.edu                               |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| Major Contributors:                                                       |\n");
     Alarm( PRINT, "|    John Lane                 johnlane@cs.jhu.edu                          |\n");
@@ -365,7 +365,7 @@ int main(int argc, char* argv[])
     Alarm( PRINT, "|    Sahiti Bommareddy         sahiti@jhu.edu                               |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "|                                                                           |\n");
-    Alarm( PRINT, "| WWW:     www.spines.org      www.dsn.jhu.edu                              |\n");
+    Alarm( PRINT, "| WWW:     www.spines.org      https://jhu-dsn.github.io                    |\n");
     Alarm( PRINT, "| Contact: spines@spines.org                                                |\n");
     Alarm( PRINT, "|                                                                           |\n");
     Alarm( PRINT, "| Version 5.7, Built March 5, 2025                                          |\n");

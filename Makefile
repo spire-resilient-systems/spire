@@ -6,7 +6,7 @@
  # this file except in compliance with the License.  You may obtain a
  # copy of the License at:
  #
- # http://www.dsn.jhu.edu/spire/LICENSE.txt 
+ # https://jhu-dsn.github.io/spire/LICENSE.txt 
  #
  # or in the file ``LICENSE.txt'' found in this distribution.
  #
@@ -34,7 +34,7 @@
  # Contributors:
  #   Samuel Beckley       Contributions to HMIs 
  #
- # Copyright (c) 2017-2025 Johns Hopkins University.
+ # Copyright (c) 2017-2026 Johns Hopkins University.
  # All rights reserved.
  #
  # Partial funding for Spire research was provided by the Defense Advanced 

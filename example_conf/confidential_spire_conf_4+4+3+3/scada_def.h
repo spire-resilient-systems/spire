@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt 
+ * https://jhu-dsn.github.io/spire/LICENSE.txt 
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -59,6 +59,7 @@
 /***********************
  * System-Wide defines *
  ***********************/
+
 /*Note: For Confidential Spire MAX_NUM_SERVER_SLOTS should be same as NUM_SM*/
 #define MAX_NUM_SERVER_SLOTS 14
 
@@ -89,14 +90,14 @@
 #define NUM_SITES        4
 
 /* Number of PLCs/RTUs in the system */
-#define NUM_RTU          17
+#define NUM_RTU          20
 
 /* Maximum number of PLCs/RTUs in the system (must have NUM_RTU <= MAX_EMU_RTU)
  * */
 #define MAX_EMU_RTU      100
 
 /* Number of HMIs in the system */
-#define NUM_HMI          3
+#define NUM_HMI          4
 
 
 /* Reconfiguration enabling flag */
@@ -109,7 +110,7 @@
  * connecting the control center sites with the PLC/RTU proxies and HMIs. We
  * assume there is one Spines daemon per site */
 #define SPINES_EXT_SITE_ADDRS {"192.168.101.101", \
-                               "192.168.101.102" }
+                               "192.168.101.102"}
 
 /* List of IP addresses for Spines daemons on the internal Spines network
  * connecting all the control-center and data-center sites with one another. We
@@ -117,7 +118,7 @@
 #define SPINES_INT_SITE_ADDRS {"192.168.101.101", \
                                "192.168.101.102", \
                                "192.168.101.103", \
-                               "192.168.101.104" }
+                               "192.168.101.104"}
 
 /* IP address for the Spines daemon that connects with the PLC/RTU proxy or
  * proxies */
@@ -125,6 +126,12 @@
 
 /* IP address for the Spines daemon that connects with the HMI(s) */
 #define SPINES_HMI_ADDR "192.168.101.106"
+
+/*Control Center Connectors for Integrated Architecture Scenario*/
+#define NUM_CC_CONNECTORS 2
+
+#define CC_CONNECTORS {"192.168.101.105", \
+		       "192.168.101.106" }
 
 /************************
  *    Spines defines    *
@@ -218,21 +225,6 @@
 /* Maximum number of fail-stopped relays (i.e. undergoing proactive recovery) */
 #define SS_NUM_K 1
 
-/* IP address of machines running Spines, Subscribers, and Trip Masters */
-#define SPINES_RELAY_INT_ADDRS {"192.168.101.101", \
-                                "192.168.101.102", \
-                                "192.168.101.103", \
-                                "192.168.101.104"}
-
-#define SPINES_RELAY_EXT_ADDRS {"192.168.101.101", \
-                                "192.168.101.102", \
-                                "192.168.101.103", \
-                                "192.168.101.104"}
-
-/* IP address of destination proxy machine (external spines) connected to Circuit Breaker */
-#define SPINES_PROXY_ADDR "192.168.101.105"
-
-
 /* Interval that discretised timestamps are rounded too, in ms */
 #define DTS_INTERVAL 2
 
@@ -246,8 +238,8 @@
  *    Substation Spines defines    *
  * *********************************/
 /* Port used by Spines Disemmination/External network */
-#define SS_SPINES_EXT_PORT     10200
-#define SS_SPINES_INT_PORT     10000
+#define SS_SPINES_EXT_BASE_PORT     10200
+#define SS_SPINES_INT_BASE_PORT     10000
 
 /* Spines virtual ports
  *
@@ -258,15 +250,18 @@
  * */
 #define TM_PROXY_PORT      7501
 #define TM_TC_PORT         7502
-#define BREAKER_PORT      7601
+#define BREAKER_PORT       7601
 #define EXPIRATION_SEC      5
 #define EXPIRATION_USEC     0
 #define SPINES_MAX_SIZE     2000
+#define RELAY_SUBSTATION_BASE_PORT      27500 // Used in CC Connectors
+#define MU_SUBSTATION_BASE_PORT      37500 // Used in CC Connectors
 
 /* IPC Communication defines */
 #define TM_IPC_IN  "/tmp/tm_ipc_in"
 #define TM_IPC_OUT  "/tmp/tm_ipc_out"
-
+#define CONNECTOR_IPC_OUT  "/tmp/connector_ipc_out"
+#define MU_IPC_OUT "/tmp/mu_proxy_in"
 
 /* Threshhold Crypto defines */
 #define TM_KEYS "tm_keys"
@@ -280,6 +275,13 @@
 /* Relay Emulation defines */
 #define EMULATOR_MCAST_PORT 8401
 #define EMULATOR_MCAST_ADDR (224 << 24 | 1 << 16 | 1 << 8 | 1) /* (224.1.1.1) */
+/*Emulated Merging Unit define*/
+#define MU_EMULATE 1
+#define MU_EMULATOR_MCAST_PORT 8411
+#define MU_EMULATOR_MCAST_ADDR (224 << 24 | 1 << 16 | 1 << 8 | 2) /* (224.1.1.2) */
+
+
+
 
 #define SS_KEY_SIZE 1024
 #endif /* DEF_H */

@@ -1,0 +1,25 @@
+heco_3breaker and heco_5breaker are both derived from pnnl_hmi.  pnnl_hmi is a
+power distribution management scenario with 7 breakers; heco_3breaker and
+heco_5breaker have 3 and 5 of these breakers, respectively. The heco_3breaker,
+heco_5breaker, and pnnl_hmi cannot all run at the same time, as they all use
+the same infrastructure in the SCADA Master.
+
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+| Working with heco_3breaker and heco_5breaker |
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Note that there is still code in place to receive messages from and send
+messages to the PLC for the breakers that have been removed; however nothing in
+the current system reads or writes to the corresponding memory locations. While
+this code could be removed, it is left in the current version, because it can
+be re-purposed for easily prototyping new features to extend the HMI.
+
+An example of reading from the incoming data can be seen in mask1_slots.h, in the
+slotNullEvent() function.
+
+An example of writing to the PLCs can be seen in mask1_slots.h, in the
+slotButtonPressedEvent() function.
+
+Both of these functions read to/write from the data model. An example of how
+messages are sent from the data model to the PLCs can also be seen in
+slotButtonPressedEvent(), and an example of how messages are read from the
+SCADA Master can be seen in master_exec.cpp, in the Process_Message() function.

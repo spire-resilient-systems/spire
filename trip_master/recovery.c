@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt
+ * https://jhu-dsn.github.io/spire/LICENSE.txt
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced
@@ -136,8 +136,8 @@ void RECOVERY_Handle_Proxy_Msg(int s, int source, void * dummy_p)
         return;
     }
     
-    if (from_addr.sin_addr.s_addr != inet_addr(SPINES_PROXY_ADDR)) {
-        Alarm(PRINT, "Recovery: Source %s (from external spines) does not match expected address %s (proxy)", from_addr.sin_addr.s_addr,SPINES_PROXY_ADDR );
+    if (from_addr.sin_addr.s_addr != inet_addr(Breaker_Addr)) {
+        Alarm(PRINT, "Recovery: Source %s (from external spines) does not match expected address %s (proxy)", from_addr.sin_addr.s_addr,Breaker_Addr );
         return;
     }
 

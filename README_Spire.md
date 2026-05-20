@@ -1,6 +1,6 @@
 # Spire: Intrusion-Tolerant SCADA for the Power grid
 
-For more information see [www.dsn.jhu.edu/spire/](http://www.dsn.jhu.edu/spire/)
+For more information, see [https://jhu-dsn.github.io/spire/](https://jhu-dsn.github.io/spire/)
 
 Note: Please note that this is README for the standard Spire at control center
 level only. See `README_Confidential_Spire.md` for information on running the
@@ -31,15 +31,16 @@ The Spire system includes a SCADA Master and PLC/RTU proxy designed from
 scratch to support intrusion tolerance, as well as several example HMIs based
 on [pvbrowser](https://pvbrowser.de/pvbrowser/index.php). The SCADA Master is
 replicated using the [Prime intrusion-tolerant replication
-engine](http://www.dsn.jhu.edu/prime). Communication between Spire components
+engine](https://jhu-dsn.github.io/prime/). Communication between Spire components
 is protected using the [Spines intrusion-tolerant
 network](http://www.spines.org). The Spire PLC/RTU proxy can interact with any
-devices that use the Modbus or DNP3 communication protocols over IP. We use
-[OpenPLC](http://www.openplcproject.com/) to emulate PLCs. Additionally, there is
-also an standalone Machine Learning-based Network Intrusion Detection System 
-that is built to work with Spire.
+devices that use the Modbus or DNP3 communication protocols over IP and with
+substations that use IEC61850. We use [OpenPLC](http://www.openplcproject.com/)
+to emulate PLCs. Additionally, there is also a standalone Machine
+Learning-based Network Intrusion Detection System that is built to work with
+Spire.
 
-Spire supports six different example SCADA systems:
+Spire supports several example SCADA systems:
 
 - `jhu`: an example system we created to represent a power distribution system
   with 10 substations, each monitored and controlled by a different PLC or RTU
@@ -56,10 +57,13 @@ Spire supports six different example SCADA systems:
 - `ems`: a system modeling an Energy Management System (EMS) that controls
   several different types of generators with different ramp-up rates and
   renewable energy sources that can be connected to the grid or deactivated
+- `cc_hmi`: an example of an end-to-end integrated system that can simultaneously
+  support pnnl PLCs and three substations. The three substations will be running
+  Spire for the Substation at the substation level.
 
 Spire's SCADA Master can support all of these systems; we provide a separate
-HMI for each system. Note that because the `pnnl` and `heco` systems use the
-same underlying infrastructure, only one of the `pnnl`, `heco_3breaker`,
+HMI for each system. Note that because the `cc_hmi`, `pnnl` and `heco` systems use the
+same underlying infrastructure, only one of the `cc_hmi`, `pnnl`, `heco_3breaker`,
 `heco5_breaker`, and `heco_timing` systems can be run at once. However, any one
 of these systems can be simultaneously run with both the `jhu` and `ems`
 systems.
@@ -162,7 +166,16 @@ There are several configuration files relevant to the Spire system:
     - NOTE: the Modbus and DNP3 configuration settings for the PLCs/RTUs must
       match the specification of the real (or emulated) PLC/RTU devices in
       order to properly connect with, monitor, and control those devices.
-
+    - Starting with Version 3.0, the Spire Toolkit has been extended to support
+      end-to-end intrusion tolerance spanning the control center and substation
+      levels. As part of this release, substations are now included in the
+      configuration file (IDs 17–19). These substations use IEC 61850 and can
+      be deployed simultaneously. Additional details on substation setup and
+      operation are provided in `README_Spire_substation.md`. Since each
+      substation involves a resilient architecture with multiple components, an
+      additional configuration file is required per substation, this is
+      described in Step 5.
+    
 3. Prime configuration files (`prime/src/def.h`, `prime/bin/address.config`,
    `prime/bin/spines_address.config`) -- see Prime documentation for details
 
@@ -170,6 +183,11 @@ There are several configuration files relevant to the Spire system:
    documentation for details. Note that internal and external Spines networks
    may use different configuration files.
 
+5. Substation configuration: `common/ss<id>.conf`
+   - These files are configuration files for substations (needed for integrated
+     scenario with `cc_hmi` and also for Spire for the Substation). They have
+     four relay addresses, a breaker address, and substation HMI address. 
+   
 ---
 
 ## Installation Prerequisites
@@ -177,17 +195,19 @@ There are several configuration files relevant to the Spire system:
 ### General Prerequisites
 
 - OpenSSL development package
-    * e.g. `yum install openssl-devel`, `apt-get install libssl-dev`
+    * e.g. `dnf install openssl-devel`, `apt-get install libssl-dev`
 
 ### Spines Prerequisites
 
 - Lex and Yacc
-	* e.g. `yum install flex byacc`, `apt-get install flex byacc`
+	* e.g. `dnf install flex byacc`, `apt-get install flex byacc`
 
 ### HMI Prerequisites
 
-- QT development package and webkit
-    * e.g. `yum install qt5-devel  qt5-qtwebkit-devel`, `apt-get install qt5-sdk`
+- QT development package and webkit. Note that for AlmaLinux these require CRB
+  and EPEL repos to be enabled (`dnf config-manager --set-enabled crb`, `dnf
+  install epel-release`
+    * e.g. `dnf install qt5-devel qt5-qtwebengine-devel`, `apt-get install qt5-sdk`
 
 - [pvbrowser](https://pvbrowser.de/pvbrowser/)
     * pvbrowser is packaged with Spire, located in the `pvb` directory.
@@ -202,7 +222,7 @@ There are several configuration files relevant to the Spire system:
 
 ### DNP3 Support Prerequisites
 
-- cmake (e.g. `yum install cmake`, `apt-get install cmake`)
+- cmake (e.g. `dnf install cmake`, `apt-get install cmake`)
 
 - gcc and g++ version 8.3.1 or higher
 
@@ -227,6 +247,10 @@ There are several configuration files relevant to the Spire system:
 
 ### OpenPLC (optional, for PLC emulation/creation)
 
+- autotools (e.g. `dnf install autoconf automake`)
+
+- bison (e.g. `dnf install bison`)
+
 - [A (slightly modified) version of OpenPLC](https://github.com/dqian3/OpenPLC_v2.git)
   is packaged  with Spire in the `OpenPLC_v2` directory. 
   Building Spire (below) will build these components also.
@@ -234,7 +258,7 @@ There are several configuration files relevant to the Spire system:
   Select "Blank" driver (1) to build emulated PLCs that run on Linux
 
   Changes were made from the [main OpenPLC_v2 branch](https://github.com/thiagoralves/OpenPLC_v2)
-  to build Opendnp3 locally and for CentOS-8
+  to build Opendnp3 locally and for CentOS-8, Alma Linux 9.
 
 ---
 
@@ -256,6 +280,11 @@ below to build Spire.
 2. Build Spire, including SCADA Master, HMIs, PLCs, and Prime (from top-level Spire directory):
 
         make
+
+3. If the running integrated scenario with the `cc_hmi`, we need to compile Spire for the Substation with:
+
+        make substation
+
 
 ### Building for Performance Benchmarks
 
@@ -283,7 +312,7 @@ generated before the system can run.
 1. Spines
     - To generate keys:
 
-            cd spines/daemon; ./gen_keys
+            cd spines/daemon; ./gen_keys.sh
 
     - This creates 10 public-private key pairs in `spines/daemon/keys` (if you
       have more than 10 Spines daemons, you can modify the for loop in the
@@ -328,7 +357,7 @@ generated before the system can run.
 	  replacing the permanent hardware-based (TPM) keys. 
         - Each Prime daemon should have access to its own tpm_private key and 
 	  public key pf configuration manager (public_config_mngr.key).
-        - The Configurtion Manager should have access to its private key
+        - The Configuration Manager should have access to its private key
            (private_config_mngr.key)  and tpm public keys of all replicas(tpm_publicX.key).
 
 3. Spire
@@ -380,6 +409,21 @@ generated before the system can run.
     - Each PLC/RTU proxy and HMI should have access to its own public-private
       key pair and all SCADA master and client public keys, and the threshold
       crypto public key.
+
+4. Trip Master Keys 
+    - For Peer Protocol of Spire for the Substation:
+
+            cd trip_master; ./gen_keys
+
+    - The keys generated are stored in the `tm_keys` subdirectory
+    - Each Trip Master should have access to its share and public key
+
+    - For Arbiter Protocol of Spire for the Substation
+
+            cd trip_master_v2; ./gen_keys
+
+    - The keys generated are stored in the `tm_keys` subdirectory
+    - Each Trip Master should have access to its private key and all public keys
 
 ---
 
@@ -462,13 +506,16 @@ parameters in `common/def.h`
 
 4. Run PLC/RTU proxies
 
-   To run:
+   To run all PLC/RTUs other than substations (for pnnl, heco and ems scenarios):
 
         cd proxy; ./proxy id SPINES_RTU_ADDR:SPINES_EXT_PORT 1
 
    The `id` should be the ID of this proxy, where IDs range from 0 to
    `NUM_RTU - 1`. This ID is also used to look up information about the PLC/RTU
    in the `config.json` file.
+
+   To run three substations with Spire for the Substation for the integrated
+   scenario (`cc_hmi`): Please refer to `README_Spire_Substation.md`
 
 5. Run the HMIs
 
@@ -483,6 +530,10 @@ parameters in `common/def.h`
    To run `ems`:
 
         cd hmis/ems_hmi; ./ems_hmi SPINES_HMI_ADDR:SPINES_EXT_PORT -port=pv_port_ems
+
+   To run `cc_hmi`:
+
+        cd hmis/cc_hmi; ./cc_hmi SPINES_HMI_ADDR:SPINES_EXT_PORT -port=pv_port_cc
 
    `pv_port_*` is the port on which the HMI will accept pvbrowser connections
    to interface with the GUI that reflects the current power grid state and
@@ -524,10 +575,10 @@ parameters in `common/def.h`
    - `count` refers to number of processes running on the node. For example:
         - If there is one SCADA Master (say with `global_id` 5) running on a
           node we can start config agent as:
-                `./config_agent 5 /tmp/sm_ipc_main s 1 5`
+                `./config_agent 5 192.168.101.105 /tmp/sm_ipc_main s 1 5`
         - However, if there are multiple SCADA Masters running on the node (say with `global_ids` 1,4,7)
           the we run config agent on that node as:
-                `./config_agent 1 /tmp/sm_ipc_main s 3 1 4 7`
+                `./config_agent 1 192.168.101.101 /tmp/sm_ipc_main s 3 1 4 7`
         - Similarly, if there are 10 benchmarks or proxies on the node we run
           config agents with `count` as 10
     - The hmi_ids are: 1 for JHU, 2 for PNNL and 3 for EMS scenario (defined in `common/scada_packets.h`). 
@@ -597,10 +648,10 @@ The default configuration files included with Spire create a system with:
   following six processes:
     - 1 external Spines daemon
     - 1 internal Spines daemon
-    - 1 configuration Spines daemon
+    - 1 configuration Spines daemon (only needed for reconfiguration)
     - 1 SCADA Master
     - 1 Prime daemon
-    - 1 Configuration Agent
+    - 1 Configuration Agent (only needed for reconfiguration)
 - 1 site with a single machine running the PLC/RTU proxy + 17 emulated PLCs (10
   for the `jhu` system, 1 for the `pnnl/heco` system, and 6 for the `ems`
   system)
@@ -700,9 +751,10 @@ To run this example, execute the following:
 
         cd spines/daemon; ./spines -p 8900 -c spines_ctrl.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
-        cd jhu_hmi; ./jhu_hmi 192.168.101.108:8120 -port=5051
-        cd pnnl_hmi; ./pnnl_hmi 192.168.101.108:8120 -port=5052
-        cd ems_hmi; ./ems_hmi 192.168.101.108:8120 -port=5053
+        cd hmis/jhu_hmi; ./jhu_hmi 192.168.101.108:8120 -port=5051
+        cd hmis/pnnl_hmi; ./pnnl_hmi 192.168.101.108:8120 -port=5052
+        cd hmis/ems_hmi; ./ems_hmi 192.168.101.108:8120 -port=5053
+        cd hmis/cc_hmi; ./cc_hmi 192.168.101.108:8120 -port=5054
         cd prime/bin;./config_agent 8 192.168.101.108 /tmp/hmi_ipc_main p 3
 
     Connect GUIs by running the pvbrowser application (located in main pvb
@@ -721,6 +773,7 @@ To run this example, execute the following:
         cd spines/daemon; ./spines -p 8900 -c spines_ctrl.conf
         cd spines/daemon; ./spines -p 8120 -c spines_ext.conf
         cd benchmark; ./benchmark 1 192.168.101.107:8120 1000000 500
+        cd prime/bin; ./config_agent 7 192.168.101.107 /tmp/bm_ipc_main p 1
 
 - To perform reconfiguration, you can use the Configuration Manager with the
   following commands on the HMI Machine (from prime/bin directory):

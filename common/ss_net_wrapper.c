@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt 
+ * https://jhu-dsn.github.io/spire/LICENSE.txt 
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -63,12 +63,50 @@
 #include "spines_lib.h"
 #include "spu_events.h"
 
-char* Relay_Int_Addrs[NUM_REPLICAS] = SPINES_RELAY_INT_ADDRS;
-char* Relay_Ext_Addrs[NUM_REPLICAS] = SPINES_RELAY_EXT_ADDRS;
+char Relay_Int_Addrs[NUM_REPLICAS][32];
+char Relay_Ext_Addrs[NUM_REPLICAS][32];
+char Breaker_Addr[32];
+char HMI_Addr[32];
+
 
 /* local functions */
 int max_rcv_buff(int sk);
 int max_snd_buff(int sk);
+
+
+/*Load Substation Configurations*/
+void Load_SS_Conf(int ss_id){
+    FILE *fp;
+    char line[255];
+    char filename[100];
+    int i=0;
+    memset(filename,0,sizeof(filename));
+    sprintf(filename,"../common/ss%d.conf",ss_id);
+    fp = fopen(filename,"r");
+    while(i<NUM_REPLICAS+2){
+        if(fgets(line, sizeof(line), fp)!=NULL){
+            const char * val1=strtok(line, " ");
+            const char * val2=strtok(NULL, " ");
+            if(i<NUM_REPLICAS){
+            	const char * val3=strtok(NULL, " ");
+                strcpy(Relay_Ext_Addrs[i],val2);
+                strcpy(Relay_Int_Addrs[i],val3);
+            }
+            else if(i==NUM_REPLICAS){
+                strcpy(Breaker_Addr,val2);
+            }
+            else if(i==NUM_REPLICAS+1) {
+                strcpy(HMI_Addr,val2);
+            }
+            i+=1;
+        }//line
+    }//while
+
+}
+
+
+
+
 
 /* Create the Server-Side socket for TCP connection */
 int serverTCPsock(int port, int qlen) 
@@ -396,11 +434,13 @@ int Spines_SendOnly_Sock(const char *sp_addr, int sp_port, int proto)
 
     /* setup priority level and garbage collection settings for Priority Messaging */
     prio = SCADA_PRIORITY;
-    if (sp_port == SS_SPINES_INT_PORT || sp_port == SS_SPINES_EXT_PORT) {
+    if (sp_port > SS_SPINES_EXT_BASE_PORT || sp_port<SS_SPINES_EXT_BASE_PORT+(NUM_RTU*10)) {
         exp.sec  = EXPIRATION_SEC;
         exp.usec = EXPIRATION_USEC;
-    }
-    else {
+    }else if (sp_port > SS_SPINES_INT_BASE_PORT || sp_port<SS_SPINES_INT_BASE_PORT+(NUM_RTU*10)){
+        exp.sec  = EXPIRATION_SEC;
+        exp.usec = EXPIRATION_USEC;
+    }else {
         printf("Invalid spines port specified! (%u)\n", sp_port);
         exit(EXIT_FAILURE);
     }

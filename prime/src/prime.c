@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/prime/LICENSE.txt
+ * https://jhu-dsn.github.io/prime/LICENSE.txt
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -102,8 +102,8 @@ int main(int argc, char** argv)
   Alarm( PRINT, "|    Sahiti Bommareddy         Reconfiguration                              |\n");
   Alarm( PRINT, "|    Maher Khan                Reconfiguration                              |\n");
   Alarm( PRINT, "|                                                                           |\n");
-  Alarm( PRINT, "| WWW:     www.dsn.jhu/prime   www.dsn.jhu.edu                              |\n");
-  Alarm( PRINT, "| Contact: prime@dsn.jhu.edu                                                |\n");
+  Alarm( PRINT, "| WWW:     https://jhu-dsn.github.io/prime   https://jhu-dsn.github.io      |\n");
+  Alarm( PRINT, "| Contact: prime@spire-sys.org                                              |\n");
   Alarm( PRINT, "|                                                                           |\n");
   Alarm( PRINT, "| Version 4.1, Built March 5, 2025                                          |\n");
   Alarm( PRINT, "|                                                                           |\n");

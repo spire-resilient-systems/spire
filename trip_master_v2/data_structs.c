@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt
+ * https://jhu-dsn.github.io/spire/LICENSE.txt
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced
@@ -56,7 +56,7 @@ server_data  DATA;
 network_vars NET;
 bench_stats STATS;
 
-void Init_Server_Data(int id)
+void Init_Server_Data(int id,int ss_id)
 {
     DATA.id = id;
     DATA.tm_state = RECOVERY;
@@ -69,20 +69,15 @@ void Init_Server_Data(int id)
 
 }
 
-void Init_Network(int id)
+void Init_Network(int id,int ss_id)
 {
     char *sp_ext_addr = Relay_Ext_Addrs[id - 1];
     struct sockaddr_un tm_ipc_addr;
+    int ss_spines_ext_port=SS_SPINES_EXT_BASE_PORT+((ss_id-16)*10);
 
     NET.sock_relay_ipc = IPC_DGram_Sock(TM_IPC_IN);
-    NET.sock_spines_ext = Spines_Sock(sp_ext_addr, SS_SPINES_EXT_PORT, SPINES_PRIORITY, TM_PROXY_PORT);
-
-
     if (NET.sock_relay_ipc < 0) {
         Alarm(EXIT, "TM: Error setting up ipc with relay for relay input, exiting");
-    }
-    if (NET.sock_spines_ext < 0) {
-        Alarm(EXIT, "TM: Error setting up spines dissemination socket, exiting");
     }
     NET.s_relay_in = IPC_DGram_SendOnly_Sock();
     memset(&tm_ipc_addr, 0, sizeof(tm_ipc_addr));
@@ -91,8 +86,11 @@ void Init_Network(int id)
     if (NET.s_relay_in < 0) {
         Alarm(EXIT, "Error setting up IPC relay Breaker GOOSE communication, exiting\n");
     }
-
-    /* TODO try reconnecting? */
+    
+    NET.sock_spines_ext = Spines_Sock(sp_ext_addr, ss_spines_ext_port, SPINES_PRIORITY, TM_PROXY_PORT);
+    if (NET.sock_spines_ext < 0) {
+        Alarm(EXIT, "TM: Error setting up spines dissemination socket, exiting");
+    }
 }
 
 void Init_Bench_Stats()

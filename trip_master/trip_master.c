@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt
+ * https://jhu-dsn.github.io/spire/LICENSE.txt
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced
@@ -72,6 +72,8 @@
 
 
 int myId = 0;
+int mySSId = 0;
+
 
 /* Local functions */
 static void Usage(int, char **);
@@ -93,8 +95,9 @@ int main(int argc, char** argv)
     Alarm_set_priority(SPLOG_INFO);
 
     /* Initialize everything */
-    Init_Server_Data(myId);
-    Init_Network(myId);
+    Load_SS_Conf(mySSId);
+    Init_Server_Data(myId,mySSId);
+    Init_Network(myId,mySSId);
     Init_Bench_Stats();
     OPENSSL_RSA_Init();
     
@@ -115,12 +118,12 @@ static void print_notice()
 {
   Alarm( PRINT, "/==================================================================================\\\n");
   Alarm( PRINT, "| Spire                                                                             |\n");
-  Alarm( PRINT, "| Copyright (c) 2017-2025 Johns Hopkins University                                  |\n");
+  Alarm( PRINT, "| Copyright (c) 2017-2026 Johns Hopkins University                                  |\n");
   Alarm( PRINT, "| All rights reserved.                                                              |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| Spire is licensed under the Spire Open-Source License.                            |\n");
   Alarm( PRINT, "| You may only use this software in compliance with the License.                    |\n");
-  Alarm( PRINT, "| A copy of the License can be found at http://www.dsn.jhu.edu/spire/LICENSE.txt    |\n");
+  Alarm( PRINT, "| A copy of the License can be found at https://jhu-dsn.github.io/spire/LICENSE.txt |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| Creators:                                                                         |\n");
   Alarm( PRINT, "|    Yair Amir                 yairamir@cs.jhu.edu                                  |\n");
@@ -133,10 +136,10 @@ static void print_notice()
   Alarm( PRINT, "|    Marco Platania            Contributions to architecture design                 |\n");
   Alarm( PRINT, "|    Daniel Qian               Contributions to Trip Master and IDS                 |\n");
   Alarm( PRINT, "|                                                                                   |\n");
-  Alarm( PRINT, "| WWW:     www.dsn.jhu/spire   www.dsn.jhu.edu                                      |\n");
-  Alarm( PRINT, "| Contact: spire@dsn.jhu.edu                                                        |\n");
+  Alarm( PRINT, "| WWW:     https://jhu-dsn.github.io/spire   https://jhu-dsn.github.io              |\n");
+  Alarm( PRINT, "| Contact: spire@spire-sys.org                                                      |\n");
   Alarm( PRINT, "|                                                                                   |\n");
-  Alarm( PRINT, "| Version 2.2, Built March 5, 2025                                                  |\n");
+  Alarm( PRINT, "| Version 3.0, Built May 20, 2026                                                   |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use               |\n");
   Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                         |\n");
@@ -146,11 +149,12 @@ static void print_notice()
 
 void Usage(int argc, char **argv)
 {
-    if (argc != 2) {
-        Alarm(EXIT, "Usage: %s relayID\n", argv[0]);
+    if (argc != 3) {
+        Alarm(EXIT, "Usage: %s relayID substationID\n", argv[0]);
     }
 
     sscanf(argv[1], "%d", &myId);
+    sscanf(argv[2], "%d", &mySSId);
     if (myId < 1 || myId > NUM_REPLICAS) {
         Alarm(EXIT, "Invalid ID: %d\n", myId);
     }

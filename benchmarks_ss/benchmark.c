@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt
+ * https://jhu-dsn.github.io/spire/LICENSE.txt
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced
@@ -83,6 +83,8 @@ static uint64_t *latencies;
 //static uint64_t *rdtsc_diff;
 //static uint64_t rdtsc1,rdtsc2;
 static timestr *scatter_time;
+int My_SS_ID;
+
 
 static void print_notice();
 static void usage(int argc, char **argv);
@@ -106,7 +108,7 @@ uint64_t rdtsc(){
 int main(int argc, char** argv)
 {
     int     ret;
-    char *  sp_addr = SPINES_PROXY_ADDR;
+    char *  sp_addr = Breaker_Addr;
     sp_time delay;
 
 
@@ -117,6 +119,7 @@ int main(int argc, char** argv)
     //Alarm_set_types(STATUS);
     //Alarm_set_types(PRINT|DEBUG|STATUS);
     usage(argc, argv);
+    Load_SS_Conf(My_SS_ID);
     print_notice();
     
     /* Initialize crypto stuff */
@@ -130,11 +133,11 @@ int main(int argc, char** argv)
     m=setup_mcast();
     
     /* Initialize Spines network */
-    s = Spines_Sock(sp_addr, SS_SPINES_EXT_PORT, SPINES_PRIORITY, TM_PROXY_PORT);
+    int ss_spines_ext_port=SS_SPINES_EXT_BASE_PORT+((My_SS_ID-16)*10);
+    s = Spines_Sock(sp_addr, ss_spines_ext_port, SPINES_PRIORITY, TM_PROXY_PORT);
 
     if (s < 0) {
         Alarm(EXIT,"Spines socket error\n");
-	//TODO: Try reconnect
     }
     
     //On start, gather XCBR status
@@ -158,9 +161,7 @@ static void PROXY_Startup()
     sp_time now;
 
     now=E_get_time();
-    //dts=(curr_time_in_msec / DTS_INTERVAL) * DTS_INTERVAL
     dts = ((now.sec * 1000 + now.usec / 1000) / DTS_INTERVAL) * DTS_INTERVAL;
-    //b_state = STATE_TRIP;
     b_state = STATE_CLOSE;
 
     Alarm(PRINT, "Initialized with state %s at dts %ld\n",
@@ -226,7 +227,6 @@ static void Handle_Ext_Spines_Msg()
 static void Handle_Recovery_Query(tm_msg *mess)
 {
 	Alarm(DEBUG,"Receive RECOVERY_QUERY from %d!\n",mess->m_id);
-	//TODO: rate limit???
 	PROXY_Send_Ack();
 }
 
@@ -255,8 +255,6 @@ static void Handle_Signed_Trip(tm_msg *mess)
 			print_stats();
 		}
 	 	gettimeofday(&tr_end, NULL);
-        //rdtsc2=rdtsc();
-        //Alarm(DEBUG,"rdtsc diff = %llu\n",rdtsc2-rdtsc1);
 	 	tr_time=diffTime(tr_end,tr_start);
 	 	Alarm(DEBUG,"Difftime= %ld.%06ld\n",tr_time.tv_sec,tr_time.tv_usec);
 	 	lat = (1000000*tr_time.tv_sec) + tr_time.tv_usec;
@@ -266,8 +264,6 @@ static void Handle_Signed_Trip(tm_msg *mess)
         }
        // rdtsc_diff[so_far]=rdtsc2-rdtsc1;
 	 	count+=1;
-	 	//TODO: Publish GOOSE to XCBR and wait for ack/status change
-	 	
 		E_queue(send_simple_sv,NULL,NULL,delta);
 	 }
 	 //If not first ack for sv, and if dts> curr dts, send ack with higher dts. Need not send to XCBR as already tripped
@@ -305,8 +301,6 @@ static void Handle_Signed_Close(tm_msg *mess)
 			print_stats();
 		}
 	 	gettimeofday(&tr_end, NULL);
-        //rdtsc2=rdtsc();
-        //Alarm(DEBUG,"rdtsc diff = %llu\n",rdtsc2-rdtsc1);
 	 	tr_time=diffTime(tr_end,tr_start);
 	 	Alarm(DEBUG,"Difftime= %ld.%06ld\n",tr_time.tv_sec,tr_time.tv_usec);
 	 	lat = (1000000*tr_time.tv_sec) + tr_time.tv_usec;
@@ -316,7 +310,6 @@ static void Handle_Signed_Close(tm_msg *mess)
             Alarm(PRINT,"****gt 4000 [%d]:%lu\n",so_far,lat);
         }
 	 	count+=1;
-	 	//TODO: Publish GOOSE to XCBR and wait for ack
 
 	 	E_queue(send_simple_sv,NULL,NULL,delta);
 	 }
@@ -334,11 +327,11 @@ static void Handle_Signed_Close(tm_msg *mess)
 
 static bool Validate_Final_Msg(tm_msg *mess)
 {
-	tc_final_msg *      tc_final;
+	ss_tc_final_msg *      tc_final;
 	tc_payload          payload;
         byte                digest[DIGEST_SIZE];
 	
-	if (mess->len != sizeof(tc_final_msg)){
+	if (mess->len != sizeof(ss_tc_final_msg)){
 		Alarm(PRINT, "Invalid 1: mess->len is not same as tc_final_message\n");
 		return false;
 	}
@@ -351,7 +344,7 @@ static bool Validate_Final_Msg(tm_msg *mess)
 	 //Valid message i.e., Signed Trip/close with dts > what we last know
 	 Alarm(DEBUG,"Valid: message from %d (dts = %ld, cur = %ld)\n",mess->m_id,mess->dts, dts);
 	 
-	 tc_final = (tc_final_msg *)(mess + 1);
+	 tc_final = (ss_tc_final_msg *)(mess + 1);
 	 memset(&payload, 0, sizeof(payload));
 	 payload.dts = mess->dts;
 	 payload.state = mess->type == SIGNED_TRIP ? STATE_TRIP : STATE_CLOSE;
@@ -389,7 +382,6 @@ static void PROXY_Send_Ack()
         
         if (ret < 0) {
             Alarm(EXIT,"Spines sento error\n");
-            // TODO attempt to reconnect?
         }
     }
     Alarm(DEBUG,"Sent %s ack at dts=%lu\n",b_state == STATE_CLOSE? "CLOSE":"TRIP",dts);
@@ -399,7 +391,7 @@ static void PROXY_Send_Ack()
 
 static void send_simple_sv()
 {
-	sp_time now;
+    sp_time now;
     int i,j,ret;
     time_t    time_now;
     struct tm *tm_now;
@@ -425,13 +417,14 @@ static void send_simple_sv()
         
 	now = E_get_time();
     payload.time_ms = now.sec * 1000 + now.usec / 1000;
+    payload.ss_id=My_SS_ID;
     ret = sendto(m, &payload, sizeof(payload), 0, (struct sockaddr *)&send_addr, sizeof(send_addr));
 
      if (ret < 0){
                 Alarm(EXIT," SV error sending\n");
      }
-     if(ret<sizeof(payload)){
-                Alarm(PRINT,"Wrong size of msg sent\n");
+     if(ret!=sizeof(payload)){
+                Alarm(PRINT,"Wrong size of SV msg sent\n");
      }
 	 gettimeofday(&tr_start, NULL);
 
@@ -498,13 +491,22 @@ static int setup_mcast()
     }
     memset(&name,0,sizeof(name));
     memset(&send_addr,0,sizeof(send_addr));
+    /*
     name.sin_family = AF_INET;
-    name.sin_addr.s_addr = htonl(SPINES_PROXY_ADDR);
+    name.sin_addr.s_addr = htonl(Breaker_Addr);
     name.sin_port = htons(EMULATOR_MCAST_PORT);
 
     if(bind(s, (struct sockaddr *)&name, sizeof(name) ) < 0) {
           Alarm(EXIT, "Error binding mcast port\n");
         }
+    */
+    int ttl_val = 1;
+    if (setsockopt(s, IPPROTO_IP, IP_MULTICAST_TTL, (void *)&ttl_val,
+        sizeof(ttl_val)) < 0)
+    {
+        Alarm(EXIT,"EVENT / SV : problem in setsockopt of multicast ttl %d - ignore in WinNT or Win95\n", ttl_val );
+    }
+
     /*set up sender address*/
     send_addr.sin_family = AF_INET;
     send_addr.sin_addr.s_addr = htonl(EMULATOR_MCAST_ADDR);
@@ -521,17 +523,17 @@ static void print_notice()
 {
   Alarm( PRINT, "/==================================================================================\\\n");
   Alarm( PRINT, "| Spire                                                                             |\n");
-  Alarm( PRINT, "| Copyright (c) 2017-2025 Johns Hopkins University                                  |\n");
+  Alarm( PRINT, "| Copyright (c) 2017-2026 Johns Hopkins University                                  |\n");
   Alarm( PRINT, "| All rights reserved.                                                              |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| Spire is licensed under the Spire Open-Source License.                            |\n");
   Alarm( PRINT, "| You may only use this software in compliance with the License.                    |\n");
-  Alarm( PRINT, "| A copy of the License can be found at http://www.dsn.jhu.edu/spire/LICENSE.txt    |\n");
+  Alarm( PRINT, "| A copy of the License can be found at https://jhu-dsn.github.io/spire/LICENSE.txt |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| Creators:                                                                         |\n");
   Alarm( PRINT, "|    Yair Amir                 yairamir@cs.jhu.edu                                  |\n");
   Alarm( PRINT, "|    Trevor Aron               taron1@cs.jhu.edu                                    |\n");
-  Alarm( PRINT, "|    Amy Babay                 babay@pitt.edu                                     |\n");
+  Alarm( PRINT, "|    Amy Babay                 babay@pitt.edu                                       |\n");
   Alarm( PRINT, "|    Thomas Tantillo           tantillo@cs.jhu.edu                                  |\n");
   Alarm( PRINT, "|    Sahiti Bommareddy         sahiti@cs.jhu.edu                                    |\n");
   Alarm( PRINT, "|                                                                                   |\n");
@@ -539,10 +541,10 @@ static void print_notice()
   Alarm( PRINT, "|    Marco Platania            Contributions to architecture design                 |\n");
   Alarm( PRINT, "|    Daniel Qian               Contributions to Trip Master and IDS                 |\n");
   Alarm( PRINT, "|                                                                                   |\n");
-  Alarm( PRINT, "| WWW:     www.dsn.jhu/spire   www.dsn.jhu.edu                                      |\n");
-  Alarm( PRINT, "| Contact: spire@dsn.jhu.edu                                                        |\n");
+  Alarm( PRINT, "| WWW:     https://jhu-dsn.github.io/spire   https://jhu-dsn.github.io              |\n");
+  Alarm( PRINT, "| Contact: spire@spire-sys.org                                                      |\n");
   Alarm( PRINT, "|                                                                                   |\n");
-  Alarm( PRINT, "| Version 2.2, Built March 5, 2025                                                  |\n");
+  Alarm( PRINT, "| Version 3.0, Built May 20, 2026                                                   |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use               |\n");
   Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                         |\n");
@@ -550,6 +552,38 @@ static void print_notice()
   Alarm( PRINT, "\\=================================================================================/\n\n");
 }
 
+
+	
+static void usage(int argc, char **argv){
+	trip=0;
+	so_far=0;
+	delta.sec=1;
+	delta.usec=0;
+
+	if(argc<3){
+		Alarm(EXIT,"./benchmark <SS_ID> <count>");
+	}
+
+	sscanf(argv[1],"%d",&My_SS_ID);
+	if(My_SS_ID<17 || My_SS_ID>19){
+		Alarm(EXIT,"We support Substation Ids 17,18 and 19 but given =%d\n",argv[1]);
+	}
+	sscanf(argv[2],"%d",&total);
+	if(total<0 || total>1000000){
+		Alarm(EXIT,"We support benchmark count 1-1000000\n");
+	}
+	
+	latencies=malloc((total+1) * sizeof(*latencies));
+        memset(latencies,0,(total+1) * sizeof(*latencies));
+        scatter_time=malloc((total+1)*sizeof(timestr));
+
+        for(int i=0;i<=total;i++){
+            latencies[i]=0;
+        }
+	Alarm(PRINT,"Sending total %d SV msgs starting with %d\n",total,trip);
+}
+
+/*
 static void usage(int argc, char **argv)
 {
 	total=10;
@@ -565,7 +599,6 @@ static void usage(int argc, char **argv)
 		sscanf(argv[1], "%d", &total);
 		latencies=malloc((total+1) * sizeof(*latencies));
         memset(latencies,0,(total+1) * sizeof(*latencies));
-        //rdtsc_diff=malloc((total+1) * sizeof(*rdtsc_diff));
         scatter_time=malloc((total+1)*sizeof(timestr));
         for(int i=0;i<=total;i++){
             latencies[i]=0;
@@ -583,4 +616,4 @@ static void usage(int argc, char **argv)
 	}
 	Alarm(PRINT,"Sending total %d SV msgs starting with %d\n",total,trip);
 }
-
+*/

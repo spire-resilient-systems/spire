@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt
+ * https://jhu-dsn.github.io/spire/LICENSE.txt
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced
@@ -63,6 +63,8 @@
 
 #include "mms_value.h"
 #include "goose_publisher.h"
+#include "goose_subscriber.h"
+#include "goose_receiver.h"
 
 #include "def.h"
 #include "packets.h"
@@ -74,13 +76,23 @@
 int init_socket(void);
 int64_t get_timestamp(void);
 void handle_event(int s, int code, void *dummy);
-void publish_goose(int code, void *v_trip);
+void cc_repeat_goose(int code, void *dummy);
+void cc_publish_goose(int code, void *v_trip);
 void repeat_goose(int code, void *dummy);
+void publish_goose(int code, void *v_trip);
+
+//For HMI Cmds
+static GooseReceiver goose_receiver;
+static GooseSubscriber goose_subscriber;
+static void goose_listener(GooseSubscriber subscriber, void* parameter);
+static void Init_goose_sub();
+
 
 void Usage(int argc, char **argv);
 
 // Global variables
 int My_ID;
+int My_SS_ID;
 char* interface;
 static uint64_t count;
 
@@ -96,14 +108,14 @@ int main(int argc, char** argv)
   
     setlinebuf(stdout);
     Alarm_set_types(PRINT);
-    //Alarm_set_types(STATUS);
+    Alarm_set_types(STATUS);
     //Alarm_set_types(DEBUG);
     Alarm_enable_timestamp_high_res("%m/%d/%y %H:%M:%S");
     Usage(argc, argv);
-
     Alarm(PRINT, "Using interface %s\n", interface);
     count=0;
 
+    E_init();
     /* Setup payload data structure */
     dataSetValues = LinkedList_create();
     mms_timestamp = MmsValue_newUtcTimeByMsTime(0);
@@ -144,13 +156,72 @@ int main(int argc, char** argv)
     /* Setup Socket and timing code */
     int s = init_socket();
     
-    E_init();
+    Init_goose_sub();
+    GooseReceiver_start(goose_receiver);
+    if(GooseReceiver_isRunning(goose_receiver))
+        Alarm(PRINT,"Subscriber for HMI commands is running...\n");
+    else{
+        GooseReceiver_stop(goose_receiver);
+        GooseReceiver_destroy(goose_receiver);
+        Alarm(EXIT,"Subscriber for HMI commands is not running...\n");
+    } 
+    
     E_attach_fd(s, READ_FD, handle_event, 0, NULL, MEDIUM_PRIORITY);
     E_handle_events();
 
-    GoosePublisher_destroy(publisher);
-    LinkedList_destroyDeep(dataSetValues, (LinkedListValueDeleteFunction) MmsValue_delete);
+    //GoosePublisher_destroy(publisher);
+    //LinkedList_destroyDeep(dataSetValues, (LinkedListValueDeleteFunction) MmsValue_delete);
 }
+
+
+static void goose_listener(GooseSubscriber subscriber, void* parameter)
+{
+    MmsValue* values;
+    char buffer[1024];
+    int *trip;
+    sp_time timeout;
+
+
+    Alarm(DEBUG,"Sub CC  command:  stNum: %u sqNum: %u\n", GooseSubscriber_getStNum(subscriber),GooseSubscriber_getSqNum(subscriber));
+    values = GooseSubscriber_getDataSetValues(subscriber);
+
+
+    MmsValue_printToBuffer(values, buffer, 1024);
+
+    Alarm(DEBUG,"  allData: %s\n", buffer);
+    trip = malloc(sizeof(int));
+    if (trip == NULL)
+    {
+        perror("malloc: ");
+        exit(EXIT_FAILURE);
+    }
+    if (MmsValue_getBoolean(MmsValue_getElement(values, 0))) {
+                Alarm(PRINT,"HMI TRIP\n");
+                *trip=1;
+    }
+    else{
+         
+                Alarm(PRINT,"HMI CLOSE\n");
+                *trip=0;
+    }
+    timeout.sec=0;
+    timeout.usec=0;
+
+    //E_queue(cc_publish_goose, 0, trip, timeout);
+    //Alarm(PRINT, "Enqueued goose_publish with trip=%d\n",*trip);
+    cc_publish_goose(0,trip);
+}
+
+static void Init_goose_sub(){
+    goose_receiver= GooseReceiver_create();
+    GooseReceiver_setInterfaceId(goose_receiver, "lo");
+    goose_subscriber = GooseSubscriber_create("SPIRE/CC/GOOSE", NULL);
+    GooseSubscriber_setListener(goose_subscriber, goose_listener, NULL);
+    GooseReceiver_addSubscriber(goose_receiver, goose_subscriber);
+
+    
+}
+
 
 /* setup mcast socket */
 int init_socket(void)
@@ -214,6 +285,9 @@ void handle_event(int s, int code, void *dummy)
     	Alarm(PRINT,"Mcast corrupt Packet\n");
 	return;
     }
+    if(msg.ss_id!=My_SS_ID){
+	return;
+	}
 
     
     trip = malloc(sizeof(int));
@@ -249,10 +323,11 @@ void publish_goose(int code, void *v_trip)
 {
     int *trip = (int *) v_trip;
 
-    // If called from handle_event, dequeue because we need to reset timeout
-    E_dequeue(repeat_goose, 0, NULL);
-
     Alarm(STATUS, "Publisher: New Goose Event %s!\n",*trip==1?"TRIP":"CLOSE");
+    // If called from handle_event, dequeue because we need to reset timeout
+    if(E_in_queue(repeat_goose,0,NULL))
+        E_dequeue(repeat_goose, 0, NULL);
+
 
     GoosePublisher_increaseStNum(publisher);
     MmsValue_setBoolean(mms_trip, *trip);
@@ -284,10 +359,51 @@ void repeat_goose(int code, void *dummy)
 }
 
 
+void cc_publish_goose(int code, void *v_trip)
+{
+    int *trip = (int *) v_trip;
+
+    Alarm(STATUS, "Publisher: New Goose Event %s!\n",*trip==1?"TRIP":"CLOSE");
+    // If called from handle_event, dequeue because we need to reset timeout
+    if(E_in_queue(repeat_goose,0,NULL))
+        E_dequeue(repeat_goose, 0, NULL);
+
+
+    GoosePublisher_increaseStNum(publisher);
+    MmsValue_setBoolean(mms_trip, *trip);
+    MmsValue_setUtcTimeMs(mms_timestamp, get_timestamp());
+    
+    free(trip);    
+
+    timeout_ms = T1;
+    cc_repeat_goose(0, NULL);
+}
+
+/* Send the next seqnum of the Goose publisher and double the timeout if needed*/
+void cc_repeat_goose(int code, void *dummy)
+{
+    sp_time timeout;
+
+    if (GoosePublisher_publish(publisher, dataSetValues) == -1) {
+        Alarm(PRINT, "Publisher: Error sending message!\n");
+    }
+    Alarm(DEBUG, "Publisher: Sending repeat goose message!\n");
+
+    timeout.sec = timeout_ms / 1000;
+    timeout.usec = (timeout_ms % 1000) * 1000;
+
+    timeout_ms *= 2;
+    if (timeout_ms > T0) timeout_ms = T0;        
+
+    E_queue(cc_repeat_goose, 0, NULL, timeout);
+}
+
+
+
 void Usage(int argc, char **argv)
 {
-    if (argc != 3) {
-        Alarm(EXIT, "Usage: %s interface relayID\n", argv[0]);
+    if (argc != 4) {
+        Alarm(EXIT, "Usage: %s interface relayID SS_ID\n", argv[0]);
     }
     
     interface = argv[1];
@@ -296,5 +412,6 @@ void Usage(int argc, char **argv)
     if (My_ID < 1 || My_ID > NUM_REPLICAS) {
         Alarm(EXIT, "Invalid My_ID: %d\n", My_ID);
     }
+    sscanf(argv[3], "%d", &My_SS_ID);
 
 }

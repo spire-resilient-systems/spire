@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt 
+ * https://jhu-dsn.github.io/spire/LICENSE.txt 
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -85,5 +85,6 @@ typedef struct tc_data_d {
 void *ITRC_Client(void *data);
 void *ITRC_Prime_Inject(void *data);
 void *ITRC_Master(void *data);
+void *ITRC_CC_Connector(void *data);
 
 #endif /* ITRC_H */

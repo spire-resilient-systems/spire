@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt
+ * https://jhu-dsn.github.io/spire/LICENSE.txt
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced
@@ -85,7 +85,7 @@ static uint64_t *latencies;
 static struct sockaddr_in send_addr,name;
 sp_time delta;
 static timestr *scatter_time;
-
+int My_SS_ID;
 
 
 static void usage(int argc, char *argv[]);
@@ -112,7 +112,7 @@ uint64_t rdtsc(){
 int main(int argc, char* argv[])
 {
     int     ret;
-    char *  sp_addr = SPINES_PROXY_ADDR;
+    char *  sp_addr = Breaker_Addr;
 
 
     setlinebuf(stdout);
@@ -127,6 +127,7 @@ int main(int argc, char* argv[])
     Alarm(DEBUG, "Dest Proxy 2.0 read keys\n");
 
     usage(argc,argv);
+    Load_SS_Conf(My_SS_ID);
     print_notice();
 
     count=0;
@@ -137,7 +138,8 @@ int main(int argc, char* argv[])
     //TODO: error handling
 
     /* Initialize network */
-    s = Spines_Sock(sp_addr, SS_SPINES_EXT_PORT, SPINES_PRIORITY, TM_PROXY_PORT);
+    int ss_spines_ext_port=SS_SPINES_EXT_BASE_PORT+((My_SS_ID-16)*10);
+    s = Spines_Sock(sp_addr, ss_spines_ext_port, SPINES_PRIORITY, TM_PROXY_PORT);
 
     if (s < 0) {
         Alarm(EXIT,"dst_proxy: socket\n");
@@ -163,16 +165,18 @@ static int setup_mcast()
     if (s < 0) {
         Alarm(EXIT,"Error setting up Mcast socket\n");
     }
+    /*
     memset(&name,0,sizeof(name));
-    memset(&send_addr,0,sizeof(send_addr));
     name.sin_family = AF_INET;
-    name.sin_addr.s_addr = htonl(SPINES_PROXY_ADDR);
+    name.sin_addr.s_addr = htonl(Breaker_Addr);
     name.sin_port = htons(EMULATOR_MCAST_PORT);
 
     if(bind(s, (struct sockaddr *)&name, sizeof(name) ) < 0) {
           Alarm(EXIT, "Error binding mcast port\n");
         }
+*/
     /*set up sender address*/
+    memset(&send_addr,0,sizeof(send_addr));
     send_addr.sin_family = AF_INET;
     send_addr.sin_addr.s_addr = htonl(EMULATOR_MCAST_ADDR);
     send_addr.sin_port = htons(EMULATOR_MCAST_PORT);
@@ -239,14 +243,17 @@ static void send_simple_sv()
 
         now = E_get_time();
         payload.time_ms = now.sec * 1000 + now.usec / 1000;
+	payload.ss_id=My_SS_ID;
         ret = sendto(m, &payload, sizeof(payload), 0, (struct sockaddr *)&send_addr, sizeof(send_addr));
 
         if (ret < 0){
                 Alarm(EXIT," SV error sending\n");
         }
-        if(ret<sizeof(payload)){
+        if(ret!=sizeof(payload)){
                 Alarm(PRINT,"Wrong size of msg sent\n");
-        }
+        }else{
+		Alarm(DEBUG, "Sent sv %d\n",count);
+	}
         count+=1;
         gettimeofday(&tr_start, NULL);
         time_now=tr_start.tv_sec;
@@ -496,14 +503,14 @@ static bool count_relay_msgs(uint64_t mess_arr[])
                 continue;
             if(mess_arr[j]==curr_dts || (mess_arr[j]+DTS_INTERVAL)==curr_dts){
                 msg_count1+=1;
-                if(msg_count1==2){
+                if(msg_count1==SS_NUM_F+1){
                     print_relay_msgs(mess_arr);
                     return true;
                 }
             }
             if(mess_arr[j]==curr_dts_nxt || (mess_arr[j]+DTS_INTERVAL)==curr_dts_nxt){
                 msg_count2+=1;
-                if(msg_count2==2){
+                if(msg_count2==SS_NUM_F+1){
                     print_relay_msgs(mess_arr);
                     return true;
                 }
@@ -583,12 +590,12 @@ static void print_notice()
 {
   Alarm( PRINT, "/==================================================================================\\\n");
   Alarm( PRINT, "| Spire                                                                             |\n");
-  Alarm( PRINT, "| Copyright (c) 2017-2025 Johns Hopkins University                                  |\n");
+  Alarm( PRINT, "| Copyright (c) 2017-2026 Johns Hopkins University                                  |\n");
   Alarm( PRINT, "| All rights reserved.                                                              |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| Spire is licensed under the Spire Open-Source License.                            |\n");
   Alarm( PRINT, "| You may only use this software in compliance with the License.                    |\n");
-  Alarm( PRINT, "| A copy of the License can be found at http://www.dsn.jhu.edu/spire/LICENSE.txt    |\n");
+  Alarm( PRINT, "| A copy of the License can be found at https://jhu-dsn.github.io/spire/LICENSE.txt |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| Creators:                                                                         |\n");
   Alarm( PRINT, "|    Yair Amir                 yairamir@cs.jhu.edu                                  |\n");
@@ -601,10 +608,10 @@ static void print_notice()
   Alarm( PRINT, "|    Marco Platania            Contributions to architecture design                 |\n");
   Alarm( PRINT, "|    Daniel Qian               Contributions to Trip Master and IDS                 |\n");
   Alarm( PRINT, "|                                                                                   |\n");
-  Alarm( PRINT, "| WWW:     www.dsn.jhu/spire   www.dsn.jhu.edu                                      |\n");
-  Alarm( PRINT, "| Contact: spire@dsn.jhu.edu                                                        |\n");
+  Alarm( PRINT, "| WWW:     https://jhu-dsn.github.io/spire   https://jhu-dsn.github.io              |\n");
+  Alarm( PRINT, "| Contact: spire@spire-sys.org                                                      |\n");
   Alarm( PRINT, "|                                                                                   |\n");
-  Alarm( PRINT, "| Version 2.2, Built March 5, 2025         	                                     |\n");
+  Alarm( PRINT, "| Version 3.0, Built May 20, 2026         	                                         |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use               |\n");
   Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                         |\n");
@@ -612,13 +619,41 @@ static void print_notice()
   Alarm( PRINT, "\\=================================================================================/\n\n");
 }
 
+static void usage(int argc, char **argv){
+        ack_count=0;
+        delta.sec=1;
+        delta.usec=0;
+    	gt_count=0;
+
+        if(argc<3){
+                Alarm(EXIT,"./benchmark <SS_ID> <count>");
+        }
+
+        sscanf(argv[1],"%d",&My_SS_ID);
+        if(My_SS_ID<17 || My_SS_ID>19){
+                Alarm(EXIT,"We support Substation Ids 17,18 ansd 19 , given %d\n",My_SS_ID);
+        }
+        sscanf(argv[2],"%d",&total);
+        if(total<0 || total>1000000){
+                Alarm(EXIT,"We support benchmark count 1-1000000\n");
+        }
+
+        latencies=malloc((total+1) * sizeof(*latencies));
+        memset(latencies,0,(total+1) * sizeof(*latencies));
+        scatter_time=malloc((total+1)*sizeof(timestr));
+
+        for(int i=0;i<=total;i++){
+            latencies[i]=0;
+        }
+        Alarm(PRINT,"Sending total %d SV msgs starting \n",total);
+}
+
+/*
 static void usage(int argc, char *argv[])
 {
     total=10;
-    ack_count=0;
     delta.sec=5;
     delta.usec=0;
-    gt_count=0;
     
     while( --argc > 0 ) {
         argv++;
@@ -638,3 +673,4 @@ static void usage(int argc, char *argv[])
         }
     }
 }
+*/

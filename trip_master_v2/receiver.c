@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt
+ * https://jhu-dsn.github.io/spire/LICENSE.txt
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced
@@ -157,8 +157,8 @@ void TM_Spines_Recv(int s, int source, void *dummy)
 
     /* Check claimed sender is consistent with spines addrs (spines does signing) */
     if (mess->m_id != (NUM_REPLICAS+1)) return;
-    if (source == SP_EXT_SOURCE && from_addr.sin_addr.s_addr != inet_addr(SPINES_PROXY_ADDR)) {
-        Alarm(PRINT, "TM Receiver: Source (External Spines) does not match expected address %s (proxy)", SPINES_PROXY_ADDR );
+    if (source == SP_EXT_SOURCE && from_addr.sin_addr.s_addr != inet_addr(Breaker_Addr)) {
+        Alarm(PRINT, "TM Receiver: Source (External Spines) does not match expected address %s (proxy)", Breaker_Addr);
         return;
     }
 

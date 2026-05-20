@@ -52,6 +52,9 @@ benchmark/benchmark
 dnp3/dnp3_master
 modbus/modbus_master
 proxy/proxy
+proxy/cc_connector
+proxy/ied_connector
+proxy_iec61850/mu_proxy
 
 hmis/ems_hmi/ems_hmi
 hmis/heco_3breaker/heco_hmi
@@ -59,6 +62,11 @@ hmis/heco_5breaker/heco_hmi
 hmis/heco_timing/heco_hmi
 hmis/jhu_hmi/jhu_hmi
 hmis/pnnl_hmi/pnnl_hmi
+hmis/ss1_hmi/ss_hmi
+hmis/ss2_hmi/ss_hmi
+hmis/ss3_hmi/ss_hmi
+hmis/cc_hmi/cc_hmi
+
 
 scada_master/gen_keys
 scada_master/scada_master
@@ -129,6 +137,10 @@ pvb/designer/src/Makefile.pvbplugin
 !hmis/heco_timing/Makefile
 !hmis/jhu_hmi/Makefile
 !hmis/pnnl_hmi/Makefile
+!hmis/cc_hmi/Makefile
+!hmis/ss1_hmi/Makefile
+!hmis/ss2_hmi/Makefile
+!hmis/ss3_hmi/Makefile
 !modbus/Makefile
 !plcs/Makefile
 !prime/src/Makefile
@@ -261,15 +273,13 @@ pvb/win-mingw/bin/rlsvgcat.exe
 
 
 # Compiled Executables
-relay_emulator/gen_event
+relay_emulator/emulated_mu
 relay_emulator/goose_publisher
 trip_master_v2/trip_master
 trip_master/trip_master
-proxy_iec61850/dst_proxy_vr2
-proxy_iec61850/pnnl_simple_cb_proxy
-proxy_iec61850/counting_dst_proxy
-proxy_iec61850/dst_proxy
-proxy_iec61850/pnnl_relay_proxy
+proxy_iec61850/relay_proxy
+proxy_iec61850/simple_cb_proxy
+proxy_iec61850/counting_cb_proxy
 proxy_iec61850/relay_proxy
 trip_master_v2/gen_keys
 trip_master/gen_keys

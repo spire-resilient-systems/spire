@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt 
+ * https://jhu-dsn.github.io/spire/LICENSE.txt 
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -79,6 +79,19 @@
 #define EMS_NUM_GENERATORS 6
 #define EMS_NUM_POWERPLANTS 2
 
+
+/* Integrated SUBSTATION scenario definitions */
+#define NUM_SUBSTATIONS 3
+#define SUBSTATION_NUM_POINT 10
+#define SUBSTATION_NUM_BREAKER 6
+#define SS1_PLC 17
+#define SS2_PLC 18
+#define SS3_PLC 19
+#define SS1_PRIME_ID MAX_NUM_SERVER_SLOTS+SS1_PLC 
+#define SS2_PRIME_ID MAX_NUM_SERVER_SLOTS+SS2_PLC 
+#define SS3_PRIME_ID MAX_NUM_SERVER_SLOTS+SS3_PLC 
+
+
 /*
  * Message types:
  *   DUMMY = dummy
@@ -98,8 +111,8 @@ enum message_type {DUMMY, RTU_DATA, RTU_FEEDBACK, HMI_UPDATE, HMI_COMMAND,
  *      MODBUS
  *      DNP3
  */
-#define NUM_PROTOCOLS 2
-enum protocol{MODBUS, DNP3};
+#define NUM_PROTOCOLS 3
+enum protocol{MODBUS, DNP3, IEC61850};
 
 
 /*
@@ -128,6 +141,8 @@ enum crob_type{LATCH_ON, LATCH_OFF, PULSE_ON, PULSE_OFF};
 #define JHU 1
 #define PNNL 2
 #define EMS 3
+#define INTEGRATED_CC 4
+#define INTEGRATED_SS 5
 
 /*
  * Type of equipment inside of substations
@@ -274,6 +289,7 @@ typedef struct dummy_pub_key_header {
 #define EMS_DATA_PADDING 44
 #define EMS_TARGET_SET 0 // Message type for the RTU Feedback Msg
 #define EMS_RTU_ID_BASE 11
+#define SUBSTATION_RTU_ID_BASE 17
 
 /* JHU-specific RTU Data struct */
 typedef struct jhu_fields_d {
@@ -303,6 +319,15 @@ typedef struct ems_fields_d {
     int32u target_generation;
     int32u padd1[EMS_DATA_PADDING / sizeof(int32u)];
 } ems_fields;
+
+/* Integrated HMI -substation specific RTU Data struct */
+typedef struct substation_fields_d {
+    int32u ss_id;
+    int32u breaker_id;
+    int32u breaker_state;
+    int32u dts;
+} substation_fields;
+
 
 /* RTU Data Message */
 //TODO: change sub_id to rtu_id

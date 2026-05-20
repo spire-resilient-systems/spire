@@ -6,7 +6,7 @@
  # this file except in compliance with the License.  You may obtain a
  # copy of the License at:
  #
- # http://www.dsn.jhu.edu/spire/LICENSE.txt 
+ # https://jhu-dsn.github.io/spire/LICENSE.txt 
  #
  # or in the file ``LICENSE.txt'' found in this distribution.
  #
@@ -35,7 +35,7 @@
  # Contributors:
  #   Samuel Beckley       Contributions to HMIs 
  #
- # Copyright (c) 2017-2025 Johns Hopkins University.
+ # Copyright (c) 2017-2026 Johns Hopkins University.
  # All rights reserved.
  #
  # Partial funding for Spire research was provided by the Defense Advanced 
@@ -47,11 +47,15 @@
 
 CC=gcc
 CFLAGS+= -Wall -W -g
-TARGET=proxy
+TARGET=proxy  ied_connector  cc_connector
+
 LIBS=-lpthread ../prime/OpenTC-1.1/TC-lib-1.0/.libs/libTC.a \
            ../spines/libspines/libspines.a ../prime/stdutil/lib/libstdutil.a \
+	   ../spines/libspread-util/src/libspread-util.a \
+           ../libiec61850/.install/lib/libiec61850.a \
 		   -lrt -ldl -lcrypto -lpthread -lm
-INC= -I ../prime/stdutil/include -I ../spines/libspines/
+
+INC= -I ../prime/stdutil/include -I ../spines/libspines/ -I ../spines/libspread-util/include/ -I ../libiec61850/.install/include/ -I ../common
 OBJECTS=proxy.o \
 		../common/scada_packets.o \
 		../common/net_wrapper.o \
@@ -62,13 +66,45 @@ OBJECTS=proxy.o \
 		../config/cJSON.o \
 		../config/config_helpers.o
 
-all: $(TARGET) 
+CC_OBJECTS=cc_connector.o \
+                ../common/scada_packets.o \
+                ../common/net_wrapper.o \
+                ../common/openssl_rsa.o \
+                ../common/tc_wrapper.o \
+                ../common/itrc.o \
+                ../common/key_value.o \
+                ../config/cJSON.o \
+                ../config/config_helpers.o
 
-$(TARGET): $(OBJECTS)
-	$(CC) $(LDFLAGS) -o $(TARGET) $(OBJECTS) $(LIBS)
+
+IED_OBJECTS=ied_connector.o \
+                ../common/scada_packets.o \
+                ../common/net_wrapper.o \
+                ../common/openssl_rsa.o \
+                ../common/tc_wrapper.o \
+                ../common/itrc.o \
+                ../common/key_value.o \
+                ../config/cJSON.o \
+                ../config/config_helpers.o
+
+
+all: proxy ied_connector cc_connector 
+
+
+proxy: $(OBJECTS)
+	$(CC) $(LDFLAGS) -o proxy $(OBJECTS) $(LIBS)
+
+cc_connector: $(CC_OBJECTS)
+	$(CC) $(LDFLAGS)  -o cc_connector $(CC_OBJECTS) $(LIBS) 
+
+
+ied_connector: $(IED_OBJECTS)
+	$(CC) $(LDFLAGS) -o ied_connector $(IED_OBJECTS) $(LIBS)
 
 clean:
 	rm -f $(OBJECTS)
+	rm -f $(CC_OBJECTS)
+	rm -f $(IED_OBJECTS)
 	rm -f $(TARGET)
 
 proxy.o: proxy.c ../common/scada_packets.h \
@@ -76,6 +112,20 @@ proxy.o: proxy.c ../common/scada_packets.h \
 				../common/tc_wrapper.h ../common/itrc.h \
 				../common/key_value.h ../config/cJSON.h ../config/config_helpers.h
 	$(CC) -c $(CFLAGS) $(INC) -o proxy.o proxy.c 
+
+
+cc_connector.o: cc_connector.c ../common/scada_packets.h \
+                                ../common/net_wrapper.h ../common/openssl_rsa.h \
+                                ../common/tc_wrapper.h ../common/itrc.h \
+                                ../common/key_value.h ../config/cJSON.h ../config/config_helpers.h
+	$(CC) -c $(CFLAGS)  $(INC) -o cc_connector.o cc_connector.c  
+
+ied_connector.o: ied_connector.c ../common/scada_packets.h \
+                                ../common/net_wrapper.h ../common/openssl_rsa.h \
+                                ../common/tc_wrapper.h ../common/itrc.h \
+                                ../common/key_value.h ../config/cJSON.h ../config/config_helpers.h
+	$(CC) -c $(CFLAGS) $(INC) -o ied_connector.o ied_connector.c
+
 
 %.o:	%.c
 		$(CC) $(CFLAGS) $(INC) -c -o $*.o $*.c

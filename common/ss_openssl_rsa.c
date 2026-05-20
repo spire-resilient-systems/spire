@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt 
+ * https://jhu-dsn.github.io/spire/LICENSE.txt 
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -63,6 +63,7 @@
 #define RSA_TYPE_PRIVATE         2
 #define RSA_TYPE_CLIENT_PUBLIC   3 
 #define RSA_TYPE_CLIENT_PRIVATE  4 
+#define RSA_TYPE_RTU_CC          5
 #define DIGEST_ALGORITHM         "sha1" 
 #define NUMBER_OF_SERVERS        NUM_REPLICAS
 #define NUMBER_OF_CLIENTS        1
@@ -168,7 +169,7 @@ void Read_RSA( int32u rsa_type, int32u server_number, RSA *rsa, const char *keys
     snprintf(fileName, 100, "%s/private_%02d.key", keys_dir, server_number);
   else if(rsa_type == RSA_TYPE_CLIENT_PUBLIC)
     snprintf(fileName, 100, "%s/public_client_%02d.key", keys_dir, server_number);
-  else if(rsa_type == RSA_TYPE_CLIENT_PRIVATE)
+  else if(rsa_type == RSA_TYPE_CLIENT_PRIVATE|| rsa_type == RSA_TYPE_RTU_CC)
     snprintf(fileName, 100, "%s/private_client_%02d.key", keys_dir, server_number);
   
   if((f = fopen( fileName, "r")) == NULL) {
@@ -183,7 +184,7 @@ void Read_RSA( int32u rsa_type, int32u server_number, RSA *rsa, const char *keys
     printf("Error: Read_RSA: RSA_set0_key() failed (%s:%d)\n", __FILE__, __LINE__);
     exit(1);
   }
-  if ( rsa_type == RSA_TYPE_PRIVATE || rsa_type == RSA_TYPE_CLIENT_PRIVATE ) {
+  if ( rsa_type == RSA_TYPE_PRIVATE || rsa_type == RSA_TYPE_CLIENT_PRIVATE || rsa_type == RSA_TYPE_RTU_CC) {
     Read_BN( f, &d );
     Read_BN( f, &p );
     Read_BN( f, &q );
@@ -270,7 +271,9 @@ void OPENSSL_RSA_Generate_Keys(const char *keys_dir) {
     rt = RSA_TYPE_PRIVATE;
   } else if ( type == RSA_CLIENT ) {
     rt = RSA_TYPE_CLIENT_PRIVATE;
-  } else {
+  } else if (type==RSA_RTU_CC){
+    rt=RSA_TYPE_RTU_CC;
+  }else {
     //printf("OPENSSL_RSA_Read_Keys: Called with invalid type.\n");
     exit(0);
   }

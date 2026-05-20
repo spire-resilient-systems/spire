@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt
+ * https://jhu-dsn.github.io/spire/LICENSE.txt
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced
@@ -172,14 +172,13 @@ void UTIL_Send_To_Dst_Proxy(tm_msg *mess)
 
     addr.sin_family = AF_INET;
     addr.sin_port = htons(TM_PROXY_PORT);
-    addr.sin_addr.s_addr = inet_addr(SPINES_PROXY_ADDR);
+    addr.sin_addr.s_addr = inet_addr(Breaker_Addr);
 
     ret = spines_sendto(s, mess, sizeof(tm_msg) + mess->len,
         0, (struct sockaddr *) &addr, sizeof(addr));
     
-    if (ret < 0) {
+    if (ret != sizeof(tm_msg)+mess->len) {
         perror("util send to dst proxy sendto error: ");
-        // TODO attempt to reconnect?
     }
 }
 void UTIL_Send_To_Relay_Proxy(local_relay_msg *mess)
@@ -231,7 +230,7 @@ bool UTIL_Attempt_Combine(int type, tc_share sh_arr[])
     uint64_t dts;
     bool ret;
     tm_msg *mess;
-    tc_final_msg *tcf_mess;
+    ss_tc_final_msg *tcf_mess;
     byte digest[DIGEST_SIZE];
 
     for (i = SHARES_PER_MSG - 1; i >= 0; i--)
@@ -246,8 +245,8 @@ bool UTIL_Attempt_Combine(int type, tc_share sh_arr[])
 
         Alarm(DEBUG,"Trying to combine shares at dts=%lu\n",dts);
         
-        mess = PKT_Construct_TM_Message(type, DATA.id, dts, sizeof(tc_final_msg));
-        tcf_mess = (tc_final_msg *)(mess + 1);
+        mess = PKT_Construct_TM_Message(type, DATA.id, dts, sizeof(ss_tc_final_msg));
+        tcf_mess = (ss_tc_final_msg *)(mess + 1);
  
         if (UTIL_Check_Comb(tcf_mess->thresh_sig, &sh_arr[dts_index])) {
             DATA.cur_signed = mess;
@@ -333,9 +332,9 @@ void UTIL_Store_Share(tm_msg *mess, tc_share sh_arr[])
 {
     int i, dts_index;
     uint64_t dts;
-    tc_share_msg *tc_mess;
+    ss_tc_share_msg *tc_mess;
 
-    tc_mess = (tc_share_msg *)(mess + 1);
+    tc_mess = (ss_tc_share_msg *)(mess + 1);
 
     assert((mess->type == TRIP_SHARE && sh_arr == DATA.trips) || (mess->type == CLOSE_SHARE && sh_arr == DATA.closes));
 

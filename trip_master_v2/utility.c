@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt
+ * https://jhu-dsn.github.io/spire/LICENSE.txt
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced
@@ -106,7 +106,7 @@ void UTIL_Send_To_Dst_Proxy(tm_msg *mess)
 
     addr.sin_family = AF_INET;
     addr.sin_port = htons(TM_PROXY_PORT);
-    addr.sin_addr.s_addr = inet_addr(SPINES_PROXY_ADDR);
+    addr.sin_addr.s_addr = inet_addr(Breaker_Addr);
 
      /*If DOS flag is set with your ID send shares to all a thoussand times*/
     if(DOS==DATA.id){
@@ -118,9 +118,8 @@ void UTIL_Send_To_Dst_Proxy(tm_msg *mess)
                 ret = spines_sendto(s, mess, sizeof(tm_msg) + mess->len,
                         0, (struct sockaddr *) &addr, sizeof(addr));
 
-                if (ret < 0) {
+                if (ret !=sizeof(tm_msg)+mess->len) {
                     perror("util broad cast sendto error: \n");
-                    // TODO attempt to reconnect?
                 }
 
         }

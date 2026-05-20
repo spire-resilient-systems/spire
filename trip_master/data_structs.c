@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt
+ * https://jhu-dsn.github.io/spire/LICENSE.txt
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced
@@ -58,7 +58,7 @@ network_vars NET;
 bench_stats STATS;
 
 
-void Init_Server_Data(int id)
+void Init_Server_Data(int id,int ss_id)
 {
     DATA.id = id;
     DATA.tm_state = RECOVERY;
@@ -75,7 +75,7 @@ void Init_Server_Data(int id)
     memset(DATA.trips, 0, sizeof(DATA.trips));
 }
 
-void Init_Network(int id)
+void Init_Network(int id,int ss_id)
 {   
     struct sockaddr_un tm_ipc_addr;
     char *sp_ext_addr = Relay_Ext_Addrs[id - 1];
@@ -92,18 +92,21 @@ void Init_Network(int id)
     if (NET.s_relay_in < 0) {
         Alarm(EXIT, "Error setting up IPC relay input communication, exiting\n");
     }
-    NET.s_proxy = Spines_Sock(sp_ext_addr, SS_SPINES_EXT_PORT, SPINES_PRIORITY, TM_PROXY_PORT);
+
+    int ss_spines_ext_port=SS_SPINES_EXT_BASE_PORT+((ss_id-16)*10);
+    int ss_spines_int_port=SS_SPINES_INT_BASE_PORT+((ss_id-16)*10);
+
+    NET.s_proxy = Spines_Sock(sp_ext_addr, ss_spines_ext_port, SPINES_PRIORITY, TM_PROXY_PORT);
     if (NET.s_proxy < 0 ) {
         Alarm(EXIT, "Error setting up ext spines network, exiting\n");
     }
-    NET.s_coord = Spines_Sock(sp_int_addr, SS_SPINES_INT_PORT, SPINES_PRIORITY, TM_TC_PORT);
+    NET.s_coord = Spines_Sock(sp_int_addr, ss_spines_int_port, SPINES_PRIORITY, TM_TC_PORT);
 
 
     if (NET.s_coord < 0 ) {
         Alarm(EXIT, "Error setting up co-ordination spines network, exiting\n");
     }
 
-    /* TODO try reconnecting? */
 }
 
 void Init_Bench_Stats()

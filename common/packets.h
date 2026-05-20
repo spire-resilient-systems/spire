@@ -14,31 +14,34 @@
 #define SHARES_PER_MSG 2
 
 /* All message types */
-enum message_type {
-    SV_SIMPLE,
-    SV_BYZ,
-    LR_CLOSE,
-    LR_TRIP,
 
-    TRIP_SHARE,
-    CLOSE_SHARE,
-    SIGNED_TRIP,
-    SIGNED_CLOSE,
-    SIGNED_TRIP_ACK,
-    SIGNED_CLOSE_ACK,
-    RELAY_TRIP,
-    RELAY_CLOSE,
+#define    SV_SIMPLE 301
+#define    SV_BYZ 302
+#define    LR_CLOSE 303
+#define    LR_TRIP 304
 
-    RECOVERY_QUERY,
+#define    TRIP_SHARE 305
+#define    CLOSE_SHARE 306
+#define    SIGNED_TRIP 307
+#define    SIGNED_CLOSE 308
+#define    SIGNED_TRIP_ACK 309
+#define    SIGNED_CLOSE_ACK 310
+#define    RELAY_TRIP 311
+#define    RELAY_CLOSE 312
 
-    PING,
-    PONG,
-    PP_START
-};
+#define    RECOVERY_QUERY 313
+
+#define    PING 316
+#define    PONG 317
+#define    PP_START 318
+
+#define    CC_CMD 314
+#define    SS_CMD 315
 
 /* Sample values message (from emulator (gen_event.c) to relay (goose_publisher) */
 typedef struct dummy_sv_msg {
     uint32_t type;
+    uint64_t ss_id;
     uint64_t time_ms;
     uint64_t delay_ms[NUM_REPLICAS];
     int trip[NUM_REPLICAS];
@@ -79,13 +82,13 @@ typedef struct dummy_tc_share_single {
 } tc_share_single;
 
 
-typedef struct dummy_tc_share_msg {
+typedef struct dummy_ss_tc_share_msg {
     tc_share_single shares[SHARES_PER_MSG];
-} tc_share_msg;
+} ss_tc_share_msg;
 
-typedef struct dummy_tc_final_msg {
+typedef struct dummy_ss_tc_final_msg {
     unsigned char thresh_sig[SIGNATURE_SIZE];
-} tc_final_msg;
+} ss_tc_final_msg;
 
 typedef struct dummy_pp_payload {
     uint32_t seq;

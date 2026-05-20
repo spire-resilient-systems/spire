@@ -6,7 +6,7 @@
  * this file except in compliance with the License.  You may obtain a
  * copy of the License at:
  *
- * http://www.dsn.jhu.edu/spire/LICENSE.txt 
+ * https://jhu-dsn.github.io/spire/LICENSE.txt 
  *
  * or in the file ``LICENSE.txt'' found in this distribution.
  *
@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced 
@@ -587,7 +587,7 @@ void *ITRC_Prime_Inject(void *data)
                     continue;
                 }
 
-                    //printf("Prime_Inject: valid message type (%d) from client\n", mess->type);
+                //printf("Prime_Inject: valid message type (%d) from client\n", mess->type);
                 ret = OPENSSL_RSA_Verify((unsigned char*)mess + SIGNATURE_SIZE,
                             sizeof(signed_message) + mess->len - SIGNATURE_SIZE,
                             (unsigned char *)mess, mess->machine_id, RSA_CLIENT);
@@ -970,8 +970,8 @@ void *ITRC_Master(void *data)
                 // REMOVE THIS - just for checking
                 //continue;
                 //MS2022 - Comment this print in actual runs
-                struct timeval prime_t;
-                gettimeofday(&prime_t,NULL);
+                //struct timeval prime_t;
+                //gettimeofday(&prime_t,NULL);
                 //printf("Received message of type %d from prime_sock at %lu, %lu\n",mess->type,prime_t.tv_sec,prime_t.tv_usec);
                 //printf("Prime [%d]: %d of %d\n", res->ord_num, res->event_idx, res->event_tot);
 
@@ -1862,12 +1862,31 @@ int ITRC_Send_TC_Final(int sp_ext_sk, signed_message *mess)
         dest.sin_port = htons(RTU_BASE_PORT + loc);
         dest.sin_addr.s_addr = inet_addr(SPINES_RTU_ADDR);
         dest.sin_family = AF_INET;
+	if(loc>=SUBSTATION_RTU_ID_BASE && loc<NUM_RTU){
+	//TODO: for loop send and return
+	  char* cc_addrs[NUM_CC_CONNECTORS] = CC_CONNECTORS;
+	  for(int i=0; i<NUM_CC_CONNECTORS;i++){
+	  	dest.sin_addr.s_addr = inet_addr(cc_addrs[i]);
+	        ret = spines_sendto(sp_ext_sk, mess, sizeof(signed_message) + sizeof(tc_final_msg),0, (struct sockaddr *)&dest, sizeof(struct sockaddr));
+               if ((int32u)ret != sizeof(signed_message) + sizeof(tc_final_msg)) {
+                  printf("ITRC_Send_TC_Final: spines_sendto error!\n");
+               return -1;
+    		}else{
+		  printf("Sent to CC connector at %s:%d\n",cc_addrs[i],RTU_BASE_PORT+loc);
+		}
+	  }
+
+	return 1;	
+	}
     }
     /* Toward HMI */
     else if (scada_mess->type == HMI_UPDATE) {
         hmiu = (hmi_update_msg *)(scada_mess + 1);
         dest.sin_family = AF_INET;
         dest.sin_port = htons(HMI_BASE_PORT + hmiu->scen_type);
+	if( hmiu->scen_type==INTEGRATED_CC){
+                dest.sin_port = htons(HMI_BASE_PORT + PNNL);
+        }
         dest.sin_addr.s_addr = inet_addr(SPINES_HMI_ADDR);
     }
     /* BENCHMARK */
@@ -2183,12 +2202,15 @@ int ITRC_Validate_Message(signed_message *mess)
             // rtu_bytes = recvd_bytes - sizeof(signed_message);
             // if (rtu_bytes < sizeof(rtu_data_msg)) return 0;
             rtu_mess = (rtu_data_msg *)(mess + 1);
-            if (rtu_mess->rtu_id >= NUM_RTU || rtu_mess->seq.seq_num == 0)
-                return 0;
+            if (rtu_mess->rtu_id >= NUM_RTU || rtu_mess->seq.seq_num == 0){
+		 printf("return 0 for rtu_id=%d seq=%lu\n",rtu_mess->rtu_id,rtu_mess->seq.seq_num);
+		    return 0;
+	    }
 
             switch (rtu_mess->scen_type) {
                 case JHU:
                 case PNNL:
+                case INTEGRATED_CC:
                     break;
                 case EMS:
                     ems_data = (ems_fields *)&rtu_mess->data;
@@ -2241,4 +2263,158 @@ int ITRC_Validate_Message(signed_message *mess)
     }
 
     return 1;
+}
+
+
+/* Intrusion Tolerant Reliable Channel CC Connetor Implementation */
+void *ITRC_CC_Connector(void *data)
+{
+    int i, num, ret, nBytes, rep;
+    int proto, my_port;
+    struct sockaddr_in dest;
+    fd_set mask, tmask;
+    char buff[MAX_LEN];
+    signed_message *mess, *tcf;
+    tc_final_msg *tcf_specific;
+    update_message *up;
+    net_sock ns;
+    itrc_data *itrcd;
+    seq_pair *ps;
+    ordinal applied, *ord;
+    byte digest[DIGEST_SIZE];
+    struct timeval spines_timeout, *t;
+
+    /* Initialize the receiving data structures */
+    memset(&applied, 0, sizeof(ordinal));
+
+    FD_ZERO(&mask);
+
+    /* Grab the IPC information and NET information from data */
+    itrcd = (itrc_data *)data;
+    printf("ITRC_CC_Connector: local = %s, remote = %s, spines_ext_addr = %s, spines_ext_port = %d\n",
+            itrcd->ipc_local, itrcd->ipc_remote, itrcd->spines_ext_addr, itrcd->spines_ext_port);
+    ns.ipc_s = IPC_DGram_Sock(itrcd->ipc_local);
+    memcpy(ns.ipc_remote, itrcd->ipc_remote, sizeof(ns.ipc_remote));
+    FD_SET(ns.ipc_s, &mask);
+
+    /* Setup Keys. For TC, only Public here for verification of TC Signed Messages */
+    OPENSSL_RSA_Init();
+    printf("ITRC_CC_Connector: My Prime_Client_Id is %d\n",Prime_Client_ID);
+    OPENSSL_RSA_Read_Keys(Prime_Client_ID, RSA_CLIENT, itrcd->prime_keys_dir);
+    TC_Read_Public_Key(itrcd->sm_keys_dir);
+
+    /* Setup the spines timeout frequency - if disconnected, will try to reconnect this often */
+    spines_timeout.tv_sec  = SPINES_CONNECT_SEC;
+    spines_timeout.tv_usec = SPINES_CONNECT_USEC;
+    /* Connect to spines */
+    ns.sp_ext_s = -1;
+    if (Type == RTU_TYPE) {
+        proto = SPINES_PRIORITY;
+        my_port = RTU_BASE_PORT + My_ID;
+    }
+    else {
+        proto = SPINES_PRIORITY;
+        my_port = HMI_BASE_PORT + My_ID;
+    }
+    printf("ITRC_CC_Connector starting connection to cc spines on port %d\n",my_port);
+    ns.sp_ext_s = Spines_Sock(itrcd->spines_ext_addr, itrcd->spines_ext_port,
+                    proto, my_port);
+    if (ns.sp_ext_s < 0) {
+        printf("ITRC_CC_Connector: Unable to connect to Spines, trying again soon\n");
+        t = &spines_timeout;
+    }
+    else {
+        printf("ITRC_CC_Connector: Connected to ext spines at %s  on port %d\n",itrcd->spines_ext_addr, itrcd->spines_ext_port);
+        FD_SET(ns.sp_ext_s, &mask);
+        t = NULL;
+        fflush(stdout);
+    }
+
+    while (1) {
+
+        tmask = mask;
+        num = select(FD_SETSIZE, &tmask, NULL, NULL, t);
+
+        if (num > 0) {
+
+            /* Message from Spines */
+            if (ns.sp_ext_s >= 0 && FD_ISSET(ns.sp_ext_s, &tmask)) {
+                ret = spines_recvfrom(ns.sp_ext_s, buff, MAX_LEN, 0, NULL, 0);
+                printf("ITRC_CC_Connector: Received ext spines msg of size=%d\n",ret);
+                if (ret <= 0) {
+                    printf("ITRC_CC_Connector: Error in spines_recvfrom: ret = %d, dropping!\n", ret);
+                    spines_close(ns.sp_ext_s);
+                    FD_CLR(ns.sp_ext_s, &mask);
+                    ns.sp_ext_s = -1;
+                    t = &spines_timeout;
+                    continue;
+                }
+
+                tcf          = (signed_message *)buff;
+                tcf_specific = (tc_final_msg *)(tcf + 1);
+
+                /* VERIFY RSA Signature over whole message */
+                ret = OPENSSL_RSA_Verify((unsigned char*)tcf + SIGNATURE_SIZE,
+                            sizeof(signed_message) + tcf->len - SIGNATURE_SIZE,
+                            (unsigned char *)tcf, tcf->machine_id, RSA_SERVER);
+                if (!ret) {
+                    printf("ITRC_CC_Connector: RSA_Verify Failed of Client Update from %d\n", tcf->machine_id);
+                    continue;
+                }
+
+                /* Verify TC Signature */
+                OPENSSL_RSA_Make_Digest(tcf_specific,
+                    sizeof(tcf_specific->ord) + sizeof(tcf_specific->payload), digest);
+                if (!TC_Verify_Signature(1, tcf_specific->thresh_sig, digest)) {
+                    printf("ITRC_CC_Connector: TC verify failed from CC replica %d\n", tcf->machine_id);
+                    continue;
+                }
+                IPC_Send(ns.ipc_s, (char *)tcf, sizeof(signed_message) + sizeof(tc_final_msg), ns.ipc_remote);
+            }
+	    /* Message from IPC Client */
+            if (FD_ISSET(ns.ipc_s, &tmask)) {
+                nBytes = IPC_Recv(ns.ipc_s, buff, MAX_LEN);
+                if (nBytes != sizeof(signed_update_message)) {
+                    printf("ITRC_CC_Connector: error! signed update message size is not as expected %d\n", nBytes);
+                    continue;
+                }
+
+                if (ns.sp_ext_s == -1)
+                    continue;
+
+                rep = MIN(NUM_F + NUM_K + 1, 2 * (NUM_F + 2));
+
+                for (i = 1; i <= rep; i++) {
+                    dest.sin_family = AF_INET;
+                    dest.sin_port = htons(SM_EXT_BASE_PORT + CC_Replicas[i-1]);
+                    dest.sin_addr.s_addr = inet_addr(Ext_Site_Addrs[CC_Sites[i-1]]);
+                    ret = spines_sendto(ns.sp_ext_s, buff, sizeof(signed_update_message),
+                            0, (struct sockaddr *)&dest, sizeof(struct sockaddr));
+                    if (ret != sizeof(signed_update_message)) {
+                        printf("ITRC_CC_Connector: spines_sendto error!\n");
+                        spines_close(ns.sp_ext_s);
+                        FD_CLR(ns.sp_ext_s, &mask);
+                        ns.sp_ext_s = -1;
+                        t = &spines_timeout;
+                        break;
+                    }
+                }
+           }
+        }
+	else {
+            ns.sp_ext_s = Spines_Sock(itrcd->spines_ext_addr, itrcd->spines_ext_port,
+                            proto, my_port);
+            if (ns.sp_ext_s < 0) {
+                printf("ITRC_CC_Connector: Unable to connect to Spines, trying again soon\n");
+                spines_timeout.tv_sec  = SPINES_CONNECT_SEC;
+                spines_timeout.tv_usec = SPINES_CONNECT_USEC;
+                t = &spines_timeout;
+            }
+            else {
+                FD_SET(ns.sp_ext_s, &mask);
+                t = NULL;
+            }
+        }
+    }
+    return NULL;
 }

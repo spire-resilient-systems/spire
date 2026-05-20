@@ -25,7 +25,7 @@ tm_msg *PKT_Construct_TM_Message(uint32_t type, uint32_t id, uint64_t dts, uint3
 /* Takes a tm_msg with an empty (or previously filled tc_share payload) and refills it based on the headers */
 tm_msg *PKT_Construct_TC_Share_Msg_Payload(tm_msg* mess, uint64_t prev_dts)
 {
-    tc_share_msg *tc_mess;
+    ss_tc_share_msg *tc_mess;
     tc_payload payload;
 
     byte digest[DIGEST_SIZE];
@@ -35,7 +35,7 @@ tm_msg *PKT_Construct_TC_Share_Msg_Payload(tm_msg* mess, uint64_t prev_dts)
     int start = 0;
 
     assert(mess->type == CLOSE_SHARE || mess->type == TRIP_SHARE);
-    assert(mess->len == sizeof(tc_share_msg));
+    assert(mess->len == sizeof(ss_tc_share_msg));
 
     if (mess->type == CLOSE_SHARE) {
         state = STATE_CLOSE;
@@ -43,7 +43,7 @@ tm_msg *PKT_Construct_TC_Share_Msg_Payload(tm_msg* mess, uint64_t prev_dts)
         state = STATE_TRIP;
     }
 
-    tc_mess = (tc_share_msg *)(mess + 1);
+    tc_mess = (ss_tc_share_msg *)(mess + 1);
     
     /* If this we previously sent a message, we can reuse the last n - 1 shares */
     if (prev_dts != 0) {
