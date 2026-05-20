@@ -312,7 +312,7 @@ generated before the system can run.
 1. Spines
     - To generate keys:
 
-            cd spines/daemon; ./gen_keys
+            cd spines/daemon; ./gen_keys.sh
 
     - This creates 10 public-private key pairs in `spines/daemon/keys` (if you
       have more than 10 Spines daemons, you can modify the for loop in the

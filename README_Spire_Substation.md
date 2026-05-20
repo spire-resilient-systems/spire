@@ -180,7 +180,7 @@ generated and distributed before the system can run.
 1. Spines
     - To generate keys:
 
-            cd spines/daemon; ./gen_keys
+            cd spines/daemon; ./gen_keys.sh
 
     - This creates 10 public-private key pairs in `spines/daemon/keys` (if you
       have more than 10 Spines daemons, you can modify the for loop in the
@@ -190,7 +190,12 @@ generated and distributed before the system can run.
       Spines daemon listed as host 1 in the spines.conf file should have the
       key private1.pem) and the public keys of all the Spines daemons.
 
-    - The key size can be set in spines/daemon/gen_keys.sh
+    - The key size can be set in spines/daemon/gen_keys.sh. **Note** that the
+      default key size in `gen_keys.sh` is 1024. If you use the default
+      substation Spines configuration files (e.g. ss17_spines_int.conf), you
+      will need to change this to 512. However, the `end_to_end_system`
+      configuration in the `example_conf` directory uses a key size of 1024 for
+      consistency with other Spire components.
 
 2. Trip Master Keys
     - To generate keys for Peer Protocol:
@@ -682,11 +687,13 @@ emulated relays we recommend using `lo` (loopback).
 
 The emulated relays are controlled through emulated Sampled Values. The
 emulated Sample values can be generated through the `emulated_mu` program in
-the `emulated_relay` folder. The commands are:
+the `relay_emulator` folder. The commands are:
 
 Invoke a emulated merging unit for a substation with command:
-	./emulated_mu substation_id
-Example: ./emulated_mu 17
+
+        ./emulated_mu substation_id
+
+Example: `./emulated_mu 17`
 
 The following commands from stdin of the program will generate Samples Value (SV) messages
 
