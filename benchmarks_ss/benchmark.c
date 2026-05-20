@@ -544,7 +544,7 @@ static void print_notice()
   Alarm( PRINT, "| WWW:     https://jhu-dsn.github.io/spire   https://jhu-dsn.github.io              |\n");
   Alarm( PRINT, "| Contact: spire@spire-sys.org                                                      |\n");
   Alarm( PRINT, "|                                                                                   |\n");
-  Alarm( PRINT, "| Version 3.0, Built Aug 27, 2025                                                   |\n");
+  Alarm( PRINT, "| Version 3.0, Built May 20, 2026                                                   |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| This product uses software developed by Spread Concepts LLC for use               |\n");
   Alarm( PRINT, "| in the Spread toolkit. For more information about Spread,                         |\n");

@@ -628,7 +628,7 @@ int read_from_rtu(signed_message *mess, struct timeval *t)
         return ems->id;
     }
     else if (payload->scen_type == INTEGRATED_CC) {
-        printf("Sahiti**** read_from_rtu SUBSTATION\n");
+        //printf("Sahiti**** read_from_rtu SUBSTATION\n");
         pf = (substation_fields *)(payload->data);
         memcpy(&substation_scenario_data, pf, sizeof(substation_scenario_data));
     }
