@@ -34,7 +34,7 @@
  * Contributors:
  *   Samuel Beckley       Contributions to HMIs
  *
- * Copyright (c) 2017-2025 Johns Hopkins University.
+ * Copyright (c) 2017-2026 Johns Hopkins University.
  * All rights reserved.
  *
  * Partial funding for Spire research was provided by the Defense Advanced
@@ -118,7 +118,7 @@ static void print_notice()
 {
   Alarm( PRINT, "/==================================================================================\\\n");
   Alarm( PRINT, "| Spire                                                                             |\n");
-  Alarm( PRINT, "| Copyright (c) 2017-2025 Johns Hopkins University                                  |\n");
+  Alarm( PRINT, "| Copyright (c) 2017-2026 Johns Hopkins University                                  |\n");
   Alarm( PRINT, "| All rights reserved.                                                              |\n");
   Alarm( PRINT, "|                                                                                   |\n");
   Alarm( PRINT, "| Spire is licensed under the Spire Open-Source License.                            |\n");

@@ -1,10 +1,11 @@
-Version 3.0 - September 5, 2025
+Version 3.0 - May 20, 2026
    Added end-to-end intrusion-tolerance capabilities
 	* Created end-to-end intrusion-tolerant architecture at all levels i.e.,
 	  from control center level to substation 
 	* Added new scenario with a new control center HMIs that can
-	  simultaneously support pnnl plcs (DNP3 and Modbus) and three substations
-	  (IEC61850) simultaneously
+	  simultaneously support PNNL PLC (Modbus) and three substations
+	  (IEC61850) simultaneously (See example_conf/end_to_end_system and
+	  hmis/cc_hmi)
 	* Generalized code of Spire for the substation to instantiate multiple
 	  substations simultaneously
 
